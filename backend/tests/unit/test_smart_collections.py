@@ -247,3 +247,38 @@ async def test_routing_ids_from_ai_analysis():
         mock_crud.find_or_create.assert_any_call(
             db, name="987654321", category="client_id", organization_id=10
         )
+
+
+@pytest.mark.asyncio
+async def test_ai_tags_field():
+    """Generic 'tags' list from AI analysis should produce 'ai_tag' collections."""
+    from app.services.smart_collections import SmartCollectionsService
+
+    ai_analysis = {
+        "parties": [],
+        "document_type": "",
+        "document_subtype": "",
+        "tags": ["Urgent", "Litigation"],
+    }
+
+    svc = SmartCollectionsService()
+    db = AsyncMock()
+
+    tag1 = _make_tag(7, "Urgent", "ai_tag")
+    tag2 = _make_tag(8, "Litigation", "ai_tag")
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = _make_document()
+    db.execute = AsyncMock(return_value=mock_result)
+    db.commit = AsyncMock()
+
+    with patch("app.services.smart_collections.crud_tag") as mock_crud:
+        mock_crud.find_or_create = AsyncMock(side_effect=[tag1, tag2])
+        await svc.route_document_to_collections(db, _make_document(), ai_analysis)
+        
+        mock_crud.find_or_create.assert_any_call(
+            db, name="Urgent", category="ai_tag", organization_id=10
+        )
+        mock_crud.find_or_create.assert_any_call(
+            db, name="Litigation", category="ai_tag", organization_id=10
+        )

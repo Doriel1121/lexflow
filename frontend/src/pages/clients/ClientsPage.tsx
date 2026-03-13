@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ShieldAlert, ShieldCheck, Building2, Phone, Mail } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { clientsService, Client } from '../../services/clients';
 
 export const ClientsPage: React.FC = () => {
+  const { t } = useTranslation();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,15 +36,15 @@ export const ClientsPage: React.FC = () => {
     <div className="max-w-6xl mx-auto py-6">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Clients</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage your organization's clients and their KYC/AML risk profiles.</p>
+          <h1 className="text-2xl font-bold text-slate-800">{t('clients.title')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('clients.subtitle')}</p>
         </div>
         <Link
           to="/clients/new"
           className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Add Client
+          {t('clients.addClient')}
         </Link>
       </div>
 
@@ -50,18 +52,18 @@ export const ClientsPage: React.FC = () => {
         {clients.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Building2 className="h-12 w-12 mx-auto mb-4 text-slate-300 opacity-50" />
-            <h3 className="font-semibold text-slate-800 mb-1">No clients found</h3>
-            <p className="text-sm">Click 'Add Client' to onboard your first entity.</p>
+            <h3 className="font-semibold text-slate-800 mb-1">{t('clients.noClients')}</h3>
+            <p className="text-sm">{t('clients.noClientsDesc')}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
                 <tr>
-                  <th className="px-6 py-4">Client Name</th>
-                  <th className="px-6 py-4">Contact</th>
-                  <th className="px-6 py-4">Risk Status</th>
-                  <th className="px-6 py-4">Added On</th>
+                  <th className="px-6 py-4">{t('clients.table.clientName')}</th>
+                  <th className="px-6 py-4">{t('clients.table.contact')}</th>
+                  <th className="px-6 py-4">{t('clients.table.riskStatus')}</th>
+                  <th className="px-6 py-4">{t('clients.table.addedOn')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -87,17 +89,17 @@ export const ClientsPage: React.FC = () => {
                           )}
                         </div>
                       ) : (
-                        <span className="text-slate-400 italic text-xs">No contact info</span>
+                        <span className="text-slate-400 italic text-xs">{t('clients.noContactInfo')}</span>
                       )}
                     </td>
                     <td className="px-6 py-4">
                       {client.is_high_risk ? (
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                          <ShieldAlert className="h-3.5 w-3.5" /> High Risk
+                          <ShieldAlert className="h-3.5 w-3.5" /> {t('clients.highRisk')}
                         </div>
                       ) : (
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-                          <ShieldCheck className="h-3.5 w-3.5" /> Verified
+                          <ShieldCheck className="h-3.5 w-3.5" /> {t('clients.verified')}
                         </div>
                       )}
                     </td>

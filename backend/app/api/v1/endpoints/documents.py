@@ -1,4 +1,5 @@
 from typing import List, Annotated, Optional
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,7 +16,7 @@ from app.crud.tag import crud_tag
 from app.crud.summary import crud_summary # Import CRUD for Summary
 from app.crud.document_metadata import crud_document_metadata
 from app.db.models.user import User as DBUser
-from app.db.models.document import Document as DBDocument
+from app.db.models.document import Document as DBDocument, DocumentProcessingStatus
 from app.db.models.tag import Tag as DBTag
 from app.services.llm import llm_service # Import LLM Service for summary generation
 from app.services.metadata_extraction import metadata_extraction_service
@@ -24,6 +25,7 @@ from app.services.smart_router import smart_router
 from app.services.document_processing_task import document_processing_service
 from app.services.smart_collections import smart_collections_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/recent")
@@ -63,61 +65,135 @@ async def upload_document(
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
 ):
     """
-    Upload a new document instantly and trigger async OCR and AI analysis in the background.
-    """
-    from app.services.storage import storage_service
-    from app.services.ocr import ocr_service
-    from app.services.document_intelligence import document_intelligence_service
-    from app.db.models.case import Case as DBCase
-    
-    # Verify case exists if provided
-    if case_id and case_id != 0:
-        case = await db.get(DBCase, case_id)
-        if not case:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case with id {case_id} not found")
-    
-    # Upload file to storage
-    upload_path = f"cases/{case_id}/documents" if case_id and case_id != 0 else "inbox/unprocessed"
-    s3_url = await storage_service.upload_file(file, upload_path)
-    
-    # Get actual file path for background OCR processing
-    file_path = await storage_service.get_file_path(f"{upload_path}/{file.filename}")
-    
-    # 1. Create a placeholder Document in the Database instantly
-    document_in = DocumentCreate(
-        filename=file.filename or "unknown",
-        s3_url=s3_url,
-        case_id=case_id if case_id and case_id != 0 else None,
-        content="Processing text...",
-        classification="Pending Analysis",
-        language=None,
-        page_count=0,
-    )
-    document = await document_crud.create(db, document_in, current_user.id, current_user.organization_id)
-    
-    # 2. Queue Background Task for Heavy AI OCR & Summarization & Vector Embeddings
-    background_tasks.add_task(
-        document_processing_service.process_document_background,
-        db=db,
-        document_id=document.id,
-        file_path=str(file_path),
-        user_id=current_user.id,
-        organization_id=current_user.organization_id
-    )
+    Upload a new document instantly and trigger async OCR + AI analysis.
 
-    # 3. Audit Log
+    Processing flow:
+      1. Save file to disk.
+      2. Insert a placeholder Document row (status=PENDING) — returned immediately.
+      3. Try to queue a Celery task (optional fast-path).
+      4. If Celery is unavailable, fall back to a FastAPI BackgroundTask.
+    The UI polls GET /{id}/status to track progress.
+    """
+    import traceback as tb
+    from app.services.storage import storage_service
+    from app.db.models.case import Case as DBCase
+
     try:
-        await log_audit(db, current_user, "document_upload", {"document_id": document.id, "filename": document.filename})
+        # ── Validate case if provided ──────────────────────────────────────
+        if case_id and case_id != 0:
+            case = await db.get(DBCase, case_id)
+            if not case:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Case {case_id} not found",
+                )
+
+        # ── Save file ──────────────────────────────────────────────────────
+        upload_path = (
+            f"cases/{case_id}/documents" if case_id and case_id != 0
+            else "inbox/unprocessed"
+        )
+        # upload_file returns (url, absolute_path) — use both directly
+        s3_url, file_path = await storage_service.upload_file(file, upload_path)
+
+        # ── Create DB placeholder ──────────────────────────────────────────
+        document_in = DocumentCreate(
+            filename=file.filename or "unknown",
+            s3_url=s3_url,
+            case_id=case_id if case_id and case_id != 0 else None,
+            content=None,              # will be filled by background processing
+            classification="Pending Analysis",
+            language=None,
+            page_count=0,
+        )
+        document = await document_crud.create(
+            db, document_in, current_user.id, current_user.organization_id
+        )
+
+        # ── Queue processing ───────────────────────────────────────────────
+        celery_queued = False
+        try:
+            from app.workers.document_tasks import process_document_pipeline
+            from app.core.celery import safe_task_delay
+            safe_task_delay(
+                process_document_pipeline,
+                document_id=document.id,
+                file_path=str(file_path),
+                user_id=current_user.id,
+                organization_id=current_user.organization_id,
+            )
+            celery_queued = True
+            logger.info("[Doc %d] Queued via Celery.", document.id)
+        except Exception as celery_err:
+            logger.warning(
+                "[Doc %d] Celery unavailable (%s) — falling back to BackgroundTask.",
+                document.id, celery_err,
+            )
+
+        if not celery_queued:
+            # Always-available fallback: FastAPI BackgroundTask runs in-process
+            # Db session is created within the background task itself
+            background_tasks.add_task(
+                document_processing_service.process_document_background,
+                document_id=document.id,
+                file_path=str(file_path),
+                user_id=current_user.id,
+                organization_id=current_user.organization_id,
+            )
+            logger.info("[Doc %d] Queued via BackgroundTask.", document.id)
+
+        # ── Audit log (non-fatal) ──────────────────────────────────────────
+        try:
+            await log_audit(
+                db=db,
+                event_type="document_upload",
+                organization_id=current_user.organization_id,
+                user_id=current_user.id,
+                resource_type="document",
+                resource_id=str(document.id),
+                metadata_json={"filename": document.filename},
+            )
+        except Exception as audit_err:
+            logger.warning("Audit log failed (non-fatal): %s", audit_err)
+
+        # ── Return immediately ─────────────────────────────────────────────
+        result = await db.execute(
+            select(DBDocument)
+            .options(selectinload(DBDocument.tags))
+            .filter(DBDocument.id == document.id)
+        )
+        return result.scalars().first()
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Failed to create audit log: {e}")
+        logger.error("UPLOAD ENDPOINT CRASHED:\n%s", tb.format_exc())
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@router.get("/{document_id}/status")
+async def get_document_status(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: DBUser = Depends(RoleChecker(list(UserRole))),
+):
+    """
+    Get real-time granular processing status of a document.
+    """
+    document = await document_crud.get(db, document_id)
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        
+    verify_resource_access(document, current_user)
     
-    # 4. Return instantly to unblock UI
-    # Re-fetch the document with tags eager-loaded to avoid MissingGreenlet errors during Pydantic serialization
-    result = await db.execute(
-        select(DBDocument).options(selectinload(DBDocument.tags)).filter(DBDocument.id == document.id)
-    )
-    document_with_tags = result.scalars().first()
-    return document_with_tags
+    return {
+        "id": document.id,
+        "status": document.processing_status.value if document.processing_status else "pending",
+        "stage": document.processing_stage,
+        "progress": document.processing_progress,
+        "processed_chunks": document.processed_chunks,
+        "total_chunks": document.total_chunks
+    }
 
 @router.get("/", response_model=List[DocumentSchema])
 async def read_documents(
@@ -220,7 +296,6 @@ async def update_document(
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
 ):
-    """
     document = await document_crud.get(db, document_id)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -230,7 +305,15 @@ async def update_document(
     # Optional: Add authorization check
     
     # Audit Log
-    await log_audit(db, current_user, "document_update", {"document_id": document.id, "changes": document_in.model_dump(exclude_unset=True)})
+    await log_audit(
+        db=db, 
+        event_type="document_update", 
+        organization_id=current_user.organization_id, 
+        user_id=current_user.id,
+        resource_type="document",
+        resource_id=str(document.id),
+        metadata_json={"changes": document_in.model_dump(exclude_unset=True)}
+    )
     
     return document
 
@@ -240,18 +323,39 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
 ):
-    """
+    from app.services.storage import storage_service
+
     document = await document_crud.get(db, document_id)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     verify_resource_access(document, current_user)
 
+    # Save URL before deleting DB row (cascade will wipe it)
+    s3_url = document.s3_url
+
     await document_crud.delete(db, document_id)
-        
+
+    # Delete the physical file from disk (best-effort — never fail the request)
+    if s3_url:
+        deleted = await storage_service.delete_file_by_url(s3_url)
+        if deleted:
+            logger.info("[Doc %d] Physical file deleted: %s", document_id, s3_url)
+        else:
+            logger.warning("[Doc %d] File not found on disk (already deleted?): %s",
+                          document_id, s3_url)
+
     # Audit Log
-    await log_audit(db, current_user, "document_delete", {"document_id": document_id})
-    
+    await log_audit(
+        db=db,
+        event_type="document_delete",
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        resource_type="document",
+        resource_id=str(document_id),
+        metadata_json={},
+    )
     return
+
 
 @router.post("/{document_id}/ocr", response_model=DocumentSchema)
 async def trigger_document_ocr(
@@ -307,7 +411,15 @@ async def classify_document(
     await db.refresh(document)
     
     # Audit Log
-    await log_audit(db, current_user, "document_classify", {"document_id": document.id, "classification": document.classification})
+    await log_audit(
+        db=db, 
+        event_type="document_classify", 
+        organization_id=current_user.organization_id, 
+        user_id=current_user.id,
+        resource_type="document",
+        resource_id=str(document.id),
+        metadata_json={"classification": document.classification}
+    )
     
     return document
 
@@ -318,7 +430,6 @@ async def add_tag_to_document(
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
 ):
-    """
     document = await document_crud.get(db, document_id)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -341,7 +452,6 @@ async def remove_tag_from_document(
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
 ):
-    """
     document = await document_crud.get(db, document_id)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
@@ -455,7 +565,10 @@ async def get_document_summary(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not found for this document")
     return summary
 
+
+
 @router.get("/{document_id}/text")
+
 async def get_document_text(
     document_id: int,
     db: AsyncSession = Depends(get_db),
@@ -508,39 +621,91 @@ async def get_document_intelligence(
 ):
     """
     Get comprehensive AI-extracted intelligence for a document.
-    Returns all structured data: metadata, summary, tags, classification.
+    Returns structured data: metadata, summary, tags, classification.
+
+    Entities are always returned as rich dicts:
+      {name, role, id_number, contact, firm, bar_number}
+    so the DocumentViewer Entities tab can render all fields without
+    needing to normalise on the client side.
     """
     document = await document_crud.get(db, document_id)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     verify_resource_access(document, current_user)
-    
+
     metadata = await crud_document_metadata.get_by_document_id(db, document_id)
     summary = await crud_summary.get_by_document_id(db, document_id)
-    
+
     result = await db.execute(
         select(DBDocument).options(selectinload(DBDocument.tags)).filter(DBDocument.id == document_id)
     )
     doc_with_tags = result.scalars().first()
-    
+
+    def _normalise_entities(raw: list) -> list:
+        """
+        Ensure every entity is a rich dict regardless of how it was
+        originally stored (legacy plain strings, partial dicts, full dicts).
+        """
+        normalised = []
+        for item in (raw or []):
+            if isinstance(item, dict):
+                normalised.append({
+                    "name":       item.get("name", ""),
+                    "role":       item.get("role", ""),
+                    "id_number":  item.get("id_number"),
+                    "contact":    item.get("contact"),
+                    "firm":       item.get("firm"),
+                    "bar_number": item.get("bar_number"),
+                })
+            elif isinstance(item, str) and item.strip():
+                normalised.append({
+                    "name": item, "role": "", "id_number": None,
+                    "contact": None, "firm": None, "bar_number": None,
+                })
+        return normalised
+
+    def _normalise_dates(raw: list) -> list:
+        """Ensure dates are always dicts with {date, description, type}."""
+        out = []
+        for item in (raw or []):
+            if isinstance(item, dict):
+                out.append(item)
+            elif isinstance(item, str) and item.strip():
+                out.append({"date": item, "description": None, "type": None})
+        return out
+
+    def _normalise_amounts(raw: list) -> list:
+        """Ensure amounts are always dicts with {amount, currency, description, payer, payee}."""
+        out = []
+        for item in (raw or []):
+            if isinstance(item, dict):
+                out.append(item)
+            elif isinstance(item, str) and item.strip():
+                out.append({"amount": item, "currency": None, "description": None,
+                            "payer": None, "payee": None})
+        return out
+
     return {
         "document_id": document.id,
-        "filename": document.filename,
+        "filename":    document.filename,
         "classification": document.classification,
-        "language": document.language,
-        "page_count": document.page_count,
-        "case_id": document.case_id,
-        "created_at": document.created_at,
+        "language":    document.language,
+        "page_count":  document.page_count,
+        "case_id":     document.case_id,
+        "created_at":  document.created_at,
+        "processing_status": (
+            document.processing_status.value if document.processing_status else "pending"
+        ),
         "metadata": {
-            "dates": metadata.dates if metadata else [],
-            "entities": metadata.entities if metadata else [],
-            "amounts": metadata.amounts if metadata else [],
+            "dates":        _normalise_dates(metadata.dates if metadata else []),
+            "entities":     _normalise_entities(metadata.entities if metadata else []),
+            "amounts":      _normalise_amounts(metadata.amounts if metadata else []),
             "case_numbers": metadata.case_numbers if metadata else [],
         } if metadata else None,
         "summary": {
-            "content": summary.content if summary else None,
-            "key_dates": summary.key_dates if summary else [],
-            "parties": summary.parties if summary else [],
+            "content":           summary.content if summary else None,
+            "key_dates":         _normalise_dates(summary.key_dates if summary else []),
+            "parties":           summary.parties if summary else [],
             "missing_documents": summary.missing_documents_suggestion if summary else None,
         } if summary else None,
         "tags": [tag.name for tag in doc_with_tags.tags] if doc_with_tags else [],
@@ -585,32 +750,6 @@ async def extract_document_metadata(
         metadata = await crud_document_metadata.update(db, document_id, metadata_in)
     else:
         metadata = await crud_document_metadata.create(db, metadata_in)
-        
-    # ------------- SMART COLLECTIONS AUTO-ROUTING -------------
-    # Dynamically map the AI-extracted routing keys into Tag Collections
-    tags_to_append = []
-    org_id = document.organization_id
-
-    for rid in extracted.get("routing_ids", []):
-        t = await crud_tag.find_or_create(db, name=str(rid), category="client_id", organization_id=org_id)
-        tags_to_append.append(t)
-
-    for proj in extracted.get("routing_projects", []):
-        t = await crud_tag.find_or_create(db, name=str(proj), category="project", organization_id=org_id)
-        tags_to_append.append(t)
-
-    for org_name in extracted.get("routing_organizations", []):
-        t = await crud_tag.find_or_create(db, name=str(org_name), category="organization", organization_id=org_id)
-        tags_to_append.append(t)
-
-    if tags_to_append:
-        # Load the document's existing tags to append the new ones safely
-        await db.refresh(document, ['tags'])
-        for t in tags_to_append:
-            if t not in document.tags:
-                document.tags.append(t)
-        await db.commit()
-    # ----------------------------------------------------------
 
     return metadata
 
@@ -644,18 +783,10 @@ async def assign_document_to_collections(
         document.content, document.filename
     )
 
-    # 2. Merge regex metadata
-    try:
-        regex_meta = await metadata_extraction_service.extract_metadata(
-            document.content, document.language or "en"
-        )
-        ai_analysis["routing_ids"] = regex_meta.get("routing_ids", [])
-        ai_analysis["routing_projects"] = regex_meta.get("routing_projects", [])
-        ai_analysis["routing_organizations"] = regex_meta.get("routing_organizations", [])
-    except Exception:
-        ai_analysis.setdefault("routing_ids", [])
-        ai_analysis.setdefault("routing_projects", [])
-        ai_analysis.setdefault("routing_organizations", [])
+    # 2. Merge regex metadata — DISABLED to use only AI tags
+    ai_analysis["routing_ids"] = []
+    ai_analysis["routing_projects"] = []
+    ai_analysis["routing_organizations"] = []
 
     # 3. Run SmartCollections routing
     tags_before = {t.id for t in document.tags}
@@ -714,17 +845,10 @@ async def bulk_assign_collections(
             ai_analysis = await document_intelligence_service.analyze_legal_document(
                 doc.content, doc.filename
             )
-            try:
-                regex_meta = await metadata_extraction_service.extract_metadata(
-                    doc.content, doc.language or "en"
-                )
-                ai_analysis["routing_ids"] = regex_meta.get("routing_ids", [])
-                ai_analysis["routing_projects"] = regex_meta.get("routing_projects", [])
-                ai_analysis["routing_organizations"] = regex_meta.get("routing_organizations", [])
-            except Exception:
-                ai_analysis.setdefault("routing_ids", [])
-                ai_analysis.setdefault("routing_projects", [])
-                ai_analysis.setdefault("routing_organizations", [])
+            # Regex metadata DISABLED for collections
+            ai_analysis["routing_ids"] = []
+            ai_analysis["routing_projects"] = []
+            ai_analysis["routing_organizations"] = []
 
             await smart_collections_service.route_document_to_collections(db, doc, ai_analysis)
             processed += 1
@@ -737,3 +861,67 @@ async def bulk_assign_collections(
         "synced": processed,
         "already_categorized": len(all_docs) - len(docs_needing_sync),
     }
+
+
+@router.post("/retry-ai-analysis/{document_id}", status_code=status.HTTP_200_OK)
+async def retry_ai_analysis(
+    document_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
+):
+    """
+    Retry AI analysis for a document that was completed without AI (due to quota or errors).
+    """
+    document = await document_crud.get(db, document_id)
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    
+    verify_resource_access(document, current_user)
+    
+    if not document.content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document has no content to analyze"
+        )
+    
+    # Reset processing status
+    document.processing_status = DocumentProcessingStatus.PROCESSING
+    document.processing_stage = "retrying_ai_analysis"
+    document.processing_progress = 10.0
+    await db.commit()
+    
+    # Queue the processing task again
+    from app.workers.document_tasks import process_document_pipeline
+    from app.core.celery import safe_task_delay
+    from app.services.storage import storage_service
+    
+    try:
+        # Get file path
+        file_path = await storage_service.get_file_path(
+            f"inbox/unprocessed/{document.filename}" if not document.case_id 
+            else f"cases/{document.case_id}/documents/{document.filename}"
+        )
+        
+        safe_task_delay(
+            process_document_pipeline,
+            document_id=document.id,
+            file_path=str(file_path),
+            user_id=current_user.id,
+            organization_id=current_user.organization_id
+        )
+        
+        return {
+            "message": "AI analysis queued for retry",
+            "document_id": document_id,
+            "status": "processing"
+        }
+    except Exception as e:
+        logger.error(f"Failed to queue retry for document {document_id}: {e}")
+        document.processing_status = DocumentProcessingStatus.FAILED
+        document.processing_stage = "retry_queue_failed"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue retry: {str(e)}"
+        )

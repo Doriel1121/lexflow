@@ -17,7 +17,7 @@ class DocumentMetadata(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    document = relationship("Document", backref="metadata")
+    document = relationship("Document", back_populates="document_metadata")
 
     def __repr__(self):
         return f"<DocumentMetadata(document_id={self.document_id})>"

@@ -98,6 +98,9 @@ class SmartCollectionsService:
             # 5. document_type — document_subtype field
             tags_to_add += await self._tags_for_document_type(db, ai_analysis, org_id)
 
+            # 6. AI tags — generic tags field from AI analysis
+            tags_to_add += await self._tags_for_ai_tags(db, ai_analysis, org_id)
+
             if not tags_to_add:
                 return
 
@@ -260,6 +263,25 @@ class SmartCollectionsService:
             db, name=subtype, category="document_type", organization_id=org_id
         )
         return [t]
+
+    async def _tags_for_ai_tags(
+        self,
+        db: AsyncSession,
+        ai_analysis: Dict[str, Any],
+        org_id: Optional[int],
+    ) -> list:
+        """Process the generic 'tags' list from AI analysis."""
+        seen: set[str] = set()
+        tags = []
+        for tag_name in ai_analysis.get("tags", []):
+            name = _clean(str(tag_name))
+            if name and name not in seen:
+                seen.add(name)
+                t = await crud_tag.find_or_create(
+                    db, name=name, category="ai_tag", organization_id=org_id
+                )
+                tags.append(t)
+        return tags
 
 
 smart_collections_service = SmartCollectionsService()

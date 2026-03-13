@@ -1,29 +1,21 @@
 from typing import Dict, List, Any
-import google.generativeai as genai
 import os
-import json
+from app.core.ai_provider import get_ai_provider
 
 class DocumentIntelligenceService:
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-2.5-flash')
-        else:
-            self.model = None
+        self.provider = get_ai_provider()
     
     async def analyze_legal_document(self, text: str, filename: str) -> Dict[str, Any]:
         """
         Comprehensive legal document analysis extracting all critical information
         """
-        if not self.model:
+        if not self.provider.active:
             return self._fallback_analysis(text, filename)
-        
-        try:
-            prompt = f"""Analyze this legal document and extract ALL relevant information in JSON format.
+        prompt = f"""Analyze this legal document and extract ALL relevant information in JSON format.
 
 Document: {filename}
-Content: {text[:8000]}
+Content: {text}
 
 Extract and return ONLY valid JSON with this exact structure:
 {{
@@ -37,7 +29,12 @@ Extract and return ONLY valid JSON with this exact structure:
     {{"name": "string", "firm": "string", "representing": "string", "bar_number": "string or null"}}
   ],
   "key_dates": [
-    {{"date": "YYYY-MM-DD", "description": "string", "type": "string (deadline, execution, expiration)"}}
+    {{
+      "date": "YYYY-MM-DD", 
+      "description": "string (the semantic reason for this date, e.g., 'Last day to file response to motion')", 
+      "type": "string (hearing, filing, response, appeal, statute_of_limitations, other)",
+      "is_critical_deadline": "boolean (true if this is a date a lawyer must not miss)"
+    }}
   ],
   "financial_terms": [
     {{"amount": "string", "currency": "string", "description": "string (what this amount represents)", "payer": "string or null", "payee": "string or null"}}
@@ -62,24 +59,11 @@ IMPORTANT:
 - For financial_terms: Include who pays (payer) and who receives (payee) if mentioned
 - Be thorough and extract ALL information found. If a field has no data, use empty array [] or empty string "" or null.
 Return ONLY the JSON, no other text."""
-
-            response = self.model.generate_content(prompt)
-            result_text = response.text.strip()
-            
-            # Clean up markdown code blocks if present
-            if result_text.startswith("```json"):
-                result_text = result_text[7:]
-            if result_text.startswith("```"):
-                result_text = result_text[3:]
-            if result_text.endswith("```"):
-                result_text = result_text[:-3]
-            
-            result = json.loads(result_text.strip())
-            return result
-            
-        except Exception as e:
-            print(f"AI analysis error: {e}")
+        result = await self.provider.generate_json(prompt)
+        if not result:
+            # If it's literally empty, use fallback
             return self._fallback_analysis(text, filename)
+        return result
     
     def _fallback_analysis(self, text: str, filename: str) -> Dict[str, Any]:
         """Fallback when AI is unavailable"""

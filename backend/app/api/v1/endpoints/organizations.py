@@ -195,6 +195,57 @@ async def deactivate_member(
     }
 
 
+@router.get("/audit-logs", response_model=dict)
+async def get_org_audit_logs(
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: DBUser = Depends(RoleChecker([UserRole.ORG_ADMIN])),
+):
+    """
+    Get organization audit logs securely.
+    ORGs only see their own logs.
+    """
+    from app.db.models.audit_log import AuditLog
+    
+    if limit > 500:
+        limit = 500
+        
+    query = select(AuditLog).filter(
+        AuditLog.organization_id == current_user.organization_id
+    ).order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit)
+    
+    result = await db.execute(query)
+    logs = result.scalars().all()
+    
+    count_query = select(func.count(AuditLog.id)).filter(
+        AuditLog.organization_id == current_user.organization_id
+    )
+    total_count = await db.scalar(count_query)
+    
+    return {
+        "items": [
+            {
+                "id": log.id,
+                "event_type": log.event_type,
+                "user_id": log.user_id,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "http_method": log.http_method,
+                "path": log.path,
+                "status_code": log.status_code,
+                "ip_address": log.ip_address,
+                "timestamp": log.timestamp.isoformat(),
+                "hash": log.hash,
+                "previous_hash": log.previous_hash
+            } for log in logs
+        ],
+        "total": total_count,
+        "limit": limit,
+        "offset": offset
+    }
+
+
 @router.get("/{org_id}", response_model=dict)
 async def get_org_details(
     org_id: int,
@@ -227,7 +278,38 @@ async def get_org_details(
     return {
         "id": org.id,
         "name": org.name,
+        "ai_battery_save_mode": org.ai_battery_save_mode,
         "created_at": org.created_at,
         "member_count": sum(role_counts.values()),
         "role_distribution": {role.value if role else "unassigned": count for role, count in role_counts.items()},
+    }
+
+@router.patch("/{org_id}/settings", response_model=dict)
+async def update_org_settings(
+    org_id: int,
+    settings_update: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN])),
+):
+    """
+    Update organization-wide settings.
+    RESTRICTED: Only System Admins (ADMIN) can change these settings.
+    """
+    org = await db.get(DBOrganization, org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    
+    # Update fields
+    if "ai_battery_save_mode" in settings_update:
+        org.ai_battery_save_mode = settings_update["ai_battery_save_mode"]
+    
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    
+    return {
+        "id": org.id,
+        "name": org.name,
+        "ai_battery_save_mode": org.ai_battery_save_mode,
+        "message": "Organization settings updated successfully"
     }

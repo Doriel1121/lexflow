@@ -229,6 +229,7 @@ async def list_all_organizations(
             "name": o.name,
             "slug": o.slug,
             "is_active": o.is_active,
+            "ai_battery_save_mode": o.ai_battery_save_mode,
             "created_at": o.created_at,
             "member_count": member_counts.get(o.id, 0),
         }

@@ -1,95 +1,366 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import api from '../services/api';
-import { Case } from '../types';
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Search,
+  Filter,
+  Plus,
+  MoreVertical,
+  Calendar,
+  User,
+  FileText,
+  Briefcase,
+  ChevronDown,
+} from "lucide-react";
+import api from "../services/api";
+import { Case } from "../types";
 
 const CasesPage: React.FC = () => {
+  const navigate = useNavigate();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
+
+  // Infinite Scroll State
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [fetchingMore, setFetchingMore] = useState(false);
+  const limit = 50;
+  const observerTarget = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchCases();
+    fetchCases(0);
   }, []);
 
-  const fetchCases = async () => {
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setOpenDropdownId(null);
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
+
+  const fetchCases = async (targetPage: number = 0) => {
     try {
-      setLoading(true);
-      const response = await api.get('/v1/cases/');
-      setCases(response.data);
+      const skip = targetPage * limit;
+      if (targetPage === 0) setLoading(true);
+      else setFetchingMore(true);
+
+      const response = await api.get("/v1/cases/", { params: { skip, limit } });
+      const incomingCases = response.data;
+
+      if (targetPage === 0) {
+        setCases(incomingCases);
+      } else {
+        setCases((prev) => [...prev, ...incomingCases]);
+      }
+
+      setHasMore(incomingCases.length === limit);
+      setPage(targetPage);
       setError(null);
     } catch (err: any) {
-      console.error('Error fetching cases:', err);
-      setError(err.response?.data?.detail || err.message || 'Failed to fetch cases');
+      console.error("Error fetching cases:", err);
+      setError(
+        err.response?.data?.detail || err.message || "Failed to fetch cases",
+      );
     } finally {
       setLoading(false);
+      setFetchingMore(false);
     }
   };
 
-  if (loading) {
-    return <div className="p-4">Loading cases...</div>;
-  }
+  // Intersection Observer for Infinite Scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !fetchingMore) {
+          fetchCases(page + 1);
+        }
+      },
+      { threshold: 1.0 },
+    );
 
-  if (error) {
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, loading, fetchingMore, page]);
+
+  const filteredCases = React.useMemo(() => {
+    return cases.filter((caseItem) => {
+      const matchesSearch =
+        caseItem.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        caseItem.description
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        caseItem.id.toString().includes(searchTerm);
+
+      const matchesStatus =
+        statusFilter === "all" || caseItem.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [cases, searchTerm, statusFilter]);
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "N/A";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles = {
+      open: "bg-success-light text-success-dark border-success/20",
+      pending: "bg-warning-light text-warning-dark border-warning/20",
+      closed: "bg-neutral-100 text-neutral-600 border-neutral-200",
+    };
+    return styles[status as keyof typeof styles] || styles.pending;
+  };
+
+  if (loading && page === 0) {
     return (
-      <div className="p-4">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <strong>Error:</strong> {error}
-        </div>
+      <div className="h-full flex items-center justify-center">
+        <span className="animate-pulse text-neutral-500">Loading cases...</span>
       </div>
     );
   }
 
   return (
-    <div className="p-4">
-      <h1 className="text-3xl font-bold mb-4">Cases</h1>
-      <div className="flex justify-between items-center mb-4">
-        <p>Manage your legal cases.</p>
-        <Link to="/cases/new" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-          Create New Case
-        </Link>
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-serif font-bold text-neutral-900 tracking-tight">
+          Cases
+        </h1>
+        <p className="text-neutral-600 mt-1">
+          Manage and track all your legal cases
+        </p>
       </div>
-      
-      {cases.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 text-center">
-          <p className="text-gray-600 dark:text-gray-400">No cases found. Create your first case to get started.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {cases.map((caseItem) => (
-            <div key={caseItem.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{caseItem.title}</h3>
-                <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                  caseItem.status === 'open' ? 'bg-green-100 text-green-800' : 
-                  caseItem.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
-                  'bg-red-100 text-red-800'
-                }`}>
-                  {caseItem.status.toUpperCase()}
-                </span>
-              </div>
-              <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                {caseItem.description || 'No description'}
-              </p>
-              <div className="text-sm text-gray-500 dark:text-gray-500 mb-3">
-                <p>Case ID: #{caseItem.id}</p>
-                <p>Client ID: {caseItem.client_id}</p>
-              </div>
-              <div className="flex justify-between items-center">
-                <div className="text-xs text-gray-500">
-                  {caseItem.notes?.length || 0} notes • {caseItem.documents?.length || 0} docs
-                </div>
-                <Link 
-                  to={`/cases/${caseItem.id}`} 
-                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 font-medium"
-                >
-                  View Details →
-                </Link>
-              </div>
-            </div>
-          ))}
+
+      {error && (
+        <div className="mb-4 bg-error-light border border-error/20 text-error-dark px-4 py-3 rounded-lg">
+          <strong>Error:</strong> {error}
         </div>
       )}
+
+      {/* Table Container */}
+      <div className="bg-white border border-border-light rounded-lg shadow-legal overflow-hidden flex flex-col flex-1">
+        {/* Toolbar */}
+        <div className="p-4 border-b border-border-light bg-background-secondary flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 flex-1">
+            {/* Search */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search cases by title, ID, or description..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-border-light focus:border-primary-500 focus:ring-2 focus:ring-primary-100 rounded-lg text-sm outline-none transition-all"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div className="relative">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="appearance-none pl-4 pr-10 py-2.5 bg-white border border-border-light rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-all cursor-pointer outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
+              >
+                <option value="all">All Status</option>
+                <option value="open">Open</option>
+                <option value="pending">Pending</option>
+                <option value="closed">Closed</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-2 px-3 py-2.5 bg-white text-neutral-600 border border-border-light rounded-lg hover:bg-neutral-50 text-sm font-medium transition-all">
+              <Filter className="h-4 w-4" />
+              <span>More Filters</span>
+            </button>
+            <Link
+              to="/cases/new"
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-800 transition-all shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+              <span>New Case</span>
+            </Link>
+          </div>
+        </div>
+        {/* Table */}
+        <div className="overflow-x-auto flex-1">
+          {filteredCases.length === 0 ? (
+            <div className="p-12 text-center text-neutral-500">
+              <div className="flex flex-col items-center gap-3">
+                <Briefcase className="h-16 w-16 text-neutral-300" />
+                <p className="font-medium text-lg">No cases found</p>
+                <p className="text-sm text-neutral-400">
+                  {searchTerm || statusFilter !== "all"
+                    ? "Try adjusting your filters"
+                    : "Create your first case to get started"}
+                </p>
+                {!searchTerm && statusFilter === "all" && (
+                  <Link
+                    to="/cases/new"
+                    className="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-800 transition-all"
+                  >
+                    Create New Case
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-neutral-700 font-semibold border-b border-border-light sticky top-0">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-xs uppercase text-start tracking-wider w-12"></th>
+                  <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider">
+                    Case Title
+                  </th>
+                  <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-24">
+                    Status
+                  </th>
+                  <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-32">
+                    Client
+                  </th>
+                  <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-28">
+                    Date
+                  </th>
+                  <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-20">
+                    Docs
+                  </th>
+                  <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-20">
+                    Notes
+                  </th>
+                  <th className="px-2 py-2.5 text-right text-xs uppercase text-start tracking-wider w-12"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-light bg-white">
+                {filteredCases.map((caseItem) => (
+                  <tr
+                    key={caseItem.id}
+                    className="hover:bg-neutral-50 cursor-pointer transition-colors group"
+                    onClick={() => navigate(`/cases/${caseItem.id}`)}
+                  >
+                    <td className="px-4 py-2.5">
+                      <div className="p-1.5 bg-primary-50 rounded text-primary-600 inline-flex">
+                        <Briefcase className="h-3.5 w-3.5" />
+                      </div>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <div className="flex flex-col">
+                        <span className="font-medium text-neutral-900 text-sm truncate">
+                          {caseItem.title}
+                        </span>
+                        <span className="text-xs text-neutral-500">
+                          #{caseItem.id}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadge(caseItem.status)}`}
+                      >
+                        {caseItem.status.charAt(0).toUpperCase() +
+                          caseItem.status.slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5 text-sm text-neutral-700">
+                      Client #{caseItem.client_id}
+                    </td>
+                    <td className="px-2 py-2.5 text-xs text-neutral-600">
+                      {formatDate(caseItem.created_at)}
+                    </td>
+                    <td className="px-2 py-2.5 text-center text-sm text-neutral-600">
+                      {caseItem.documents?.length || 0}
+                    </td>
+                    <td className="px-2 py-2.5 text-center text-sm text-neutral-600">
+                      {caseItem.notes?.length || 0}
+                    </td>
+                    <td className="px-2 py-2.5 text-right relative">
+                      <button
+                        className="p-1 hover:bg-neutral-200 rounded text-neutral-400 hover:text-neutral-600 opacity-0 group-hover:opacity-100 transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenDropdownId(
+                            openDropdownId === caseItem.id ? null : caseItem.id,
+                          );
+                        }}
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                      {openDropdownId === caseItem.id && (
+                        <div
+                          className="absolute right-8 top-8 w-44 bg-white border border-border-light rounded-lg shadow-legal-lg z-50"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="py-1">
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                              onClick={() => navigate(`/cases/${caseItem.id}`)}
+                            >
+                              View Details
+                            </button>
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                              onClick={() => {
+                                setOpenDropdownId(null);
+                                alert("Edit coming soon");
+                              }}
+                            >
+                              Edit Case
+                            </button>
+                            <hr className="my-1 border-neutral-100" />
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error-light"
+                              onClick={() => {
+                                setOpenDropdownId(null);
+                                if (window.confirm("Delete this case?"))
+                                  alert("Delete coming soon");
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Infinite Scroll Sentinel */}
+        {!loading && filteredCases.length > 0 && (
+          <div
+            ref={observerTarget}
+            className="py-4 text-center border-t border-border-light"
+          >
+            {fetchingMore && (
+              <span className="text-sm text-neutral-500 animate-pulse">
+                Loading more cases...
+              </span>
+            )}
+            {!hasMore && cases.length > 0 && (
+              <span className="text-xs text-neutral-400">
+                Showing all {cases.length} cases
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

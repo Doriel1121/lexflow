@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import './lib/i18n';
 import { Layout } from "./components/layout/Layout";
 import Dashboard from "./pages/dashboard/Dashboard";
 import EmailIntake from "./pages/email/EmailIntake";
@@ -8,6 +9,7 @@ import Cases from "./pages/cases/Cases";
 import CaseDetailPage from "./pages/CaseDetailPage";
 import { DocumentViewer } from "./components/documents/DocumentViewer";
 import Settings from "./pages/settings/Settings";
+import OrgAuditLogs from "./pages/settings/OrgAuditLogs";
 import TeamSettings from "./pages/settings/TeamSettings";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -80,6 +82,7 @@ function App() {
             <Route path="collections" element={<CollectionsList />} />
             <Route path="collections/:id" element={<CollectionView />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/audit-logs" element={<OrgAuditLogs />} />
             <Route path="team" element={<TeamSettings />} />
           </Route>
 

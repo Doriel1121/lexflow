@@ -1,6 +1,6 @@
 from typing import Generator, Annotated, List, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import event
@@ -17,6 +17,7 @@ from app.db.models.user import UserRole
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def get_current_user(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)], token: Annotated[str, Depends(oauth2_scheme)]
 ) -> DBUser:
     """Return the user represented by the JWT token.
@@ -66,6 +67,7 @@ async def get_current_user(
         await db.commit()
         await db.refresh(user)
     
+    request.state.user = user
     return user
 
 async def get_current_active_user(

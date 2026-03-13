@@ -1,65 +1,57 @@
 from typing import List
 import os
-import google.generativeai as genai
+from app.core.ai_provider import get_ai_provider
 
 class LLMService:
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
-            # Use gemini-2.5-flash for best performance with Pro subscription
-            self.model = genai.GenerativeModel('gemini-2.5-flash')
-        else:
-            self.model = None
+        self.provider = get_ai_provider()
     
     async def summarize_text(self, text: str, length: str = "medium") -> str:
         try:
-            if not self.model:
+            if not self.provider.active:
                 return f"Summary: {text[:300]}..."
-            response = self.model.generate_content(f"Summarize this legal document concisely:\n\n{text[:4000]}")
-            return response.text
+            response_text = await self.provider.generate_text(f"Summarize this legal document concisely:\n\n{text[:4000]}")
+            return response_text if response_text else f"Summary: {text[:300]}... [AI unavailable]"
         except:
-            return f"Summary: {text[:300]}... [AI unavailable]"
+            return f"Summary: {text[:300]}... [AI error]"
 
     async def generate_embedding(self, text: str) -> List[float]:
         try:
-            if not self.model:
-                return [0.0] * 768
-            # Use the dedicated embedding model
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=text,
-                task_type="retrieval_document"
-            )
-            return result['embedding']
+            if not self.provider.active:
+                return [0.0] * 3072
+            return await self.provider.generate_embedding(text)
         except Exception as e:
             print(f"Error generating embedding: {e}")
-            return [0.0] * 768
+            return [0.0] * 3072
 
     async def extract_key_dates(self, text: str) -> List[str]:
         try:
-            if not self.model:
+            if not self.provider.active:
                 return []
-            response = self.model.generate_content(f"Extract all dates from this text in YYYY-MM-DD format, return as comma-separated list:\n\n{text[:2000]}")
-            return [d.strip() for d in response.text.split(",") if d.strip()]
+            response_text = await self.provider.generate_text(f"Extract all dates from this text in YYYY-MM-DD format, return as comma-separated list:\n\n{text[:2000]}")
+            if not response_text:
+                return []
+            return [d.strip() for d in response_text.split(",") if d.strip()]
         except:
             return []
 
     async def extract_parties(self, text: str) -> List[str]:
         try:
-            if not self.model:
+            if not self.provider.active:
                 return []
-            response = self.model.generate_content(f"Extract all party names (people, companies) from this legal text, return as comma-separated list:\n\n{text[:2000]}")
-            return [p.strip() for p in response.text.split(",") if p.strip()]
+            response_text = await self.provider.generate_text(f"Extract all party names (people, companies) from this legal text, return as comma-separated list:\n\n{text[:2000]}")
+            if not response_text:
+                return []
+            return [p.strip() for p in response_text.split(",") if p.strip()]
         except:
             return []
 
     async def suggest_missing_documents(self, case_context: str) -> str:
         try:
-            if not self.model:
+            if not self.provider.active:
                 return "AI suggestions unavailable"
-            response = self.model.generate_content(f"Based on this case, suggest what documents might be missing:\n\n{case_context[:2000]}")
-            return response.text
+            response_text = await self.provider.generate_text(f"Based on this case, suggest what documents might be missing:\n\n{case_context[:2000]}")
+            return response_text if response_text else "AI suggestions unavailable"
         except:
             return "AI suggestions unavailable"
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Users, Mail, UserPlus, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import api from '../../services/api';
 
 interface TeamMember {
@@ -11,6 +12,7 @@ interface TeamMember {
 }
 
 export default function TeamSettings() {
+  const { t } = useTranslation();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -70,8 +72,8 @@ export default function TeamSettings() {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">Team Management</h1>
-        <p className="text-muted-foreground mt-1">Manage workspace members and their roles.</p>
+        <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">{t('team.title')}</h1>
+        <p className="text-muted-foreground mt-1">{t('team.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -81,12 +83,12 @@ export default function TeamSettings() {
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-purple-600" />
-              Invite Teammate
+              {t('team.inviteTeammate')}
             </h2>
             
             <form onSubmit={handleInvite} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">{t('team.emailAddress')}</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <input 
@@ -101,16 +103,16 @@ export default function TeamSettings() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">{t('team.role')}</label>
                 <select
                   value={inviteRole}
                   onChange={e => setInviteRole(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
                 >
-                  <option value="lawyer">Lawyer (Standard)</option>
-                  <option value="assistant">Legal Assistant</option>
-                  <option value="viewer">Viewer (Read Only)</option>
-                  <option value="org_admin">Organization Admin</option>
+                  <option value="lawyer">{t('team.roles.lawyer')}</option>
+                  <option value="assistant">{t('team.roles.assistant')}</option>
+                  <option value="viewer">{t('team.roles.viewer')}</option>
+                  <option value="org_admin">{t('team.roles.orgAdmin')}</option>
                 </select>
               </div>
 
@@ -125,7 +127,7 @@ export default function TeamSettings() {
                 disabled={isInviting || !inviteEmail}
                 className="w-full flex items-center justify-center gap-2 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
               >
-                {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send Invitation'}
+                {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('team.sendInvitation')}
               </button>
             </form>
           </div>
@@ -137,10 +139,10 @@ export default function TeamSettings() {
             <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
                 <Users className="h-4 w-4" />
-                Active Members
+                {t('team.activeMembers')}
               </h2>
               <span className="bg-white px-2.5 py-1 rounded-full text-xs font-medium text-slate-600 border border-slate-200 shadow-sm">
-                {members.length} Users
+                {t('team.usersCount', { count: members.length })}
               </span>
             </div>
             
@@ -148,11 +150,11 @@ export default function TeamSettings() {
               {loading ? (
                 <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin mb-4 text-purple-600" />
-                  Loading team directory...
+                  {t('team.loading')}
                 </div>
               ) : members.length === 0 ? (
                 <div className="p-12 text-center text-slate-500">
-                  No team members found.
+                  {t('team.noMembers')}
                 </div>
               ) : (
                 members.map((member) => (
@@ -162,7 +164,7 @@ export default function TeamSettings() {
                         {member.full_name ? member.full_name.charAt(0).toUpperCase() : member.email.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-semibold text-slate-800">{member.full_name || 'Pending User'}</p>
+                        <p className="font-semibold text-slate-800">{member.full_name || t('team.pendingUser')}</p>
                         <p className="text-sm text-slate-500">{member.email}</p>
                       </div>
                     </div>

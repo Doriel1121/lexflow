@@ -69,7 +69,15 @@ async def create_case(
     
     # Audit Log
     try:
-        await log_audit(db, current_user, "case_create", {"case_id": case.id, "title": case.title})
+        await log_audit(
+            db=db,
+            event_type="case_create",
+            organization_id=current_user.organization_id,
+            user_id=current_user.id,
+            resource_type="case",
+            resource_id=str(case.id),
+            metadata_json={"title": case.title}
+        )
     except Exception as e:
         print(f"Failed to create audit log: {e}")
     
@@ -83,7 +91,8 @@ async def create_case(
         "created_at": case.created_at,
         "updated_at": case.updated_at,
         "notes": [],
-        "documents": []
+        "documents": [],
+        "deadlines": []
     }
 
 @router.get("/", response_model=List[CaseSchema])
@@ -114,7 +123,8 @@ async def read_cases(
         "created_at": c.created_at,
         "updated_at": c.updated_at,
         "notes": [],
-        "documents": []
+        "documents": [],
+        "deadlines": []
     } for c in cases]
 
 @router.get("/{case_id}", response_model=CaseSchema)
@@ -127,9 +137,14 @@ async def read_case_by_id(
     Get a specific case by ID.
     """
     from sqlalchemy.orm import selectinload
+    from app.db.models.deadline import Deadline as DBDeadline
     case = await db.execute(
         select(DBCase)
-        .options(selectinload(DBCase.notes), selectinload(DBCase.documents))
+        .options(
+            selectinload(DBCase.notes), 
+            selectinload(DBCase.documents),
+            selectinload(DBCase.deadlines).selectinload(DBDeadline.document)
+        )
         .filter(DBCase.id == case_id)
     )
     case = case.scalars().first()
@@ -139,7 +154,24 @@ async def read_case_by_id(
     
     verify_resource_access(case, current_user)
     
-    # Manually add documents to response
+    # Manually add documents and deadlines to response
+    deadlines_with_doc = []
+    for d in case.deadlines:
+        d_dict = {
+            "id": d.id,
+            "deadline_date": d.deadline_date,
+            "deadline_type": d.deadline_type,
+            "description": d.description,
+            "confidence_score": d.confidence_score,
+            "document_id": d.document_id,
+            "document_name": d.document.filename if d.document else "Unknown Document",
+            "case_id": d.case_id,
+            "organization_id": d.organization_id,
+            "created_at": d.created_at,
+            "updated_at": d.updated_at
+        }
+        deadlines_with_doc.append(d_dict)
+
     case_dict = {
         "id": case.id,
         "title": case.title,
@@ -150,6 +182,7 @@ async def read_case_by_id(
         "created_at": case.created_at,
         "updated_at": case.updated_at,
         "notes": case.notes,
+        "deadlines": deadlines_with_doc,
         "documents": [{
             "id": d.id,
             "filename": d.filename,
@@ -179,7 +212,15 @@ async def update_case(
     # Optional: Add authorization check if current_user has permission to update this case
     
     # Audit Log
-    await log_audit(db, current_user, "case_update", {"case_id": case.id, "changes": case_in.model_dump(exclude_unset=True)})
+    await log_audit(
+        db=db,
+        event_type="case_update",
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        resource_type="case",
+        resource_id=str(case.id),
+        metadata_json={"changes": case_in.model_dump(exclude_unset=True)}
+    )
     
     return case
 
@@ -201,7 +242,15 @@ async def delete_case(
     # Optional: Add authorization check if current_user has permission to delete this case
     
     # Audit Log
-    await log_audit(db, current_user, "case_delete", {"case_id": case_id})
+    await log_audit(
+        db=db,
+        event_type="case_delete",
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        resource_type="case",
+        resource_id=str(case_id),
+        metadata_json={}
+    )
     
     return
 
@@ -287,6 +336,14 @@ async def assign_document_to_case(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case or Document assignment failed")
         
     # Audit Log
-    await log_audit(db, current_user, "case_assign_document", {"case_id": case_id, "document_id": document_id})
+    await log_audit(
+        db=db,
+        event_type="case_assign_document",
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        resource_type="case",
+        resource_id=str(case_id),
+        metadata_json={"document_id": document_id}
+    )
     
     return case

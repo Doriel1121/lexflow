@@ -14,6 +14,7 @@ from app.crud.user import user_crud
 from app.schemas.token import Token
 from app.schemas.user import UserCreate
 from app.core.config import settings
+from app.core.audit_middleware import AuditMiddleware
 
 app = FastAPI(
     title="LexFlow Backend MVP",
@@ -23,6 +24,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Audit Middleware
+app.add_middleware(AuditMiddleware)
 
 # CORS middleware
 app.add_middleware(

@@ -1,8 +1,14 @@
-# Use an official Python runtime as a parent image
-FROM python:3.11-slim-buster
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app/backend
+
+# Install system dependencies for OCR and PDF processing
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-heb \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install any needed packages specified in requirements.txt
 COPY requirements.txt .

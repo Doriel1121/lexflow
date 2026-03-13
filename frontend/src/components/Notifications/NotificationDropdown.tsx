@@ -37,7 +37,8 @@ export function NotificationDropdown() {
   };
 
   const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const utcDateStr = dateStr.endsWith('Z') ? dateStr : `${dateStr}Z`;
+    const date = new Date(utcDateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -58,14 +59,14 @@ export function NotificationDropdown() {
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white border-2 border-white shadow-sm">
+          <span className="absolute top-0 end-0 flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white border-2 border-white shadow-sm">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 max-h-[32rem] bg-white border border-border rounded-xl shadow-lg overflow-hidden z-50 flex flex-col">
+        <div className="absolute end-0 top-full mt-2 w-80 max-h-[32rem] bg-white border border-border rounded-xl shadow-lg overflow-hidden z-50 flex flex-col">
           <div className="px-4 py-3 bg-slate-50 border-b border-border flex justify-between items-center">
             <h3 className="font-semibold text-slate-800">Notifications</h3>
             {unreadCount > 0 && (

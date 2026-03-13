@@ -33,9 +33,19 @@ class Document(Base):
     classification = Column(String, nullable=True) # Type of document (e.g., Contract, Ruling)
     language = Column(String, nullable=True) # e.g., 'he', 'en'
     page_count = Column(Integer, default=0) # Number of pages in document
+
+    # Email auto-ingestion provenance
+    ingestion_method = Column(String(20), default="manual")  # "manual" | "email_inbound"
+    email_from = Column(String(255), nullable=True)
+    email_subject = Column(String(512), nullable=True)
+    email_received_at = Column(DateTime, nullable=True)
     
     # NEW: Processing Status & Embeddings
     processing_status = Column(Enum(DocumentProcessingStatus), default=DocumentProcessingStatus.PENDING)
+    processing_stage = Column(String(50), default="uploaded")
+    processing_progress = Column(Float, default=0.0)
+    processed_chunks = Column(Integer, default=0)
+    total_chunks = Column(Integer, default=0)
     
     # Deprecated JSON placeholder. We are moving to the structured DocumentChunk model
     # embeddings = Column(JSON, nullable=True) 
@@ -47,8 +57,9 @@ class Document(Base):
     uploaded_by = relationship("User", backref="uploaded_documents")
     organization = relationship("Organization", backref="documents")
     tags = relationship("Tag", secondary=document_tag_association, back_populates="documents")
-    summary = relationship("Summary", uselist=False, back_populates="document") # One-to-one relationship
+    summary = relationship("Summary", uselist=False, back_populates="document", cascade="all, delete-orphan") 
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
+    document_metadata = relationship("DocumentMetadata", uselist=False, back_populates="document", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Document(filename='{self.filename}', case_id={self.case_id})>"
@@ -61,7 +72,10 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     text_content = Column(Text, nullable=False)
     
-    # Store the highly-dimensional mathematical vector array. (3072 for gemini-embedding-001)
-    embedding = Column(Vector(3072), nullable=True)
+    # Store the highly-dimensional mathematical vector array. (768 for text-embedding-004)
+    embedding = Column(Vector(768), nullable=True)
+    
+    # NEW: Store LLM mapping outputs for the Map-Reduce pipeline
+    chunk_analysis = Column(JSON, nullable=True)
     
     document = relationship("Document", back_populates="chunks")

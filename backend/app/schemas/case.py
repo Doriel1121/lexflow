@@ -12,6 +12,8 @@ class CaseNoteCreate(CaseNoteBase):
 class CaseNoteUpdate(CaseNoteBase):
     pass
 
+from .deadline import Deadline
+
 class CaseNote(CaseNoteBase):
     id: int
     case_id: int
@@ -53,6 +55,7 @@ class Case(CaseBase):
     updated_at: datetime
     notes: List[CaseNote] = []
     documents: Optional[List[dict]] = []
+    deadlines: List[Deadline] = []
 
     class Config:
         from_attributes = True

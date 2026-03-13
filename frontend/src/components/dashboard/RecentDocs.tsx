@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { FileText, MoreVertical } from 'lucide-react';
-import api from '../../services/api';
+import { useEffect, useState } from "react";
+import { FileText } from "lucide-react";
+import api from "../../services/api";
 
 interface Document {
   id: number;
@@ -20,83 +20,111 @@ export function RecentDocs() {
 
   const fetchRecentDocs = async () => {
     try {
-      const response = await api.get('/v1/documents/recent?limit=5');
+      const response = await api.get("/v1/documents/recent?limit=5");
       setDocuments(response.data);
     } catch (error) {
-      console.error('Failed to fetch recent documents:', error);
+      console.error("Failed to fetch recent documents:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return 'Unknown';
-    const date = new Date(dateStr);
+    if (!dateStr) return "Unknown";
+    const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
+    const date = new Date(utcDateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffHours / 24);
-    
-    if (diffHours < 1) return 'Just now';
+
+    if (diffHours < 1) return "Just now";
     if (diffHours < 24) return `${diffHours} hrs ago`;
-    if (diffDays === 1) return '1 day ago';
+    if (diffDays === 1) return "1 day ago";
     return `${diffDays} days ago`;
   };
   return (
-    <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-      <div className="p-6 border-b border-border flex justify-between items-center">
-        <h3 className="font-serif font-bold text-slate-800">Recent Documents</h3>
-        <button className="text-sm text-primary font-medium hover:underline">View All</button>
+    <div className="bg-white rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 flex justify-between items-center">
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
+          Recent Documents
+        </h3>
+        <a
+          href="/documents"
+          className="text-xs text-slate-400 hover:text-slate-600 font-medium transition-colors"
+        >
+          View all →
+        </a>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
-          <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
-            <tr>
-              <th className="px-6 py-3">Document Name</th>
-              <th className="px-6 py-3">Case Reference</th>
-              <th className="px-6 py-3">Uploaded</th>
-              <th className="px-6 py-3">Status</th>
-              <th className="px-6 py-3 text-right">Actions</th>
+          <thead>
+            <tr className="border-t border-b border-slate-50">
+              <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
+                Document
+              </th>
+              <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
+                Case
+              </th>
+              <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
+                Uploaded
+              </th>
+              <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
+                Status
+              </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody className="divide-y divide-slate-50">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                  Loading documents...
+                <td
+                  colSpan={4}
+                  className="px-5 py-8 text-center text-slate-400 text-sm"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="h-4 w-4 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
+                    Loading...
+                  </div>
                 </td>
               </tr>
             ) : documents.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                  No documents yet
+                <td
+                  colSpan={4}
+                  className="px-5 py-10 text-center text-slate-400 text-sm"
+                >
+                  No documents uploaded yet.
                 </td>
               </tr>
             ) : (
               documents.map((doc) => (
-              <tr key={doc.id} className="hover:bg-muted/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-slate-100 rounded text-slate-500">
-                      <FileText className="h-4 w-4" />
+                <tr
+                  key={doc.id}
+                  className="hover:bg-slate-50/60 transition-colors group"
+                >
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="p-1.5 bg-slate-100 rounded-lg text-slate-400 shrink-0">
+                        <FileText className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="font-medium text-slate-700 truncate max-w-[180px] group-hover:text-blue-600 transition-colors">
+                        {doc.filename}
+                      </span>
                     </div>
-                    <span className="font-medium text-slate-700 group-hover:text-primary transition-colors">{doc.filename}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-slate-600">Case #{doc.case_id}</td>
-                <td className="px-6 py-4 text-slate-500">{formatDate(doc.created_at)}</td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                    {doc.classification || 'Processed'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600">
-                    <MoreVertical className="h-4 w-4" />
-                  </button>
-                </td>
-              </tr>
-            ))
+                  </td>
+                  <td className="px-5 py-3.5 text-slate-500 text-xs">
+                    Case #{doc.case_id}
+                  </td>
+                  <td className="px-5 py-3.5 text-slate-400 text-xs">
+                    {formatDate(doc.created_at)}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-600">
+                      {doc.classification || "Processed"}
+                    </span>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

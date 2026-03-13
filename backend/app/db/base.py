@@ -12,3 +12,4 @@ from app.db.models.tag import Tag  # noqa: F401
 from app.db.models.summary import Summary  # noqa: F401
 from app.db.models.audit_log import AuditLog  # noqa: F401
 from app.db.models.notification import Notification  # noqa: F401
+from app.db.models.deadline import Deadline  # noqa: F401

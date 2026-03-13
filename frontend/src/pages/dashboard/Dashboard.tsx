@@ -2,66 +2,78 @@
 import { OverviewCards } from '../../components/dashboard/OverviewCards';
 import { RecentDocs } from '../../components/dashboard/RecentDocs';
 import { useAuth } from '../../context/AuthContext';
-import { Briefcase, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { Briefcase, FileText, Mail, Search, ArrowRight, Zap } from 'lucide-react';
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-
+  const greetingKey = hour < 12 ? 'dashboard.greeting.morning'
+    : hour < 18 ? 'dashboard.greeting.afternoon'
+    : 'dashboard.greeting.evening';
   const firstName = user?.name?.split(' ')[0] ?? 'Counselor';
 
+  const quickActions = [
+    { icon: Briefcase, labelKey: 'dashboard.actions.newCase', descKey: 'dashboard.actions.newCaseDesc', path: '/cases/new', color: 'text-blue-600 bg-blue-50' },
+    { icon: FileText, labelKey: 'dashboard.actions.uploadDocument', descKey: 'dashboard.actions.uploadDocumentDesc', path: '/documents', color: 'text-emerald-600 bg-emerald-50' },
+    { icon: Mail, labelKey: 'dashboard.actions.emailIntake', descKey: 'dashboard.actions.emailIntakeDesc', path: '/email', color: 'text-amber-600 bg-amber-50' },
+    { icon: Search, labelKey: 'dashboard.actions.semanticSearch', descKey: 'dashboard.actions.semanticSearchDesc', path: '/search', color: 'text-purple-600 bg-purple-50' },
+  ];
+
   return (
-    <div>
-      {/* Personalized header */}
-      <div className="mb-8 flex items-end justify-between">
+    <div className="space-y-6">
+      {/* Hero greeting */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
-            {greeting}, {firstName} 👋
+          <h1 className="text-2xl font-bold text-slate-800">
+            {t(greetingKey)}, {firstName} 👋
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Here's what's happening in your workspace today.
+          <p className="text-sm text-slate-400 mt-0.5">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-slate-100 px-3 py-1.5 rounded-full">
-          <Clock className="h-3.5 w-3.5" />
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </div>
       </div>
 
-      {/* Stats cards */}
+      {/* Stats */}
       <OverviewCards />
 
-      {/* Main content grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Two-column content */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Documents - spans 2 cols */}
         <div className="lg:col-span-2">
           <RecentDocs />
         </div>
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-            <h3 className="font-serif font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Briefcase className="h-5 w-5 text-primary" />
-              Quick Actions
-            </h3>
+
+        {/* Quick Actions */}
+        <div>
+          <div className="bg-white rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Zap className="h-4 w-4 text-slate-500" />
+              <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{t('dashboard.quickActions')}</h3>
+            </div>
             <div className="space-y-2">
-              <a href="/cases" className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors text-sm text-slate-700 font-medium">
-                <span className="text-blue-500">📁</span> New Case
-              </a>
-              <a href="/documents" className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors text-sm text-slate-700 font-medium">
-                <span className="text-emerald-500">📄</span> Upload Document
-              </a>
-              <a href="/email" className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors text-sm text-slate-700 font-medium">
-                <span className="text-amber-500">📧</span> Check Email Intake
-              </a>
-              <a href="/search" className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors text-sm text-slate-700 font-medium">
-                <span className="text-purple-500">🔍</span> Search Documents
-              </a>
+              {quickActions.map((action) => (
+                <button
+                  key={action.path}
+                  onClick={() => navigate(action.path)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors group text-left"
+                >
+                  <div className={`p-2 rounded-lg shrink-0 ${action.color}`}>
+                    <action.icon className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-700">{t(action.labelKey)}</p>
+                    <p className="text-xs text-slate-400">{t(action.descKey)}</p>
+                  </div>
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" />
+                </button>
+              ))}
             </div>
           </div>
-
-
         </div>
       </div>
     </div>

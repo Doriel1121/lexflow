@@ -1,3 +1,4 @@
+# File Version: 2026-03-12T22:30:00
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -11,7 +12,7 @@ class CRUDNotification:
         result = await db.execute(select(Notification).filter(Notification.id == id))
         return result.scalars().first()
 
-    async def create(self, db: AsyncSession, obj_in: NotificationCreate) -> Notification:
+    async def create_notification(self, db: AsyncSession, obj_in: NotificationCreate) -> Notification:
         db_obj = Notification(
             user_id=obj_in.user_id,
             organization_id=obj_in.organization_id,
@@ -27,6 +28,10 @@ class CRUDNotification:
         await db.commit()
         await db.refresh(db_obj)
         return db_obj
+
+    # Alias for compatibility
+    async def create(self, *args, **kwargs):
+        return await self.create_notification(*args, **kwargs)
 
     async def get_multi_by_user(
         self, db: AsyncSession, *, user_id: int, skip: int = 0, limit: int = 100
@@ -71,4 +76,5 @@ class CRUDNotification:
         updated_rows = result.scalars().all()
         return len(updated_rows)
 
-notification = CRUDNotification()
+notification_crud = CRUDNotification()
+notification = notification_crud # Compatibility

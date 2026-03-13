@@ -1,9 +1,12 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { Sidebar } from "./Sidebar";
+import { useTranslation } from "react-i18next";
 
 export function AdminLayout() {
   const { isAuthenticated, user, isLoading } = useAuth();
+  const { i18n } = useTranslation();
+  const isRTL = i18n.language === 'he';
 
   if (isLoading) {
     return (
@@ -29,7 +32,7 @@ export function AdminLayout() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
+      <main className="flex-1 ms-60 p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
           <Outlet />
         </div>

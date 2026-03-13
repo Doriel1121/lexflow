@@ -1,7 +1,7 @@
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import engine, Base, AsyncSessionLocal
-from app.crud.crud_notification import notification as crud_notification
+from app.crud.crud_notification import notification_crud
 from app.schemas.notification import NotificationCreate
 from app.crud.user import user_crud
 
@@ -37,7 +37,7 @@ async def seed_notifications():
                 source_type="system",
                 source_id=i+1
             )
-            await crud_notification.create(db=db, obj_in=notif_in)
+            await notification_crud.create(db=db, obj_in=notif_in)
             if i % 10 == 0:
                 print(f"Created {i} notifications...")
 

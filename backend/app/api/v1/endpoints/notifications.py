@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
-from app.crud.crud_notification import notification as crud_notification
+from app.crud.crud_notification import notification_crud
 from app.schemas.notification import NotificationCreate, NotificationOut
 from app.db.models.user import User
 
@@ -20,7 +20,7 @@ async def read_notifications(
     """
     Retrieve user notifications.
     """
-    notifications = await crud_notification.get_multi_by_user(
+    notifications = await notification_crud.get_multi_by_user(
         db=db, user_id=current_user.id, skip=skip, limit=limit
     )
     return notifications
@@ -33,7 +33,7 @@ async def read_unread_count(
     """
     Get unread notification count.
     """
-    count = await crud_notification.get_unread_count_by_user(db=db, user_id=current_user.id)
+    count = await notification_crud.get_unread_count_by_user(db=db, user_id=current_user.id)
     return count
 
 @router.post("/", response_model=NotificationOut)
@@ -48,7 +48,7 @@ async def create_notification(
     """
     # Normally this would be internal, but for testing purposes we can expose it
     # We might want to restrict this to system/admin or internal functions in production
-    notification = await crud_notification.create(db=db, obj_in=notification_in)
+    notification = await notification_crud.create(db=db, obj_in=notification_in)
     
     # Broadcast to WebSocket
     from app.api.ws.notifications import notification_manager
@@ -82,13 +82,13 @@ async def mark_notification_read(
     """
     Mark a specific notification as read.
     """
-    notification = await crud_notification.get(db=db, id=notification_id)
+    notification = await notification_crud.get(db=db, id=notification_id)
     if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
     if notification.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
         
-    notification = await crud_notification.mark_as_read(db=db, db_obj=notification)
+    notification = await notification_crud.mark_as_read(db=db, db_obj=notification)
     return notification
 
 @router.patch("/read-all", response_model=dict)
@@ -99,5 +99,5 @@ async def mark_all_notifications_read(
     """
     Mark all notifications for the current user as read.
     """
-    updated_count = await crud_notification.mark_all_as_read(db=db, user_id=current_user.id)
+    updated_count = await notification_crud.mark_all_as_read(db=db, user_id=current_user.id)
     return {"updated": updated_count}

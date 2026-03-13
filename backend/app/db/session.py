@@ -1,6 +1,7 @@
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.db.base import Base
 from app.core.config import settings
@@ -12,6 +13,17 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False, 
     autoflush=False, 
     bind=engine, 
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+
+# Dedicated engine for Celery tasks. Uses NullPool so each short-lived asyncio event loop
+# doesn't crash trying to share connections with other loops across threads/processes.
+celery_engine = create_async_engine(DATABASE_URL, poolclass=NullPool, echo=False)
+CeleryAsyncSessionLocal = async_sessionmaker(
+    autocommit=False, 
+    autoflush=False, 
+    bind=celery_engine, 
     class_=AsyncSession,
     expire_on_commit=False
 )

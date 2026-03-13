@@ -3,6 +3,8 @@ services:
     image: ankane/pgvector:latest # A PostgreSQL image with pgvector pre-installed
     ports:
       - "5432:5432"
+    env_file:
+      - ./backend/.env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -23,16 +25,42 @@ services:
       - db
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SECRET_KEY=${SECRET_KEY}
-      - FRONTEND_ORIGINS=${FRONTEND_ORIGINS}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - APP_ENV=development
     volumes:
       - ./backend:/app/backend
     working_dir: /app/backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: unless-stopped
+    
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ai-lawyer-backend:latest
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - ./backend/.env
+    environment:
+      - APP_ENV=development
+    volumes:
+      - ./backend:/app/backend
+    working_dir: /app/backend
+    command: ["celery", "-A", "app.core.celery", "worker", "--loglevel=info", "--pool=threads", "--concurrency=4"]
     restart: unless-stopped
         
 volumes:
   pgdata:
+  redis_data:

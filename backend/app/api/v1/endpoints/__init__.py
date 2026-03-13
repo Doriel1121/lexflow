@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import users, cases, documents, search, email, auth, organizations, admin, tags, invitations, risk, notifications, clients
+from app.api.v1.endpoints import users, cases, documents, search, email, auth, organizations, admin, tags, invitations, risk, notifications, clients, deadlines
 
 api_router_v1 = APIRouter()
 api_router_v1.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -16,4 +16,4 @@ api_router_v1.include_router(invitations.router, prefix="/invitations", tags=["i
 api_router_v1.include_router(risk.router, prefix="/risk", tags=["risk"])
 api_router_v1.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router_v1.include_router(clients.router, prefix="/clients", tags=["clients"])
-
+api_router_v1.include_router(deadlines.router, prefix="/deadlines", tags=["deadlines"])
