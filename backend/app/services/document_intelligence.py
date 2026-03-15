@@ -1,6 +1,11 @@
 from typing import Dict, List, Any
 import os
+import asyncio
+import logging
+from app.core.config import settings
 from app.core.ai_provider import get_ai_provider
+
+logger = logging.getLogger(__name__)
 
 class DocumentIntelligenceService:
     def __init__(self):
@@ -59,7 +64,18 @@ IMPORTANT:
 - For financial_terms: Include who pays (payer) and who receives (payee) if mentioned
 - Be thorough and extract ALL information found. If a field has no data, use empty array [] or empty string "" or null.
 Return ONLY the JSON, no other text."""
-        result = await self.provider.generate_json(prompt)
+        try:
+            result = await asyncio.wait_for(
+                self.provider.generate_json(prompt),
+                timeout=float(settings.AI_ANALYSIS_TIMEOUT_SECONDS or 120),
+            )
+        except asyncio.TimeoutError:
+            logger.error("AI analysis timed out for document '%s'. Falling back.", filename)
+            return self._fallback_analysis(text, filename)
+        except Exception as e:
+            logger.error("AI analysis error for document '%s': %s. Falling back.", filename, e)
+            return self._fallback_analysis(text, filename)
+
         if not result:
             # If it's literally empty, use fallback
             return self._fallback_analysis(text, filename)

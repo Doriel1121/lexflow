@@ -1,10 +1,12 @@
 from typing import List, Annotated, Optional
 import logging
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select, desc
 
+from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user, apply_user_org_filter, RoleChecker, verify_resource_access
 from app.db.models.user import User as DBUser, UserRole
 from app.schemas.document import DocumentCreate, DocumentUpdate, Document as DocumentSchema
@@ -96,6 +98,26 @@ async def upload_document(
         # upload_file returns (url, absolute_path) — use both directly
         s3_url, file_path = await storage_service.upload_file(file, upload_path)
 
+        # Decide which processing flow to use
+        def _select_processing_flow(file_path_value) -> str:
+            mode = (settings.DOCUMENT_PROCESSING_MODE or "auto").strip().lower()
+            if mode in ("celery", "background"):
+                return mode
+
+            # Auto mode: route by file size
+            try:
+                size_bytes = Path(file_path_value).stat().st_size
+            except Exception:
+                size_bytes = None
+
+            if size_bytes is None:
+                return "celery"
+
+            min_mb = settings.DOCUMENT_PROCESSING_CELERY_MIN_MB or 0
+            return "celery" if size_bytes >= (min_mb * 1024 * 1024) else "background"
+
+        processing_flow = _select_processing_flow(file_path)
+
         # ── Create DB placeholder ──────────────────────────────────────────
         document_in = DocumentCreate(
             filename=file.filename or "unknown",
@@ -112,23 +134,24 @@ async def upload_document(
 
         # ── Queue processing ───────────────────────────────────────────────
         celery_queued = False
-        try:
-            from app.workers.document_tasks import process_document_pipeline
-            from app.core.celery import safe_task_delay
-            safe_task_delay(
-                process_document_pipeline,
-                document_id=document.id,
-                file_path=str(file_path),
-                user_id=current_user.id,
-                organization_id=current_user.organization_id,
-            )
-            celery_queued = True
-            logger.info("[Doc %d] Queued via Celery.", document.id)
-        except Exception as celery_err:
-            logger.warning(
-                "[Doc %d] Celery unavailable (%s) — falling back to BackgroundTask.",
-                document.id, celery_err,
-            )
+        if processing_flow == "celery":
+            try:
+                from app.workers.document_tasks import process_document_pipeline
+                from app.core.celery import safe_task_delay
+                safe_task_delay(
+                    process_document_pipeline,
+                    document_id=document.id,
+                    file_path=str(file_path),
+                    user_id=current_user.id,
+                    organization_id=current_user.organization_id,
+                )
+                celery_queued = True
+                logger.info("[Doc %d] Queued via Celery.", document.id)
+            except Exception as celery_err:
+                logger.warning(
+                    "[Doc %d] Celery unavailable (%s) — falling back to BackgroundTask.",
+                    document.id, celery_err,
+                )
 
         if not celery_queued:
             # Always-available fallback: FastAPI BackgroundTask runs in-process
@@ -159,7 +182,11 @@ async def upload_document(
         # ── Return immediately ─────────────────────────────────────────────
         result = await db.execute(
             select(DBDocument)
-            .options(selectinload(DBDocument.tags))
+            .options(
+                selectinload(DBDocument.tags),
+                selectinload(DBDocument.summary),
+                selectinload(DBDocument.document_metadata)
+            )
             .filter(DBDocument.id == document.id)
         )
         return result.scalars().first()
@@ -211,7 +238,11 @@ async def read_documents(
     user_id = current_user.id
     user_role = current_user.role.value if current_user.role else None
     
-    query = select(DBDocument).options(selectinload(DBDocument.tags)).offset(skip).limit(limit)
+    query = select(DBDocument).options(
+        selectinload(DBDocument.tags),
+        selectinload(DBDocument.summary),
+        selectinload(DBDocument.document_metadata)
+    ).offset(skip).limit(limit)
     
     if tag:
         query = query.join(DBDocument.tags).filter(DBTag.id == tag)

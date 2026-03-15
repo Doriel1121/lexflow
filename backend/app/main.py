@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from datetime import timedelta
+import asyncio
 
 from app.db.session import engine, Base, AsyncSessionLocal
 from app.api import api_router
@@ -15,6 +16,7 @@ from app.schemas.token import Token
 from app.schemas.user import UserCreate
 from app.core.config import settings
 from app.core.audit_middleware import AuditMiddleware
+from app.services.document_reaper import reap_stuck_documents
 
 app = FastAPI(
     title="LexFlow Backend MVP",
@@ -46,6 +48,17 @@ async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("🚀 LexFlow Backend initialized.")
+
+    async def _reaper_loop():
+        # Run every 5 minutes
+        while True:
+            try:
+                await reap_stuck_documents()
+            except Exception:
+                pass
+            await asyncio.sleep(300)
+
+    asyncio.create_task(_reaper_loop())
 
 
 # Include all API routes

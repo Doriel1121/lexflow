@@ -129,8 +129,8 @@ export function DocumentViewer() {
     );
   }
 
-  // --- FAILED STATE ---
-  if (normalizedStatus === 'failed') {
+  // --- FAILED STATE (ONLY IF NO CONTENT) ---
+  if (normalizedStatus === 'failed' && !isOCRReady) {
     return (
       <div className="h-[calc(100vh-8rem)] flex items-center justify-center bg-slate-50">
         <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-red-100 flex flex-col items-center text-center">
@@ -152,6 +152,16 @@ export function DocumentViewer() {
     );
   }
 
+  const handleRetryAI = async () => {
+    try {
+      await api.post(`/v1/documents/retry-ai-analysis/${id}`);
+      fetchDocumentData();
+      alert('Analysis retry queued.');
+    } catch (e) {
+      alert('Failed to retry analysis.');
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col bg-background">
       {/* Viewer Header */}
@@ -161,10 +171,19 @@ export function DocumentViewer() {
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <h1 className="text-lg font-bold text-slate-800">{document.filename}</h1>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-lg font-bold text-slate-800">{document.filename}</h1>
+              {normalizedStatus === 'failed' && (
+                <div className="flex items-center space-x-2 text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">
+                  <AlertTriangle className="h-3 w-3" />
+                  <span className="text-[10px] font-bold uppercase tracking-tight">Processing Error</span>
+                  <button onClick={handleRetryAI} className="text-[10px] underline hover:text-red-800 transition-colors">Retry</button>
+                </div>
+              )}
+            </div>
             <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-              <span className={`px-1.5 py-0.5 rounded font-medium uppercase tracking-wider text-[10px] ${normalizedStatus === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700 animate-pulse'}`}>
-                {normalizedStatus === 'completed' ? 'Ready' : 'AI Analyzing...'}
+              <span className={`px-1.5 py-0.5 rounded font-medium uppercase tracking-wider text-[10px] ${normalizedStatus === 'completed' ? 'bg-emerald-100 text-emerald-700' : normalizedStatus === 'failed' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700 animate-pulse'}`}>
+                {normalizedStatus === 'completed' ? 'Ready' : normalizedStatus === 'failed' ? 'Failed' : 'AI Analyzing...'}
               </span>
               <span>•</span>
               <span>{document.classification} • {document.language?.toUpperCase() || 'UNKNOWN'} • {document.page_count || 0} pages</span>

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.db.models.document import Document as DBDocument
 from app.crud.tag import crud_tag
 
@@ -55,6 +56,28 @@ def _clean(value: str) -> Optional[str]:
     if _MIN_TAG_LEN <= len(v) <= _MAX_TAG_LEN:
         return v
     return None
+
+
+# Common noise tokens to exclude from AI tags
+_STOPWORDS = frozenset({
+    "document", "documents", "agreement", "contract", "legal", "case",
+    "party", "parties", "unknown", "general", "misc", "other",
+})
+
+
+def _normalize_tag(value: str) -> Optional[str]:
+    """Normalize AI tag text to a stable, UI-friendly form."""
+    v = _clean(value)
+    if not v:
+        return None
+    v = re.sub(r"[_\\-]+", " ", v)
+    v = re.sub(r"\\s+", " ", v).strip()
+    if not v:
+        return None
+    if v.lower() in _STOPWORDS:
+        return None
+    # Title-case for display consistency
+    return v[:1].upper() + v[1:]
 
 
 def _is_company(name: str) -> bool:
@@ -273,15 +296,50 @@ class SmartCollectionsService:
         """Process the generic 'tags' list from AI analysis."""
         seen: set[str] = set()
         tags = []
+
+        # Support confidence-weighted tags (preferred)
+        tag_votes = ai_analysis.get("tag_votes") or []
+        if isinstance(tag_votes, list) and tag_votes:
+            # Deduplicate by normalized name with highest confidence
+            best: dict[str, float] = {}
+            for item in tag_votes:
+                if isinstance(item, dict):
+                    raw = item.get("name") or item.get("tag") or ""
+                    conf = float(item.get("confidence", 0.0) or 0.0)
+                else:
+                    raw = str(item)
+                    conf = 0.0
+                name = _normalize_tag(raw)
+                if not name:
+                    continue
+                best[name] = max(best.get(name, 0.0), conf)
+
+            # Keep only above threshold
+            min_conf = float(settings.AI_TAG_MIN_CONFIDENCE or 0.0)
+            ranked = sorted(best.items(), key=lambda x: x[1], reverse=True)
+            for name, conf in ranked[: int(settings.AI_TAG_MAX_PER_DOCUMENT or 8)]:
+                if conf < min_conf:
+                    continue
+                if name not in seen:
+                    seen.add(name)
+                    t = await crud_tag.find_or_create(
+                        db, name=name, category="ai_tag", organization_id=org_id
+                    )
+                    tags.append(t)
+            return tags
+
+        # Fallback: raw string tags
         for tag_name in ai_analysis.get("tags", []):
-            name = _clean(str(tag_name))
+            name = _normalize_tag(str(tag_name))
             if name and name not in seen:
                 seen.add(name)
                 t = await crud_tag.find_or_create(
                     db, name=name, category="ai_tag", organization_id=org_id
                 )
                 tags.append(t)
-        return tags
+
+        # Limit volume to avoid noisy tagging
+        return tags[: int(settings.AI_TAG_MAX_PER_DOCUMENT or 8)]
 
 
 smart_collections_service = SmartCollectionsService()

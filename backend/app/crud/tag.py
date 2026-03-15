@@ -111,7 +111,7 @@ class CRUDTag:
         organization_id: Optional[int] = None,
     ) -> DBTag:
         """Find an existing tag (scoped to org) or create one."""
-        # Scope lookup by org so tags from different orgs never collide
+        # 1. Scope lookup by org so tags from different orgs never collide (if possible)
         tag = await self.get_by_name(db, name, organization_id=organization_id)
         if tag:
             # Update category if a more specific one is now known
@@ -121,6 +121,17 @@ class CRUDTag:
                 await db.refresh(tag)
             return tag
 
+        # 2. If not found scoped to org, check if a global tag (no org_id) exists.
+        # This is critical because the 'name' column has a global UNIQUE constraint.
+        if organization_id is not None:
+            tag = await self.get_by_name(db, name, organization_id=None)
+            if tag:
+                # Use the existing global tag. 
+                # (Future: we might want to change the DB constraint to be (name, org_id) 
+                # instead of just (name) to allow true multi-tenancy for tags).
+                return tag
+
+        # 3. Create new tag if still not found
         db_tag = DBTag(name=name)
         if category:
             db_tag.category = category

@@ -26,26 +26,30 @@ class OCRService:
             if path.suffix.lower() == '.pdf':
                 try:
                     import PyPDF2
-                    text = ""
+                    text_parts = []
                     page_count = 0
                     with open(path, 'rb') as f:
                         reader = PyPDF2.PdfReader(f)
                         page_count = len(reader.pages)
-                        for page in reader.pages:
-                            text += page.extract_text() + "\n"
-                    
+                        for idx, page in enumerate(reader.pages):
+                            page_text = page.extract_text() or ""
+                            text_parts.append(page_text)
+                    # Join pages with an explicit page break marker so downstream
+                    # services (chunker, normalization) can preserve page numbers.
+                    joined_text = "\n\n--- Page Break ---\n\n".join(text_parts)
+
                     # Hybrid Routing Logic
                     # If this is a digital PDF, text length will be substantial. 
                     # If it's a scanned PDF, PyPDF2 extracts virtually nothing (or just noise).
                     # We expect at least ~100 characters per page for a real digital document.
-                    text_length = len(text.strip())
+                    text_length = len(joined_text.strip())
                     threshold = max(200, page_count * 100)
                     
                     if text_length < threshold:
                         from app.services.ocr_engine import tesseract_ocr_service
                         return await tesseract_ocr_service.extract_text_from_scanned_pdf(file_path)
                     
-                    return {"text": text, "language": "en", "page_count": page_count}
+                    return {"text": joined_text, "language": "en", "page_count": page_count}
                 except Exception as e:
                     # If PyPDF2 crashes entirely (corrupted metadata etc), fallback to OCR
                     from app.services.ocr_engine import tesseract_ocr_service

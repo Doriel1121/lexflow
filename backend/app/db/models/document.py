@@ -71,6 +71,9 @@ class DocumentChunk(Base):
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
     chunk_index = Column(Integer, nullable=False)
     text_content = Column(Text, nullable=False)
+    # Optional page number this chunk was sourced from (1-based index).
+    # For non-paginated content this may be null or 1.
+    page_number = Column(Integer, nullable=True)
     
     # Store the highly-dimensional mathematical vector array. (768 for text-embedding-004)
     embedding = Column(Vector(768), nullable=True)

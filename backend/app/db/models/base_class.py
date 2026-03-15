@@ -8,6 +8,7 @@ from app.db.models.tag import Tag
 from app.db.models.summary import Summary
 from app.db.models.audit_log import AuditLog
 from app.db.models.document_metadata import DocumentMetadata
+from app.db.models.document_processing_log import DocumentProcessingLog
 
 # This file imports all models so they are registered with SQLAlchemy's
 # declarative Base.metadata. This enables Alembic autogenerate and string-based

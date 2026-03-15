@@ -18,11 +18,13 @@ class LLMService:
     async def generate_embedding(self, text: str) -> List[float]:
         try:
             if not self.provider.active:
-                return [0.0] * 3072
+                dim = getattr(self.provider, "embedding_dimension", 768)
+                return [0.0] * dim
             return await self.provider.generate_embedding(text)
         except Exception as e:
             print(f"Error generating embedding: {e}")
-            return [0.0] * 3072
+            dim = getattr(self.provider, "embedding_dimension", 768)
+            return [0.0] * dim
 
     async def extract_key_dates(self, text: str) -> List[str]:
         try:

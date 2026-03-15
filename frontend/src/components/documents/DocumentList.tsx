@@ -540,9 +540,17 @@ export function DocumentList() {
                           </div>
                         ) : getNormalizedStatus(doc.processing_status) ===
                           "failed" ? (
-                          <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-error-light text-error-dark shadow-sm border border-error/20">
-                            Failed
-                          </span>
+                          <div className="flex flex-col space-y-1.5">
+                            <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-error-light text-error-dark shadow-sm border border-error/20">
+                              Failed
+                            </span>
+                            <button
+                              onClick={(e) => handleRetryAI(doc.id, e)}
+                              className="text-xs text-primary-600 hover:text-primary-800 font-medium underline text-start"
+                            >
+                              Retry Analysis
+                            </button>
+                          </div>
                         ) : needsAIAnalysis(doc) ? (
                           <div className="flex flex-col space-y-1.5">
                             <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-info-light text-info-dark shadow-sm border border-info/20">

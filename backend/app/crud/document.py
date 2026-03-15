@@ -10,7 +10,11 @@ class CRUDDocument:
     async def get(self, db: AsyncSession, document_id: int) -> Optional[DBDocument]:
         result = await db.execute(
             select(DBDocument)
-            .options(selectinload(DBDocument.tags)) # Eager load tags
+            .options(
+                selectinload(DBDocument.tags),
+                selectinload(DBDocument.summary),
+                selectinload(DBDocument.document_metadata)
+            ) # Eager load everything needed for the UI
             .filter(DBDocument.id == document_id)
         )
         return result.scalars().first()
@@ -18,7 +22,11 @@ class CRUDDocument:
     async def get_multi(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[DBDocument]:
         result = await db.execute(
             select(DBDocument)
-            .options(selectinload(DBDocument.tags)) # Eager load tags
+            .options(
+                selectinload(DBDocument.tags),
+                selectinload(DBDocument.summary),
+                selectinload(DBDocument.document_metadata)
+            ) # Eager load everything needed for the UI
             .offset(skip).limit(limit)
         )
         return list(result.scalars().all())

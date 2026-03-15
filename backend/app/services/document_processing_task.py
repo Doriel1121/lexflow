@@ -15,11 +15,15 @@ Pipeline stages and progress %:
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
+import dateparser
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.crud.document import document_crud
 from app.crud.document_metadata import crud_document_metadata
 from app.crud.summary import crud_summary
@@ -34,10 +38,13 @@ from app.services.audit import log_audit
 from app.services.document_intelligence import document_intelligence_service
 from app.services.llm import llm_service
 from app.services.ocr import ocr_service
+from app.services.text_normalization import text_normalization_service
 from app.services.ai.ner_service import ner_service
-from app.db.models.deadline import Deadline
+from app.db.models.deadline import Deadline, DeadlineType
 from app.services.smart_collections import smart_collections_service
 from app.db.session import AsyncSessionLocal
+from app.db.models.document_processing_log import DocumentProcessingLog
+import traceback as tb
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +145,24 @@ class DocumentProcessingService:
                 return
 
             try:
+                start_time = time.time()
+
+                async def _abort_if_timed_out(stage: str) -> bool:
+                    max_seconds = settings.DOCUMENT_MAX_PROCESSING_SECONDS or 0
+                    if max_seconds <= 0:
+                        return False
+                    if (time.time() - start_time) <= max_seconds:
+                        return False
+                    doc = await document_crud.get(db, document_id)
+                    if doc:
+                        doc.processing_status = DocumentProcessingStatus.COMPLETED
+                        doc.processing_stage = "completed_without_ai"
+                        doc.processing_progress = 100.0
+                        doc.classification = "Text Extracted (AI Pending)"
+                        await db.commit()
+                    logger.warning("[Doc %d] Processing timed out at stage=%s. Marked completed_without_ai.", document_id, stage)
+                    return True
+
                 await _set_status(db, document, DocumentProcessingStatus.PROCESSING,
                                   "processing_started", 5.0)
 
@@ -146,16 +171,19 @@ class DocumentProcessingService:
                 try:
                     ocr_result = await ocr_service.extract_text_from_file(file_path)
                     extracted_text = ocr_result.get("text", "") or ""
+                    normalized_text = text_normalization_service.normalize(
+                        extracted_text, language=ocr_result.get("language", "en")
+                    )
                     language = ocr_result.get("language", "en")
                     page_count = ocr_result.get("page_count", 0)
                 except Exception as ocr_err:
                     logger.error("[Doc %d] OCR failed: %s", document_id, ocr_err)
-                    extracted_text, language, page_count = "", "en", 0
+                    extracted_text, normalized_text, language, page_count = "", "", "en", 0
 
                 document = await document_crud.get(db, document_id)
                 if not document:
                     return
-                document.content = extracted_text
+                document.content = normalized_text
                 document.language = language
                 document.page_count = page_count
                 document.processing_stage = "ocr_completed"
@@ -185,6 +213,9 @@ class DocumentProcessingService:
                                       "ocr_empty_text", 20.0)
                     return
 
+                if await _abort_if_timed_out("ocr_completed"):
+                    return
+
                 # Fetch Battery Save setting
                 from app.db.models.organization import Organization
                 org = await db.get(Organization, organization_id)
@@ -196,11 +227,11 @@ class DocumentProcessingService:
                                   "ai_analysis", 35.0)
 
                 # If battery save is ON, optimize the input text to save tokens
-                input_text = extracted_text
-                if battery_save and len(extracted_text) > 25000:
-                    logger.info("[Doc %d] Battery Save ON: Truncating text from %d to ~25k chars.", document_id, len(extracted_text))
+                input_text = normalized_text
+                if battery_save and len(normalized_text) > 25000:
+                    logger.info("[Doc %d] Battery Save ON: Truncating text from %d to ~25k chars.", document_id, len(normalized_text))
                     # Keep first 15k and last 10k
-                    input_text = extracted_text[:15000] + "\n\n[... TEXT TRUNCATED BY BATTERY SAVE MODE ...]\n\n" + extracted_text[-10000:]
+                    input_text = normalized_text[:15000] + "\n\n[... TEXT TRUNCATED BY BATTERY SAVE MODE ...]\n\n" + normalized_text[-10000:]
 
                 ai_analysis: Dict[str, Any] = {}
                 try:
@@ -213,23 +244,40 @@ class DocumentProcessingService:
                     logger.warning("[Doc %d] AI analysis failed: %s", document_id, ai_err)
 
                 # Fallback: if AI failed or missed key sections, run regex
-                # Example: regex approach for metadata
                 try:
-                    from app.services.metadata_extraction import extract_metadata
-                    regex_meta = extract_metadata(extracted_text, document.filename)
-                    # Merge regex fallbacks
+                    from app.services.metadata_extraction import metadata_extraction_service
+                    regex_meta = await metadata_extraction_service.extract_metadata(normalized_text, language)
+                    
+                    # Merge regex fallbacks and align keys
+                    # DocumentIntelligence uses "key_dates", "financial_terms", "missing_items"
+                    # But the rest of this service expects "dates", "amounts", "missing_documents"
+                    
                     if not ai_analysis.get("parties"):
                         ai_analysis["parties"] = regex_meta.get("entities", [])
+                    
                     if not ai_analysis.get("dates"):
-                        ai_analysis["dates"] = regex_meta.get("dates", [])
+                        # Use key_dates from AI if available, else regex dates
+                        ai_analysis["dates"] = ai_analysis.get("key_dates") or regex_meta.get("dates", [])
+                    
                     if not ai_analysis.get("amounts"):
-                        ai_analysis["amounts"] = regex_meta.get("amounts", [])
+                        # Use financial_terms from AI if available, else regex amounts
+                        ai_analysis["amounts"] = ai_analysis.get("financial_terms") or regex_meta.get("amounts", [])
+                    
                     if not ai_analysis.get("case_numbers"):
                         ai_analysis["case_numbers"] = regex_meta.get("case_numbers", [])
+                    
                     if not ai_analysis.get("classification"):
-                        ai_analysis["classification"] = (
-                            regex_meta.get("doc_type") or "Unknown Document"
-                        )
+                        ai_analysis["classification"] = ai_analysis.get("document_type") or "Unknown Document"
+
+                    if not ai_analysis.get("missing_documents"):
+                        ai_analysis["missing_documents"] = ai_analysis.get("missing_items") or []
+
+                    # Update document record with classification from AI
+                    document = await document_crud.get(db, document_id)
+                    if document:
+                        document.classification = ai_analysis.get("classification") or "Unknown Document"
+                        await db.commit()
+
                     # We explicitly empty routing fields to avoid OCR-based tags
                     ai_analysis["routing_ids"] = []
                     ai_analysis["routing_projects"] = []
@@ -240,8 +288,20 @@ class DocumentProcessingService:
                     ai_analysis["routing_projects"] = []
                     ai_analysis["routing_organizations"] = []
 
+                # Build simple confidence votes for AI tags (single-pass analysis)
+                try:
+                    tag_votes = []
+                    for t in ai_analysis.get("tags", []) or []:
+                        tag_votes.append({"name": t, "confidence": 0.5})
+                    ai_analysis["tag_votes"] = tag_votes
+                except Exception:
+                    pass
+
                 # ── STEP 4: Store metadata + summary ─────────────────────────────
                 await self._store_metadata_and_summary(db, document_id, organization_id, ai_analysis)
+
+                if await _abort_if_timed_out("metadata_saved"):
+                    return
 
                 # ── STEP 4.5: Deadline Extraction ───────────────────────────────
                 logger.info("[Doc %d] Extracting deadlines...", document_id)
@@ -285,7 +345,7 @@ class DocumentProcessingService:
                                 continue
 
                     # 2. Fallback/Augment with NER
-                    ner_results = ner_service.extract_deadlines(extracted_text, language=language)
+                    ner_results = ner_service.extract_deadlines(normalized_text, language=language)
                     # Deduplicate: if we already have a date on this day, skip NER
                     existing_days = {n["date"].date() for n in extracted_deadlines}
                     for n in ner_results:
@@ -329,7 +389,9 @@ class DocumentProcessingService:
                 document = await document_crud.get(db, document_id)
                 if not document:
                     return
-                await self._chunk_and_embed(db, document, extracted_text,
+                if await _abort_if_timed_out("embedding"):
+                    return
+                await self._chunk_and_embed(db, document, normalized_text,
                                             progress_start=50.0, progress_end=95.0)
 
                 # ── STEP 7: Finalise ─────────────────────────────────────────────
@@ -362,6 +424,15 @@ class DocumentProcessingService:
                     if document_fail:
                         await _set_status(db, document_fail, DocumentProcessingStatus.FAILED,
                                          "pipeline_error", document_fail.processing_progress or 0.0)
+                        # Persist structured error log for observability and retries
+                        log_entry = DocumentProcessingLog(
+                            document_id=document_id,
+                            stage=document_fail.processing_stage or "pipeline_error",
+                            error_message=str(exc),
+                            stack_trace="".join(tb.format_exception(type(exc), exc, exc.__traceback__)),
+                        )
+                        db.add(log_entry)
+                        await db.commit()
                 except Exception:
                     pass
                 # Broadcast failure
@@ -456,28 +527,50 @@ class DocumentProcessingService:
         await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
         await db.commit()
 
-        for idx, chunk_text in enumerate(chunks):
-            vector = None
-            try:
-                vector = await llm_service.generate_embedding(chunk_text)
-            except Exception as e:
-                logger.warning("[Doc %d/Chunk %d] Embedding failed: %s", document.id, idx + 1, e)
+        # Split by page marker if present to get approximate page numbers
+        page_marker = "--- Page Break ---"
+        if page_marker in text:
+            pages = text.split(f"\n\n{page_marker}\n\n")
+        else:
+            pages = [text]
 
-            db_chunk = DocumentChunk(
-                document_id=document.id,
-                chunk_index=idx,
-                text_content=chunk_text,
-                embedding=vector,
-            )
-            db.add(db_chunk)
+        chunk_idx = 0
+        for p_idx, p_text in enumerate(pages, start=1):
+            # Simple overlap chunking per page
+            p_chunks = []
+            i = 0
+            while i < len(p_text):
+                p_chunks.append(p_text[i : i + chunk_size])
+                i += chunk_size - chunk_overlap
             
-            # Commit every 5 chunks to balance I/O vs memory
-            if idx % 5 == 0 or idx == total_chunks - 1:
-                document.processed_chunks = idx + 1
-                document.processing_progress = round(progress_start + (progress_per_chunk * (idx + 1)), 1)
-                await db.commit()
+            for chunk_text in p_chunks:
+                vector = None
+                try:
+                    vector = await llm_service.generate_embedding(chunk_text)
+                except Exception as e:
+                    logger.warning("[Doc %d/Chunk %d] Embedding failed: %s", document.id, chunk_idx + 1, e)
 
-        logger.info("[Doc %d] Chunks/embeddings stored: %d", document.id, total_chunks)
+                db_chunk = DocumentChunk(
+                    document_id=document.id,
+                    chunk_index=chunk_idx,
+                    text_content=chunk_text,
+                    embedding=vector,
+                    page_number=p_idx
+                )
+                db.add(db_chunk)
+                
+                # Commit every 5 chunks to balance I/O vs memory
+                if chunk_idx % 5 == 0:
+                    document.processed_chunks = chunk_idx + 1
+                    document.processing_progress = round(progress_start + (progress_per_chunk * (chunk_idx + 1)), 1)
+                    await db.commit()
+                
+                chunk_idx += 1
+
+        document.processed_chunks = chunk_idx
+        document.processing_progress = progress_end
+        await db.commit()
+        logger.info("[Doc %d] Chunks/embeddings stored: %d", document.id, chunk_idx)
 
 
 document_processing_service = DocumentProcessingService()

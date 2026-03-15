@@ -20,18 +20,22 @@ import asyncio
 import logging
 import time
 from celery import shared_task
+from app.core.config import settings
 from app.db.session import CeleryAsyncSessionLocal
 from app.crud.document import document_crud
-from app.db.models.document import DocumentProcessingStatus, DocumentChunk
+from app.db.models.document import DocumentProcessingStatus, DocumentChunk, Document
 from app.services.ocr import ocr_service
 from app.services.document_chunker import document_chunker
 from app.services.ai.ner_service import ner_service
+from app.services.text_normalization import text_normalization_service
 from app.db.models.deadline import Deadline, DeadlineType
 import dateparser
 from app.services.document_intelligence import document_intelligence_service
 from app.services.llm import llm_service
 from app.api.ws.notifications import notification_manager
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
+from app.db.models.document_processing_log import DocumentProcessingLog
+import traceback as tb
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +43,58 @@ logger = logging.getLogger(__name__)
 def run_async(coro):
     """Run an async coroutine inside a synchronous Celery task."""
     return asyncio.run(coro)
+
+
+@shared_task(bind=True, max_retries=5, retry_backoff=True)
+def embed_chunk_task(self, document_id: int, chunk_id: int):
+    """Generate embedding for a single chunk and update document progress."""
+    async def _run():
+        async with CeleryAsyncSessionLocal() as db:
+            res = await db.execute(select(DocumentChunk).filter(DocumentChunk.id == chunk_id))
+            chunk = res.scalars().first()
+            if not chunk:
+                return
+
+            vector = await llm_service.generate_embedding(chunk.text_content)
+            chunk.embedding = vector
+            await db.commit()
+
+            # Increment processed_chunks atomically
+            await db.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(processed_chunks=Document.processed_chunks + 1)
+            )
+            await db.commit()
+
+            doc = await document_crud.get(db, document_id)
+            if not doc:
+                return
+
+            total = max(doc.total_chunks or 0, 1)
+            processed = doc.processed_chunks or 0
+            doc.processing_stage = "embedding"
+            doc.processing_progress = round(57.0 + (processed / total) * 38.0, 1)
+            await db.commit()
+
+            if processed >= total and doc.processing_stage != "completed":
+                doc.processing_status = DocumentProcessingStatus.COMPLETED
+                doc.processing_stage = "completed"
+                doc.processing_progress = 100.0
+                await db.commit()
+                try:
+                    await notification_manager.broadcast_to_organization(
+                        doc.organization_id,
+                        {
+                            "type": "DOCUMENT_PROCESSED",
+                            "document_id": document_id,
+                            "message": f"Document '{doc.filename}' is ready."
+                        }
+                    )
+                except Exception:
+                    pass
+
+    run_async(_run())
 
 
 @shared_task(bind=True, max_retries=3, retry_backoff=True)
@@ -50,6 +106,24 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
     logger.info(f"[Doc {document_id}] Pipeline started. file_path={file_path}")
 
     async def _run():
+        start_time = time.time()
+
+        async def _abort_if_timed_out(stage: str) -> bool:
+            max_seconds = settings.DOCUMENT_MAX_PROCESSING_SECONDS or 0
+            if max_seconds <= 0:
+                return False
+            if (time.time() - start_time) <= max_seconds:
+                return False
+            async with CeleryAsyncSessionLocal() as db:
+                doc = await document_crud.get(db, document_id)
+                if doc:
+                    doc.processing_status = DocumentProcessingStatus.COMPLETED
+                    doc.processing_stage = "completed_without_ai"
+                    doc.processing_progress = 100.0
+                    doc.classification = "Text Extracted (AI Pending)"
+                    await db.commit()
+            logger.warning("[Doc %d] Processing timed out at stage=%s. Marked completed_without_ai.", document_id, stage)
+            return True
         # ── STEP 1: Update status to PROCESSING ─────────────────────────
         async with CeleryAsyncSessionLocal() as db:
             doc = await document_crud.get(db, document_id)
@@ -67,7 +141,12 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
         try:
             logger.info(f"[Doc {document_id}] Running OCR on {file_path}...")
             ocr_result = await ocr_service.extract_text_from_file(file_path)
-            extracted_text = ocr_result.get("text", "")
+            extracted_text = ocr_result.get("text", "") or ""
+            # Normalize text while preserving page boundaries so downstream
+            # chunking and metadata extraction work with cleaner input.
+            normalized_text = text_normalization_service.normalize(
+                extracted_text, language=ocr_result.get("language", "en")
+            )
         except Exception as e:
             logger.error(f"[Doc {document_id}] OCR FAILED: {e}")
             async with CeleryAsyncSessionLocal() as db:
@@ -81,7 +160,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
         async with CeleryAsyncSessionLocal() as db:
             doc = await document_crud.get(db, document_id)
             if doc:
-                doc.content = extracted_text
+                doc.content = normalized_text
                 doc.language = ocr_result.get("language", "en")
                 doc.page_count = ocr_result.get("page_count", 0)
                 doc.processing_stage = "ocr_completed"
@@ -105,11 +184,16 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 except Exception:
                     pass
 
+        if await _abort_if_timed_out("ocr_completed"):
+            return
+
         # ── STEP 2.5: Deadline Extraction ─────────────────────────────
         logger.info(f"[Doc {document_id}] Extracting deadlines...")
         try:
             # We take all NER results here as initial candidates
-            extracted_deadlines = ner_service.extract_deadlines(extracted_text, language=ocr_result.get("language", "en"))
+            extracted_deadlines = ner_service.extract_deadlines(
+                normalized_text, language=ocr_result.get("language", "en")
+            )
             
             async with CeleryAsyncSessionLocal() as db:
                 doc = await document_crud.get(db, document_id)
@@ -133,7 +217,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
         # ── STEP 3: Chunk ────────────────────────────────────────────────
         logger.info(f"[Doc {document_id}] Chunking text...")
-        chunks_data = document_chunker.chunk_document(extracted_text)
+        chunks_data = document_chunker.chunk_document(normalized_text)
         total_chunks = len(chunks_data)
         logger.info(f"[Doc {document_id}] Created {total_chunks} chunks.")
 
@@ -150,7 +234,8 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 db_chunk = DocumentChunk(
                     document_id=document_id,
                     chunk_index=chunk_dict["index"],
-                    text_content=chunk_dict["text"]
+                    text_content=chunk_dict["text"],
+                    page_number=chunk_dict.get("page_number"),
                 )
                 db.add(db_chunk)
                 await db.flush()
@@ -158,225 +243,208 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
             await db.commit()
 
-        # ── STEP 4: AI Analysis per chunk ───────────────────────────────
-        logger.info(f"[Doc {document_id}] Starting AI analysis for {total_chunks} chunks...")
-        ai_analysis_failed = False
-        consecutive_quota_failures = 0
-        start_time = time.time()
-        # Hard timeout for AI phase: 15 minutes
-        MAX_AI_PHASE_DURATION = 900 
-        
-        # Fetch Battery Save setting
+        # ── STEP 4: Single-pass AI analysis ─────────────────────────────
+        logger.info(f"[Doc {document_id}] Running single-pass AI analysis...")
         async with CeleryAsyncSessionLocal() as db:
             from app.db.models.organization import Organization
             res = await db.execute(select(Organization).filter(Organization.id == organization_id))
             org = res.scalars().first()
             battery_save = org.ai_battery_save_mode if org else False
-            logger.info(f"[Doc {document_id}] Pipeline Start. Organization: {organization_id}, AI Battery Save: {battery_save}")
+            logger.info(
+                f"[Doc {document_id}] Organization={organization_id}, AI Battery Save={battery_save}"
+            )
 
-        chunks_to_process = []
-        if not battery_save:
-            # Process ALL chunks if battery save is OFF
-            chunks_to_process = list(enumerate(chunk_ids))
-        else:
-            # Optimization: If battery save is ON, only analyze a sample
-            logger.info(f"[Doc {document_id}] AI Battery Save Mode is ON. Sampling chunks.")
-            max_chunks_to_analyze = 8
-            if total_chunks <= max_chunks_to_analyze:
-                chunks_to_process = list(enumerate(chunk_ids))
-            else:
-                chunks_to_process.extend(list(enumerate(chunk_ids))[:4])
-                chunks_to_process.extend(list(enumerate(chunk_ids))[-2:])
-                mid = total_chunks // 2
-                chunks_to_process.append((mid, chunk_ids[mid]))
-                chunks_to_process.append((mid + 1, chunk_ids[mid + 1]))
-                chunks_to_process = sorted(list(set(chunks_to_process)))
-
-        for i, chunk_id in chunks_to_process:
-            # Check for hard timeout
-            if time.time() - start_time > MAX_AI_PHASE_DURATION:
-                logger.error(f"[Doc {document_id}] AI analysis reached hard timeout (15m). Aborting AI phase.")
-                ai_analysis_failed = True
-                break
-
-            if consecutive_quota_failures >= 3:
-                logger.error(f"[Doc {document_id}] Circuit Breaker: Too many quota failures. Aborting AI phase.")
-                ai_analysis_failed = True
-                break
-
-            success = False
-            retries = 0
-            # Reduced internal retries because ai_provider now handles it globally
-            while not success and retries < 3:
-                try:
-                    async with CeleryAsyncSessionLocal() as db:
-                        res = await db.execute(select(DocumentChunk).filter(DocumentChunk.id == chunk_id))
-                        chunk = res.scalars().first()
-                        if not chunk:
-                            success = True
-                            break
-
-                        analysis = await document_intelligence_service.analyze_legal_document(
-                            text=chunk.text_content,
-                            filename=f"{document_id}_chunk_{i}"
-                        )
-                        chunk.chunk_analysis = analysis
-
-                        doc = await document_crud.get(db, document_id)
-                        if doc:
-                            # Update progress based on total chunks to analyze
-                            doc.processed_chunks = i + 1
-                            doc.processing_progress = 12.0 + round(((chunks_to_process.index((i, chunk_id)) + 1) / len(chunks_to_process)) * 43.0, 1)
-                            doc.processing_stage = "ai_analysis"
-                        await db.commit()
-                        success = True
-                        consecutive_quota_failures = 0 # Reset on success
-                        logger.info(f"[Doc {document_id}] AI analysis: chunk {i+1}/{total_chunks} done.")
-                        
-                        # Mandatory delay to respect rate limits (2s)
-                        await asyncio.sleep(2)
-
-                except Exception as e:
-                    retries += 1
-                    err_msg = str(e).lower()
-                    if "quota" in err_msg or "429" in err_msg:
-                        consecutive_quota_failures += 1
-                        # Global retry handles it, but if it still fails, we wait longer here
-                        await asyncio.sleep(15 * retries)
-                    else:
-                        logger.warning(f"[Doc {document_id}] Chunk {i} AI error: {e}. Retry {retries}/3.")
-
-        # If AI analysis failed due to quota, mark as partially completed
-        if ai_analysis_failed:
-            logger.warning(f"[Doc {document_id}] AI analysis failed due to quota. Marking as PARTIALLY_COMPLETED.")
-            async with CeleryAsyncSessionLocal() as db:
-                doc = await document_crud.get(db, document_id)
-                if doc:
-                    doc.processing_status = DocumentProcessingStatus.COMPLETED
-                    doc.processing_stage = "completed_without_ai"
-                    doc.processing_progress = 100.0
-                    doc.classification = "Text Extracted (AI Pending)"
-                    await db.commit()
-                    logger.info(f"[Doc {document_id}] ✅ COMPLETED WITHOUT AI ANALYSIS (quota exceeded).")
-            return  # Exit early, skip aggregation and embeddings
-
-        # ── STEP 5: Aggregate (Reduce) ───────────────────────────────────
-        logger.info(f"[Doc {document_id}] Aggregating analysis results...")
-        async with CeleryAsyncSessionLocal() as db:
             doc = await document_crud.get(db, document_id)
             if doc:
-                doc.processing_stage = "aggregating"
-                doc.processing_progress = 57.0
+                doc.processing_stage = "ai_analysis"
+                doc.processing_progress = 35.0
                 await db.commit()
 
-            res = await db.execute(select(DocumentChunk).filter(DocumentChunk.document_id == document_id))
-            chunks = res.scalars().all()
+            # Apply battery save to the normalized text
+            input_text = normalized_text
+            if battery_save and len(normalized_text) > 25000:
+                logger.info(
+                    f"[Doc {document_id}] Battery Save ON: Truncating text from {len(normalized_text)} to ~25k chars."
+                )
+                input_text = (
+                    normalized_text[:15000]
+                    + "\n\n[... TEXT TRUNCATED BY BATTERY SAVE MODE ...]\n\n"
+                    + normalized_text[-10000:]
+                )
 
-            all_summaries, all_key_dates, all_parties = [], [], []
-            all_missing, all_amounts, all_case_numbers = [], [], []
-            all_tags: set = set()
-            doc_type, doc_subtype = None, None
-            # Rich entity list — always dicts for consistent UI rendering
-            all_entities: list = []
+            ai_analysis = {}
+            try:
+                ai_analysis = await document_intelligence_service.analyze_legal_document(
+                    text=input_text,
+                    filename=doc.filename if doc else str(document_id),
+                )
+                logger.info(f"[Doc {document_id}] AI analysis returned successfully.")
+            except Exception as e:
+                logger.warning(f"[Doc {document_id}] AI analysis failed: {e}")
 
-            for c in chunks:
-                if not c.chunk_analysis or not isinstance(c.chunk_analysis, dict):
-                    continue
-                ana = c.chunk_analysis
-                if ana.get("summary") and "chunk_" not in str(ana.get("summary", "")):
-                    all_summaries.append(ana["summary"])
-                if ana.get("key_dates"): all_key_dates.extend(ana["key_dates"])
-                if ana.get("parties"): all_parties.extend(ana["parties"])
-                if ana.get("missing_items"): all_missing.extend(ana["missing_items"])
-                if ana.get("financial_terms"): all_amounts.extend(ana["financial_terms"])
-                if ana.get("case_numbers"): all_case_numbers.extend(ana["case_numbers"])
-                if ana.get("tags"): all_tags.update(ana["tags"])
-                
-                # Use first non-empty document type/subtype found in chunks
-                if not doc_type and ana.get("document_type"):
-                    doc_type = ana["document_type"]
-                if not doc_subtype and ana.get("document_subtype"):
-                    doc_subtype = ana["document_subtype"]
+            # Merge regex metadata fallbacks
+            try:
+                from app.services.metadata_extraction import metadata_extraction_service
 
-                # Build rich entity dicts from parties
-                for party in (ana.get("parties") or []):
-                    if isinstance(party, dict):
-                        all_entities.append({
+                regex_meta = await metadata_extraction_service.extract_metadata(
+                    normalized_text, ocr_result.get("language", "en")
+                )
+
+                if not ai_analysis.get("parties"):
+                    ai_analysis["parties"] = regex_meta.get("entities", [])
+
+                if not ai_analysis.get("dates"):
+                    ai_analysis["dates"] = ai_analysis.get("key_dates") or regex_meta.get("dates", [])
+
+                if not ai_analysis.get("amounts"):
+                    ai_analysis["amounts"] = ai_analysis.get("financial_terms") or regex_meta.get(
+                        "amounts", []
+                    )
+
+                if not ai_analysis.get("case_numbers"):
+                    ai_analysis["case_numbers"] = regex_meta.get("case_numbers", [])
+
+                if not ai_analysis.get("classification"):
+                    ai_analysis["classification"] = ai_analysis.get("document_type") or "Unknown Document"
+
+                if not ai_analysis.get("missing_documents"):
+                    ai_analysis["missing_documents"] = ai_analysis.get("missing_items") or []
+
+                # Update document record with classification from AI
+                doc = await document_crud.get(db, document_id)
+                if doc:
+                    doc.classification = ai_analysis.get("classification") or "Unknown Document"
+                    await db.commit()
+
+                # Avoid regex-based routing identifiers here; we want AI-driven routing
+                ai_analysis["routing_ids"] = []
+                ai_analysis["routing_projects"] = []
+                ai_analysis["routing_organizations"] = []
+            except Exception as meta_err:
+                logger.warning(
+                    f"[Doc {document_id}] Regex metadata extraction failed: {meta_err}"
+                )
+                ai_analysis.setdefault("routing_ids", [])
+                ai_analysis.setdefault("routing_projects", [])
+                ai_analysis.setdefault("routing_organizations", [])
+
+            # Build simple confidence votes for AI tags
+            try:
+                tag_votes = []
+                for t in ai_analysis.get("tags", []) or []:
+                    tag_votes.append({"name": t, "confidence": 0.5})
+                ai_analysis["tag_votes"] = tag_votes
+            except Exception:
+                pass
+
+            # Store summary and metadata in one pass
+            from app.db.models.summary import Summary
+            from app.db.models.document_metadata import DocumentMetadata
+
+            def _dedup_local(seq):
+                seen, out = set(), []
+                for item in seq or []:
+                    key = str(item)
+                    if key not in seen:
+                        seen.add(key)
+                        out.append(item)
+                return out
+
+            dates = ai_analysis.get("dates", [])
+            amounts = ai_analysis.get("amounts", [])
+            case_numbers = ai_analysis.get("case_numbers", [])
+            missing_docs = ai_analysis.get("missing_documents", [])
+            parties = ai_analysis.get("parties", [])
+
+            # Rich entities from parties / attorneys (mirror background service)
+            entities = []
+            for party in ai_analysis.get("parties", []):
+                if isinstance(party, dict):
+                    entities.append(
+                        {
                             "name": party.get("name", ""),
                             "role": party.get("role", ""),
                             "id_number": party.get("id_number"),
                             "contact": party.get("contact"),
                             "firm": None,
                             "bar_number": None,
-                        })
-                    elif isinstance(party, str) and party.strip():
-                        all_entities.append({"name": party, "role": "Party",
-                                            "id_number": None, "contact": None,
-                                            "firm": None, "bar_number": None})
+                        }
+                    )
+                elif isinstance(party, str) and party.strip():
+                    entities.append(
+                        {
+                            "name": party,
+                            "role": "Party",
+                            "id_number": None,
+                            "contact": None,
+                            "firm": None,
+                            "bar_number": None,
+                        }
+                    )
 
-                # Build rich entity dicts from attorneys
-                for atty in (ana.get("attorneys") or []):
-                    if isinstance(atty, dict):
-                        all_entities.append({
+            for atty in ai_analysis.get("attorneys", []):
+                if isinstance(atty, dict):
+                    entities.append(
+                        {
                             "name": atty.get("name", ""),
                             "role": f"Attorney representing {atty.get('representing', '')}".strip(),
                             "id_number": None,
                             "contact": None,
                             "firm": atty.get("firm"),
                             "bar_number": atty.get("bar_number"),
-                        })
-                    elif isinstance(atty, str) and atty.strip():
-                        all_entities.append({"name": atty, "role": "Attorney",
-                                            "id_number": None, "contact": None,
-                                            "firm": None, "bar_number": None})
-
-            def dedup(lst):
-                seen, out = set(), []
-                for d in lst:
-                    key = str(d)
-                    if key not in seen:
-                        seen.add(key)
-                        out.append(d)
-                return out
-
-            from app.db.models.summary import Summary
-            from app.db.models.document_metadata import DocumentMetadata
+                        }
+                    )
+                elif isinstance(atty, str) and atty.strip():
+                    entities.append(
+                        {
+                            "name": atty,
+                            "role": "Attorney",
+                            "id_number": None,
+                            "contact": None,
+                            "firm": None,
+                            "bar_number": None,
+                        }
+                    )
 
             await db.execute(delete(Summary).where(Summary.document_id == document_id))
-            await db.execute(delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id))
+            await db.execute(
+                delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id)
+            )
 
-            # Party names as plain strings for legacy summary.parties field
-            party_names = dedup([
-                (p.get("name") if isinstance(p, dict) else p)
-                for p in all_parties
-                if (p.get("name") if isinstance(p, dict) else p)
-            ])
-            date_strs = dedup([
-                (d.get("date") if isinstance(d, dict) else d)
-                for d in all_key_dates
-                if (d.get("date") if isinstance(d, dict) else d)
-            ])
+            summary_text = ai_analysis.get("summary") or "No text summary could be generated."
+            party_names = _dedup_local(
+                [
+                    (p.get("name") if isinstance(p, dict) else p)
+                    for p in parties
+                    if (p.get("name") if isinstance(p, dict) else p)
+                ]
+            )
 
-            summary_text = "\n\n".join(all_summaries)[:5000] if all_summaries else None
-            db.add(Summary(
-                document_id=document_id,
-                organization_id=organization_id,
-                content=summary_text or "Processing complete. No text summary could be generated.",
-                key_dates=dedup(all_key_dates),
-                parties=party_names,
-                missing_documents_suggestion="\n".join(dedup(all_missing))
-            ))
-            db.add(DocumentMetadata(
-                document_id=document_id,
-                dates=dedup(all_key_dates),
-                entities=dedup(all_entities),   # rich dicts — UI renders name/role/id_number
-                amounts=dedup(all_amounts),
-                case_numbers=dedup(all_case_numbers)
-            ))
+            db.add(
+                Summary(
+                    document_id=document_id,
+                    organization_id=organization_id,
+                    content=str(summary_text),
+                    key_dates=_dedup_local(dates),
+                    parties=party_names,
+                    missing_documents_suggestion="\n".join(_dedup_local(missing_docs))
+                    if missing_docs
+                    else None,
+                )
+            )
+            db.add(
+                DocumentMetadata(
+                    document_id=document_id,
+                    dates=_dedup_local(dates),
+                    entities=_dedup_local(entities),
+                    amounts=_dedup_local(amounts),
+                    case_numbers=_dedup_local(case_numbers),
+                )
+            )
             await db.commit()
             logger.info(f"[Doc {document_id}] Summary and metadata saved.")
 
-            # ── NEW: Augmented Deadline Extraction from AI results ──────────
+            # AI-augmented deadlines from key_dates
             logger.info(f"[Doc {document_id}] Saving AI-augmented deadlines...")
             try:
                 type_map = {
@@ -384,59 +452,81 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                     "filing": DeadlineType.FILING,
                     "response": DeadlineType.RESPONSE,
                     "appeal": DeadlineType.APPEAL,
-                    "statute_of_limitations": DeadlineType.STATUTE_OF_LIMITATIONS
+                    "statute_of_limitations": DeadlineType.STATUTE_OF_LIMITATIONS,
                 }
-                
-                # Deduplicate and filter LLM dates
+
                 added_count = 0
-                for d in all_key_dates:
-                    if isinstance(d, dict) and (d.get("is_critical_deadline") or d.get("type") in type_map):
+                for d in ai_analysis.get("key_dates", []) or []:
+                    if isinstance(d, dict) and (
+                        d.get("is_critical_deadline") or d.get("type") in type_map
+                    ):
                         try:
-                            # Try to parse date from LLM string
-                            parsed_date = dateparser.parse(d["date"])
+                            parsed_date = dateparser.parse(d.get("date"))
                             if parsed_date:
                                 new_deadline = Deadline(
                                     document_id=document_id,
-                                    case_id=doc.case_id,
+                                    case_id=doc.case_id if doc else None,
                                     organization_id=organization_id,
                                     deadline_date=parsed_date,
-                                    deadline_type=type_map.get(d.get("type", "other"), DeadlineType.OTHER),
+                                    deadline_type=type_map.get(
+                                        d.get("type", "other"), DeadlineType.OTHER
+                                    ),
                                     description=d.get("description", "Legal Deadline"),
-                                    confidence_score=0.95
+                                    confidence_score=0.95,
                                 )
                                 db.add(new_deadline)
                                 added_count += 1
-                        except:
+                        except Exception:
                             continue
                 await db.commit()
                 if added_count:
-                    logger.info(f"[Doc {document_id}] Added {added_count} high-fidelity AI deadlines.")
+                    logger.info(
+                        f"[Doc {document_id}] Added {added_count} high-fidelity AI deadlines."
+                    )
             except Exception as e:
                 logger.error(f"[Doc {document_id}] AI Deadline augmentation failed: {e}")
 
-            # ── STEP 5.5: AI-based Collection Routing ───────────────────────
+            # Smart Collections routing using the unified ai_analysis
             logger.info(f"[Doc {document_id}] Running AI-based collection routing...")
             try:
                 from app.services.smart_collections import smart_collections_service
-                # Reconstruct an AI analysis dict for the routing service
-                full_ai_analysis = {
-                    "parties": dedup(all_parties),
-                    "document_type": doc_type,
-                    "document_subtype": doc_subtype,
-                    "tags": list(all_tags),
-                    "routing_ids": [], # We explicitly avoid regex here
-                    "routing_projects": [],
-                    "routing_organizations": []
-                }
+
                 await smart_collections_service.route_document_to_collections(
-                    db, doc, full_ai_analysis
+                    db, doc, ai_analysis
                 )
                 logger.info(f"[Doc {document_id}] AI Smart Collections routing complete.")
             except Exception as sc_err:
                 logger.error(f"[Doc {document_id}] AI routing failed: {sc_err}")
 
         # ── STEP 6: Embeddings per chunk ────────────────────────────────
+        if await _abort_if_timed_out("embedding"):
+            return
+
         logger.info(f"[Doc {document_id}] Generating embeddings for {len(chunk_ids)} chunks...")
+        if settings.DOCUMENT_EMBEDDING_FANOUT:
+            async with CeleryAsyncSessionLocal() as db:
+                doc = await document_crud.get(db, document_id)
+                if doc:
+                    doc.processed_chunks = 0
+                    doc.processing_stage = "embedding"
+                    doc.processing_progress = 57.0
+                    await db.commit()
+
+            try:
+                from app.core.celery import safe_task_delay
+                for chunk_id in chunk_ids:
+                    safe_task_delay(
+                        embed_chunk_task,
+                        document_id=document_id,
+                        chunk_id=chunk_id,
+                    )
+                logger.info(f"[Doc {document_id}] Embedding fan-out queued ({len(chunk_ids)} tasks).")
+            except Exception as e:
+                logger.error(f"[Doc {document_id}] Failed to queue embedding fan-out: {e}. Falling back to inline embedding.")
+                # If queuing fails, fall back to inline embedding loop below
+            else:
+                return
+
         for i, chunk_id in enumerate(chunk_ids):
             success = False
             retries = 0
@@ -488,4 +578,24 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 except Exception:
                     pass  # Don't fail on notification error
 
-    run_async(_run())
+    try:
+        run_async(_run())
+    except Exception as exc:
+        # Best-effort top-level logging if something leaks out of _run
+        try:
+            asyncio.run(_log_top_level_failure(document_id, exc))
+        except Exception:
+            pass
+
+
+async def _log_top_level_failure(document_id: int, exc: Exception) -> None:
+    """Capture any pipeline failures that escape the main _run coroutine."""
+    async with CeleryAsyncSessionLocal() as db:
+        log_entry = DocumentProcessingLog(
+            document_id=document_id,
+            stage="top_level",
+            error_message=str(exc),
+            stack_trace="".join(tb.format_exception(type(exc), exc, exc.__traceback__)),
+        )
+        db.add(log_entry)
+        await db.commit()
