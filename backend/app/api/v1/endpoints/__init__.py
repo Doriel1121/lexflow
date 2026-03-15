@@ -1,12 +1,16 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import users, cases, documents, search, email, auth, organizations, admin, tags, invitations, risk, notifications, clients, deadlines
+from app.api.v1.endpoints import (
+    users, cases, documents, search, email, auth, organizations, 
+    admin, tags, invitations, risk, notifications, clients, deadlines, ai
+)
 
 api_router_v1 = APIRouter()
 api_router_v1.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router_v1.include_router(users.router, prefix="/users", tags=["users"])
 api_router_v1.include_router(cases.router, prefix="/cases", tags=["cases"])
 api_router_v1.include_router(documents.router, prefix="/documents", tags=["documents"])
+api_router_v1.include_router(ai.router, prefix="/ai", tags=["ai"])
 api_router_v1.include_router(search.router, prefix="/search", tags=["search"])
 api_router_v1.include_router(email.router, prefix="/email", tags=["email"])
 api_router_v1.include_router(organizations.router, tags=["organizations"])

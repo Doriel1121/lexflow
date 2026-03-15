@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { Case } from '../types';
+import AskAI from '../components/ai/AskAI';
 
 interface Deadline {
   id: number;
@@ -101,9 +102,8 @@ const CaseDetailPage: React.FC = () => {
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('case_id', id);
     try {
-      await api.post('/v1/documents/upload', formData, {
+      await api.post(`/v1/documents/?case_id=${id}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       fetchCase();
@@ -202,18 +202,54 @@ const CaseDetailPage: React.FC = () => {
         <button onClick={() => navigate('/cases')} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors group"><ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /><span>Back to Cases</span></button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm relative overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -mr-32 -mt-32 blur-3xl" />
         <div className="relative z-10">
-          <div className="flex items-start justify-between mb-6">
-            <div><div className="flex items-center gap-3 mb-2"><span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${caseData.status === 'OPEN' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{caseData.status}</span><span className="text-slate-400 text-sm">Case #{caseData.id}</span></div><h1 className="text-4xl font-serif font-bold text-slate-900">{caseData.title}</h1><p className="text-slate-500 mt-2 max-w-2xl">{caseData.description}</p></div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${caseData.status === 'OPEN' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                  {caseData.status}
+                </span>
+                <span className="text-slate-400 text-xs font-mono">#{caseData.id}</span>
+              </div>
+              <h1 className="text-2xl font-serif font-bold text-slate-900">{caseData.title}</h1>
+            </div>
+            
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 text-xs">
+                <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                <div>
+                  <p className="text-slate-400 font-medium leading-tight">Created</p>
+                  <p className="font-bold text-slate-700">{new Date(caseData.created_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <User className="h-3.5 w-3.5 text-slate-400" />
+                <div>
+                  <p className="text-slate-400 font-medium leading-tight">Client</p>
+                  <p className="font-bold text-slate-700">{caseData.client_id ? `Client #${caseData.client_id}` : 'N/A'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <FileText className="h-3.5 w-3.5 text-slate-400" />
+                <div>
+                  <p className="text-slate-400 font-medium leading-tight">Docs</p>
+                  <p className="font-bold text-slate-700">{caseData.documents?.length || 0}</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-slate-400" /><div><p className="text-slate-500 text-xs">Created</p><p className="font-medium text-slate-700">{new Date(caseData.created_at).toLocaleDateString()}</p></div></div>
-            <div className="flex items-center gap-2 text-sm"><User className="h-4 w-4 text-slate-400" /><div><p className="text-slate-500 text-xs">Client</p><p className="font-medium text-slate-700">{caseData.client_id ? `Client #${caseData.client_id}` : 'Not assigned'}</p></div></div>
-            <div className="flex items-center gap-2 text-sm"><FileText className="h-4 w-4 text-slate-400" /><div><p className="text-slate-500 text-xs">Documents</p><p className="font-medium text-slate-700">{caseData.documents?.length || 0} files</p></div></div>
-          </div>
+          {caseData.description && (
+            <p className="text-slate-500 text-sm mt-3 max-w-3xl line-clamp-1 hover:line-clamp-none transition-all cursor-default italic">
+              {caseData.description}
+            </p>
+          )}
         </div>
+      </div>
+
+      <div className="w-full max-w-4xl mx-auto">
+         <AskAI caseId={parseInt(id || "0")} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">

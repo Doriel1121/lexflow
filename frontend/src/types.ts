@@ -77,6 +77,23 @@ export interface Client {
   updated_at: string;
 }
 
+export interface Citation {
+  document_id: number;
+  page?: number;
+}
+
+export interface AskAIRequest {
+  question: string;
+  case_id?: number;
+  document_ids?: number[];
+  top_k?: number;
+}
+
+export interface AskAIResponse {
+  answer: string;
+  citations: Citation[];
+}
+
 export interface Token {
   access_token: string;
   token_type: string;

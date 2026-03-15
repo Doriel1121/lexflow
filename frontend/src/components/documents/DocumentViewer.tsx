@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Download, Tag as TagIcon, Bot, AlertTriangle, Loader2, Trash2, FolderGit2, Hash, Building2, Sparkles } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
+import AskAI from '../ai/AskAI';
 
 export function DocumentViewer() {
   const navigate = useNavigate();
@@ -213,18 +214,27 @@ export function DocumentViewer() {
         {/* Right Pane: Intelligence */}
         <div className="w-1/2 bg-card flex flex-col">
           <div className="flex border-b border-border">
-            {['summary', 'entities', 'ocr'].map(tab => (
+            {['summary', 'entities', 'ask', 'ocr'].map(tab => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors uppercase tracking-wider ${activeTab === tab ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-slate-800'}`}
               >
-                {tab}
+                {tab === 'ask' ? 'Ask AI' : tab}
               </button>
             ))}
           </div>
 
           <div className="p-6 flex-1 overflow-y-auto">
+            {activeTab === 'ask' && (
+              <div className="h-full animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <AskAI 
+                  documentIds={[Number(id)]} 
+                  title={`Ask about ${document.filename}`}
+                />
+              </div>
+            )}
+
             {activeTab === 'summary' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 {!isAIReady ? (
