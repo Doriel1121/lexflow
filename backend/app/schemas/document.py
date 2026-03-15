@@ -9,7 +9,7 @@ from app.db.models.document import DocumentProcessingStatus
 
 class DocumentBase(BaseModel):
     filename: str
-    s3_url: HttpUrl
+    s3_url: str
     case_id: Optional[int] = None
     content: Optional[str] = None
     classification: Optional[str] = None
@@ -24,7 +24,7 @@ class DocumentCreate(DocumentBase):
 
 class DocumentUpdate(DocumentBase):
     filename: Optional[str] = None
-    s3_url: Optional[HttpUrl] = None
+    s3_url: Optional[str] = None
     case_id: Optional[int] = None
 
 class Document(DocumentBase):

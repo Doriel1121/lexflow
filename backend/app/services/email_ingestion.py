@@ -165,7 +165,7 @@ class EmailIngestionService:
                         "from": email_from,
                         "subject": email_subject,
                         "filename": filename,
-                        "case_id": case_id,
+                        "case_id": document.case_id,
                         "file_hash": file_hash,
                     }
                 )
@@ -174,7 +174,7 @@ class EmailIngestionService:
 
             logger.info(
                 "Inbound email: ✅ ingested '%s' → doc_id=%d case_id=%s",
-                filename, document.id, case_id
+                filename, document.id, document.case_id
             )
             return document
 

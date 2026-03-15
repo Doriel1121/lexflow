@@ -82,6 +82,7 @@ async def upload_document(
 
     try:
         # ── Validate case if provided ──────────────────────────────────────
+        target_org_id = current_user.organization_id
         if case_id and case_id != 0:
             case = await db.get(DBCase, case_id)
             if not case:
@@ -89,6 +90,9 @@ async def upload_document(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Case {case_id} not found",
                 )
+            # Ensure document inherits the case's organization_id
+            if case.organization_id:
+                target_org_id = case.organization_id
 
         # ── Save file ──────────────────────────────────────────────────────
         upload_path = (
@@ -129,7 +133,7 @@ async def upload_document(
             page_count=0,
         )
         document = await document_crud.create(
-            db, document_in, current_user.id, current_user.organization_id
+            db, document_in, current_user.id, target_org_id
         )
 
         # ── Queue processing ───────────────────────────────────────────────
@@ -143,7 +147,7 @@ async def upload_document(
                     document_id=document.id,
                     file_path=str(file_path),
                     user_id=current_user.id,
-                    organization_id=current_user.organization_id,
+                    organization_id=target_org_id,
                 )
                 celery_queued = True
                 logger.info("[Doc %d] Queued via Celery.", document.id)
@@ -161,7 +165,7 @@ async def upload_document(
                 document_id=document.id,
                 file_path=str(file_path),
                 user_id=current_user.id,
-                organization_id=current_user.organization_id,
+                organization_id=target_org_id,
             )
             logger.info("[Doc %d] Queued via BackgroundTask.", document.id)
 
@@ -170,7 +174,7 @@ async def upload_document(
             await log_audit(
                 db=db,
                 event_type="document_upload",
-                organization_id=current_user.organization_id,
+                organization_id=target_org_id,
                 user_id=current_user.id,
                 resource_type="document",
                 resource_id=str(document.id),
@@ -939,7 +943,7 @@ async def retry_ai_analysis(
             document_id=document.id,
             file_path=str(file_path),
             user_id=current_user.id,
-            organization_id=current_user.organization_id
+            organization_id=document.organization_id
         )
         
         return {
