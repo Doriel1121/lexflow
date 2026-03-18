@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    validate_password_strength,
+)
 from app.core.dependencies import get_db
 from app.crud.user import user_crud
 from app.schemas.user import UserCreate
@@ -12,6 +16,8 @@ import secrets
 import httpx
 from pydantic import BaseModel, EmailStr
 from fastapi.security import OAuth2PasswordRequestForm
+
+from app.core.rate_limit import enforce_login_rate_limit
 
 from app.schemas.organization import OrganizationCreate
 from app.crud.organization import organization_crud
@@ -28,11 +34,18 @@ router = APIRouter()
 @router.post("/register")
 async def register(
     user_in: UserRegister,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    response: Response = None,
 ):
     """
     Register a new Organization and its first Admin User.
     """
+    # Basic password policy
+    try:
+        validate_password_strength(user_in.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # 1. Check if user already exists
     existing_user = await user_crud.get_by_email(db, email=user_in.email)
     if existing_user:
@@ -55,8 +68,9 @@ async def register(
     
     user = await user_crud.create(db, user_in=new_user, organization_id=org.id)
 
-    # 4. Generate Token
+    # 4. Generate Tokens
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     jwt_token = create_access_token(
         data={
             "email": user.email,
@@ -66,8 +80,17 @@ async def register(
         },
         expires_delta=access_token_expires
     )
+    refresh_token = create_refresh_token(
+        data={
+            "email": user.email,
+            "user_id": user.id,
+            "org_id": user.organization_id,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role)
+        },
+        expires_delta=refresh_expires
+    )
 
-    return {
+    payload = {
         "access_token": jwt_token,
         "token_type": "bearer",
         "user": {
@@ -77,17 +100,37 @@ async def register(
             "role": user.role.value if hasattr(user.role, "value") else user.role,
         },
     }
+    # For now we only return refresh token via HttpOnly cookie; frontend continues using access_token.
+    # This is backwards compatible and sets us up for silent refresh later.
+    target_response = response or Response()
+    target_response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=False,  # consider True when using HTTPS
+        samesite="lax",
+        max_age=int(refresh_expires.total_seconds()),
+        path="/",
+    )
+    return payload
 
 @router.post("/login")
 async def login_native(
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    form_data: OAuth2PasswordRequestForm = Depends()
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    response: Response = None,
 ):
     """
     Standard OAuth2 compatible token login, get an access token for future requests.
     """
     from app.core.security import verify_password
     
+    # Simple rate limiting by IP + username
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"{client_ip}:{form_data.username.lower()}"
+    enforce_login_rate_limit(rate_key)
+
     user = await user_crud.get_by_email(db, email=form_data.username.lower())
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -105,6 +148,7 @@ async def login_native(
         await db.refresh(user)
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     jwt_token = create_access_token(
         data={
             "email": user.email,
@@ -114,8 +158,17 @@ async def login_native(
         },
         expires_delta=access_token_expires
     )
+    refresh_token = create_refresh_token(
+        data={
+            "email": user.email,
+            "user_id": user.id,
+            "org_id": user.organization_id,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role)
+        },
+        expires_delta=refresh_expires
+    )
 
-    return {
+    payload = {
         "access_token": jwt_token,
         "token_type": "bearer",
         "user": {
@@ -125,6 +178,17 @@ async def login_native(
             "role": user.role.value if hasattr(user.role, "value") else user.role,
         }
     }
+    target_response = response or Response()
+    target_response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=int(refresh_expires.total_seconds()),
+        path="/",
+    )
+    return payload
 
 
 @router.get("/login/{provider}")
@@ -248,13 +312,18 @@ async def auth_callback(
 async def dev_login(
     email: str = "admin@lawfirm.com",
     db: AsyncSession = Depends(get_db),
+    response: Response = None,
 ):
     """
     Development-only login endpoint. Returns a real JWT for a real DB user.
     Creates the user if they don't exist.
     
     Note: Only admin@lawfirm.com gets ADMIN role. Other users get LAWYER role by default.
+    This endpoint is disabled outside development environments.
     """
+    # Hard guard: do not allow in non-development environments
+    if settings.ENVIRONMENT != "development":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     user = await user_crud.get_by_email(db, email=email.lower())
     if not user:
         # Default to LAWYER role for regular users
@@ -283,6 +352,7 @@ async def dev_login(
         await db.commit()
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     jwt_token = create_access_token(
         data={
             "email": user.email,
@@ -292,8 +362,17 @@ async def dev_login(
         },
         expires_delta=access_token_expires
     )
+    refresh_token = create_refresh_token(
+        data={
+            "email": user.email,
+            "user_id": user.id,
+            "org_id": user.organization_id,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role)
+        },
+        expires_delta=refresh_expires
+    )
 
-    return {
+    payload = {
         "access_token": jwt_token,
         "token_type": "bearer",
         "user": {
@@ -302,4 +381,61 @@ async def dev_login(
             "full_name": user.full_name,
             "role": user.role.value if hasattr(user.role, "value") else user.role,
         },
+    }
+
+    target_response = response or Response()
+    target_response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=int(refresh_expires.total_seconds()),
+        path="/",
+    )
+    return payload
+
+
+@router.post("/refresh")
+async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Exchange a refresh_token cookie for a new access token.
+    Currently not used by the frontend, but implemented for future-proofing.
+    """
+    from jose import JWTError, jwt
+
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
+
+    try:
+        payload = jwt.decode(refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    user = await user_crud.get(db, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User inactive or not found")
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        data={
+            "email": user.email,
+            "user_id": user.id,
+            "org_id": user.organization_id,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        },
+        expires_delta=access_token_expires,
+    )
+
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer",
     }

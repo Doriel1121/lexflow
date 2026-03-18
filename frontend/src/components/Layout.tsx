@@ -53,7 +53,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <header className="bg-white dark:bg-gray-800 shadow-sm p-4 flex justify-between items-center">
-        <Link to="/" className="text-xl font-bold text-blue-600 dark:text-blue-400">LexFlow</Link>
+        <Link to="/" className="text-xl font-bold text-blue-600 dark:text-blue-400">LegalOS</Link>
         <nav>
           {isAuthenticated ? (
             <ul className="flex space-x-4">
@@ -84,7 +84,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         {children}
       </main>
       <footer className="bg-white dark:bg-gray-800 shadow-sm p-4 text-center text-gray-500 dark:text-gray-400">
-        &copy; {new Date().getFullYear()} LexFlow. All rights reserved.
+        &copy; {new Date().getFullYear()} LegalOS. All rights reserved.
       </footer>
     </div>
   );

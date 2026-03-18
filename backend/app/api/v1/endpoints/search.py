@@ -1,83 +1,66 @@
-from typing import List, Annotated, Optional
+from typing import List, Annotated, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_db, get_current_active_user, RoleChecker
-from app.schemas.document import Document as DocumentSchema
-from app.crud.document import document_crud
+from app.core.dependencies import get_db, get_current_active_user, RoleChecker, apply_user_org_filter
 from app.db.models.user import User as DBUser, UserRole
-from app.db.models.document import Document as DBDocument # Added
-from app.db.models.tag import Tag as DBTag # Added
-from app.services.embeddings import embedding_service # To generate embeddings for semantic search queries
+from app.db.models.document import Document as DBDocument
+from app.db.models.case import Case as DBCase
+from app.db.models.client import Client as DBClient
+from app.schemas.search import GlobalSearchResult
 
 router = APIRouter()
 
-@router.get("/", response_model=List[DocumentSchema])
-async def smart_search(
+@router.get("/", response_model=GlobalSearchResult)
+async def global_search(
     db: AsyncSession = Depends(get_db),
-    current_user: DBUser = Depends(RoleChecker(list(UserRole))),
-    query_string: Optional[str] = Query(None, description="Keywords for full-text search"),
-    semantic_query: Optional[str] = Query(None, description="Phrase for semantic search (will be embedded)"),
-    case_id: Optional[int] = Query(None, description="Filter by case ID"),
-    language: Optional[str] = Query(None, description="Filter by document language (e.g., 'en', 'he')"),
-    classification: Optional[str] = Query(None, description="Filter by document classification (e.g., 'contract')"),
-    tags: Optional[List[str]] = Query(None, description="Filter by document tags"),
-    limit: int = Query(10, ge=1, le=100),
+    current_user: DBUser = Depends(get_current_active_user),
+    query: str = Query(..., min_length=2, description="The search term"),
+    limit_per_type: int = Query(5, ge=1, le=20, description="Max results per category")
 ):
     """
-    Perform a smart search across documents, combining full-text and semantic capabilities.
-    Results are returned ordered by relevance, with semantic matches prioritized if a semantic query is provided.
+    Search across multiple entities (Cases, Documents, Clients) and return categorized results.
     """
-    documents = []
+    user_org_id = current_user.organization_id
+    user_id = current_user.id
+    user_role = current_user.role.value if current_user.role else None
 
-    if semantic_query:
-        # Generate embeddings for the semantic query
-        query_embedding = await embedding_service.generate_embeddings(semantic_query)
-        semantic_results = await document_crud.semantic_search(
-            db,
-            query_embedding=query_embedding,
-            case_id=case_id,
-            limit=limit,
-        )
-        documents.extend(semantic_results)
-        # For simplicity in MVP, if semantic query is present, it dominates.
-        # A more complex system would merge and re-rank results.
-        return documents 
+    # 1. Search Documents (by filename)
+    doc_query = select(DBDocument).options(
+        selectinload(DBDocument.tags),
+        selectinload(DBDocument.summary),
+        selectinload(DBDocument.document_metadata)
+    ).filter(DBDocument.filename.ilike(f"%{query}%"))
+    doc_query = apply_user_org_filter(doc_query, DBDocument, user_id, user_org_id, user_role)
+    doc_query = doc_query.limit(limit_per_type)
+    
+    # 2. Search Cases (by title)
+    case_query = select(DBCase).filter(DBCase.title.ilike(f"%{query}%"))
+    case_query = apply_user_org_filter(case_query, DBCase, user_id, user_org_id, user_role)
+    case_query = case_query.limit(limit_per_type)
+    
+    # 3. Search Clients (by name)
+    client_query = select(DBClient).filter(DBClient.name.ilike(f"%{query}%"))
+    # Clients only have organization_id filter
+    if user_role != "admin" and user_role != UserRole.ADMIN.value:
+        if user_org_id is not None:
+            client_query = client_query.where(DBClient.organization_id == user_org_id)
+        else:
+            # Independent users shouldn't really have clients in this schema yet, 
+            # but we'll return nothing for now to be safe
+            return GlobalSearchResult()
+            
+    client_query = client_query.limit(limit_per_type)
 
-    elif query_string:
-        # Perform full-text search
-        full_text_results = await document_crud.full_text_search(
-            db,
-            query_string=query_string,
-            case_id=case_id,
-            language=language,
-            classification=classification,
-            tag_names=tags,
-            limit=limit,
-        )
-        documents.extend(full_text_results)
+    # Execute all queries
+    doc_results = await db.execute(doc_query)
+    case_results = await db.execute(case_query)
+    client_results = await db.execute(client_query)
 
-    # If no specific search query (semantic or full-text), return filtered results or all documents
-    if not documents and (case_id or language or classification or tags):
-        # Fallback to filtering documents based on criteria if no search string
-        filter_query = select(DBDocument).options(selectinload(DBDocument.tags))
-        if case_id:
-            filter_query = filter_query.filter(DBDocument.case_id == case_id)
-        if language:
-            filter_query = filter_query.filter(DBDocument.language == language)
-        if classification:
-            filter_query = filter_query.filter(DBDocument.classification == classification)
-        if tags:
-            for tag_name in tags:
-                filter_query = filter_query.filter(DBDocument.tags.any(DBTag.name == tag_name))
-        
-        filter_query = filter_query.offset(0).limit(limit)
-        result = await db.execute(filter_query)
-        documents.extend(result.scalars().all())
-
-    # If nothing found or no query, but filters are present, it implies general filtering.
-    # Otherwise, an empty list is returned.
-
-    return documents
+    return GlobalSearchResult(
+        documents=list(doc_results.scalars().all()),
+        cases=list(case_results.scalars().all()),
+        clients=list(client_results.scalars().all())
+    )

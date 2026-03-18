@@ -815,7 +815,7 @@ async def assign_document_to_collections(
 
     # 1. Run AI analysis
     ai_analysis = await document_intelligence_service.analyze_legal_document(
-        document.content, document.filename
+        document.content, document.filename, language=document.language
     )
 
     # 2. Merge regex metadata — DISABLED to use only AI tags
@@ -878,7 +878,7 @@ async def bulk_assign_collections(
     for doc in docs_needing_sync:
         try:
             ai_analysis = await document_intelligence_service.analyze_legal_document(
-                doc.content, doc.filename
+                doc.content, doc.filename, language=doc.language
             )
             # Regex metadata DISABLED for collections
             ai_analysis["routing_ids"] = []

@@ -5,7 +5,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 14  # 14 days
     FRONTEND_ORIGINS: str = "http://localhost:5173"
+    ENVIRONMENT: str = "development"  # "development", "staging", "production"
     
     # OAuth
     GOOGLE_CLIENT_ID: str = ""
@@ -36,6 +38,10 @@ class Settings(BaseSettings):
 
     # Reaper: mark stuck docs as completed_without_ai after this many minutes
     DOCUMENT_STUCK_MINUTES: int = 30
+
+    # Auth hardening
+    PASSWORD_MIN_LENGTH: int = 10
+    RATE_LIMIT_LOGIN_PER_MINUTE: int = 20
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

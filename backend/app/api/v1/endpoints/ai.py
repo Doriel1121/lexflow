@@ -47,6 +47,12 @@ def generate_cache_key(request: AskAIRequest, org_id: Optional[int]) -> str:
     req_data = f"{request.question}:{request.case_id}:{request.document_ids}:{request.top_k}:{org_id}"
     return f"rag:query:{hashlib.md5(req_data.encode()).hexdigest()}"
 
+def _is_hebrew(text: str) -> bool:
+    for ch in text:
+        if "\u0590" <= ch <= "\u05FF":
+            return True
+    return False
+
 @router.post("/ask", response_model=AskAIResponse)
 async def ask_ai(
     request: AskAIRequest,
@@ -130,6 +136,12 @@ async def ask_ai(
 
     # 4. LLM Answer Generation
     # We improve the prompt to be much stricter about formatting and quality
+    lang_hint = ""
+    if _is_hebrew(request.question):
+        lang_hint = "You MUST answer in Hebrew."
+    else:
+        lang_hint = "You MUST answer in the same language as the user's question."
+
     prompt = f"""You are a professional legal analyst. Answer the user's QUESTION based strictly on the provided CONTEXT.
 
 CONTEXT:
@@ -139,7 +151,7 @@ USER QUESTION:
 {request.question}
 
 INSTRUCTIONS:
-1. Provide a clear, professional, and well-structured answer in the same language as the question.
+1. Provide a clear, professional, and well-structured answer. {lang_hint}
 2. Use bullet points for lists of obligations, dates, or key facts.
 3. Do NOT include technical Source IDs (like "Source 1") or Document IDs in the middle of your sentences. 
 4. Do NOT repeat yourself or use unnecessary symbols/parentheses.

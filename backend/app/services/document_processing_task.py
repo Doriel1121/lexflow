@@ -238,6 +238,7 @@ class DocumentProcessingService:
                     ai_analysis = await document_intelligence_service.analyze_legal_document(
                         input_text,
                         filename=document.filename,
+                        language=language,
                     )
                     logger.info("[Doc %d] AI analysis returned successfully.", document_id)
                 except Exception as ai_err:

@@ -58,7 +58,7 @@ export default function Register() {
           <div className="inline-flex items-center justify-center p-3 bg-white/10 rounded-xl mb-4 backdrop-blur-sm">
             <Scale className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-2xl font-serif font-bold text-white tracking-tight">LexFlow</h1>
+          <h1 className="text-2xl font-serif font-bold text-white tracking-tight">LegalOS</h1>
           <p className="text-slate-400 mt-1 text-sm font-medium">Create your workspace</p>
         </div>
 

@@ -259,9 +259,12 @@ class CohereProvider(BaseAIProvider):
 
     def __init__(self):
         load_dotenv()
-        raw_url = os.getenv("COHERE_BASE_URL", "https://api.cohere.ai")
-        # Robustly handle if user put /v1 or /compatibility/v1 in the base_url
+        raw_url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com")
+        compat_raw = os.getenv("COHERE_COMPAT_BASE_URL", "https://api.cohere.ai/compatibility/v1")
+        # Native (v2) base URL
         self.base_url = raw_url.rstrip("/").replace("/compatibility/v1", "").replace("/v1", "")
+        # Compatibility (OpenAI-style) base URL
+        self.compat_base_url = compat_raw.rstrip("/")
         self.api_key = os.getenv("COHERE_API_KEY", "").strip()
         self.model = os.getenv("COHERE_MODEL", "command-r").strip()
         self.embedding_model = os.getenv("COHERE_EMBEDDING_MODEL", "embed-english-v3.0").strip()
@@ -290,8 +293,8 @@ class CohereProvider(BaseAIProvider):
         if not self.active:
             logger.warning("Cohere Provider inactive — skipping generate_text.")
             return None
-        compat_url = self.base_url.rstrip("/") + "/compatibility/v1/chat/completions"
-        native_url = self.base_url.rstrip("/") + "/v1/chat"
+        compat_url = self.compat_base_url + "/chat/completions"
+        native_url = self.base_url.rstrip("/") + "/v2/chat"
 
         compat_payload = {
             "model": self.model,
@@ -306,18 +309,23 @@ class CohereProvider(BaseAIProvider):
 
         native_payload = {
             "model": self.model,
-            "message": prompt,
+            "messages": [{"role": "user", "content": prompt}],
             "stream": False,
         }
         result = await self._post(native_url, native_payload)
-        return result.get("text")
+        try:
+            # v2 returns message.content as a list of parts
+            parts = result.get("message", {}).get("content") or []
+            return "".join([p.get("text", "") for p in parts if isinstance(p, dict)])
+        except Exception:
+            return result.get("text")
 
     async def generate_json(self, prompt: str) -> Optional[Dict[str, Any]]:
         if not self.active:
             logger.warning("Cohere Provider inactive — skipping generate_json.")
             return None
-        compat_url = self.base_url.rstrip("/") + "/compatibility/v1/chat/completions"
-        native_url = self.base_url.rstrip("/") + "/v1/chat"
+        compat_url = self.compat_base_url + "/chat/completions"
+        native_url = self.base_url.rstrip("/") + "/v2/chat"
 
         content = ""
         # Try OpenAI-compatible endpoint first
@@ -333,17 +341,17 @@ class CohereProvider(BaseAIProvider):
             logger.debug("Cohere compat JSON failed (expected if endpoint missing): %s", e)
             content = ""
 
-        # Fallback to native Cohere Chat API
+        # Fallback to native Cohere Chat API (v2)
         if not content:
             native_payload = {
                 "model": self.model,
-                "message": prompt,
+                "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "response_format": {"type": "json_object"},
             }
             try:
                 result = await self._post(native_url, native_payload)
-                content = (result.get("text") or "").strip()
+                parts = result.get("message", {}).get("content") or []
+                content = "".join([p.get("text", "") for p in parts if isinstance(p, dict)]).strip()
             except Exception as e:
                 logger.error("Cohere native JSON failed: %s", e)
                 return None
@@ -373,8 +381,8 @@ class CohereProvider(BaseAIProvider):
             logger.warning("Cohere embedding model not set — returning zero vector.")
             return [0.0] * self.embedding_dimension
         
-        compat_url = self.base_url.rstrip("/") + "/compatibility/v1/embeddings"
-        native_url = self.base_url.rstrip("/") + "/v1/embed"
+        compat_url = self.compat_base_url + "/embeddings"
+        native_url = self.base_url.rstrip("/") + "/v2/embed"
 
         embeddings = []
         # Try compat first
@@ -396,10 +404,14 @@ class CohereProvider(BaseAIProvider):
                 "model": self.embedding_model,
                 "texts": [text],
                 "input_type": "search_document", # Required for v3 models
+                "embedding_types": ["float"],
             }
             try:
                 result = await self._post(native_url, native_payload)
-                embeddings = result.get("embeddings") or []
+                if isinstance(result.get("embeddings"), dict):
+                    embeddings = result.get("embeddings", {}).get("float") or []
+                else:
+                    embeddings = result.get("embeddings") or []
             except Exception as e:
                 logger.error("Cohere native embedding failed: %s", e)
                 return [0.0] * self.embedding_dimension

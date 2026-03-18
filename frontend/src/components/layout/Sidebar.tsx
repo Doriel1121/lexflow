@@ -137,7 +137,7 @@ export function Sidebar() {
         <div className="bg-primary p-1.5 rounded-lg shrink-0">
           <Scale className="h-5 w-5 text-primary-foreground" />
         </div>
-        <span className="font-serif text-lg font-bold tracking-tight">LexFlow</span>
+        <span className="font-serif text-lg font-bold tracking-tight">LegalOS</span>
       </div>
 
       {/* Navigation */}

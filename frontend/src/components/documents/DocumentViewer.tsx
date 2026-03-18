@@ -3,10 +3,14 @@ import { ArrowLeft, Download, Tag as TagIcon, Bot, AlertTriangle, Loader2, Trash
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import AskAI from '../ai/AskAI';
+import { useSnackbar } from '../../context/SnackbarContext';
+import { useTranslation } from 'react-i18next';
 
 export function DocumentViewer() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showSnackbar } = useSnackbar();
+  const { i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('summary');
   const [loading, setLoading] = useState(true);
   const [document, setDocument] = useState<any>(null);
@@ -74,7 +78,7 @@ export function DocumentViewer() {
       navigate('/documents');
     } catch (error) {
       console.error('Failed to delete document:', error);
-      alert('Failed to delete document');
+      showSnackbar('Failed to delete document', { type: 'error' });
     } finally {
       setDeleting(false);
       setShowDeleteConfirm(false);
@@ -100,6 +104,7 @@ export function DocumentViewer() {
   const normalizedStatus = document.processing_status ? document.processing_status.toLowerCase() : 'completed';
   const isOCRReady = document.content && document.content.length > 0;
   const isAIReady = !!intelligence && (intelligence.summary || intelligence.metadata);
+  const isRTL = i18n.language?.toLowerCase().startsWith('he');
 
   // --- INITIAL OCR LOADING STATE ---
   if (!isOCRReady && (normalizedStatus === 'pending' || normalizedStatus === 'processing')) {
@@ -114,7 +119,7 @@ export function DocumentViewer() {
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">Reading Document</h2>
           <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            LexFlow AI is extracting text from your document. You will be able to view the text in a few moments.
+            LegalOS AI is extracting text from your document. You will be able to view the text in a few moments.
           </p>
           <div className="w-full space-y-4">
             <div className="h-2 bg-slate-100 rounded overflow-hidden">
@@ -142,7 +147,7 @@ export function DocumentViewer() {
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">Processing Failed</h2>
           <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-            LexFlow AI encountered an error while trying to read and analyze this document.
+            LegalOS AI encountered an error while trying to read and analyze this document.
           </p>
           <div className="flex space-x-3 w-full">
             <button onClick={() => navigate('/documents')} className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors">Back to Documents</button>
@@ -157,9 +162,9 @@ export function DocumentViewer() {
     try {
       await api.post(`/v1/documents/retry-ai-analysis/${id}`);
       fetchDocumentData();
-      alert('Analysis retry queued.');
+      showSnackbar('Analysis retry queued.', { type: 'success' });
     } catch (e) {
-      alert('Failed to retry analysis.');
+      showSnackbar('Failed to retry analysis.', { type: 'error' });
     }
   };
 
@@ -198,17 +203,33 @@ export function DocumentViewer() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Pane: Document Text (READY IMMEDIATELY) */}
-        <div className="w-1/2 bg-slate-50 border-r border-border p-8 overflow-y-auto">
-          <div className="bg-white shadow-sm max-w-2xl mx-auto p-8 text-slate-800 text-sm leading-relaxed border border-slate-200 rounded-lg relative">
-            {!isAIReady && normalizedStatus !== 'failed' && (
-              <div className="absolute top-4 end-4 flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold border border-blue-100 animate-pulse">
-                <Sparkles className="h-3 w-3" />
-                AI ANALYSIS IN PROGRESS
+        {/* Left Pane: Original Document (PDF) */}
+        <div className="w-1/2 bg-slate-50 border-r border-border flex flex-col">
+          {document.s3_url ? (
+            <iframe
+              src={document.s3_url}
+              title={document.filename}
+              className="w-full h-full border-0"
+            />
+          ) : (
+            <div className="p-8 overflow-y-auto">
+              <div className="bg-white shadow-sm max-w-2xl mx-auto p-8 text-slate-800 text-sm leading-relaxed border border-slate-200 rounded-lg relative">
+                {!isAIReady && normalizedStatus !== 'failed' && (
+                  <div className="absolute top-4 end-4 flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold border border-blue-100 animate-pulse">
+                    <Sparkles className="h-3 w-3" />
+                    AI ANALYSIS IN PROGRESS
+                  </div>
+                )}
+                <p
+                  className="whitespace-pre-wrap font-sans"
+                  dir={isRTL ? 'rtl' : 'ltr'}
+                  lang={i18n.language}
+                >
+                  {normalizeContent(document.content)}
+                </p>
               </div>
-            )}
-            <p className="whitespace-pre-wrap font-sans" dir="auto">{normalizeContent(document.content)}</p>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Right Pane: Intelligence */}
@@ -253,8 +274,34 @@ export function DocumentViewer() {
                           <Bot className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
                           <div className="flex-1">
                             <h3 className="font-bold text-blue-900 text-sm mb-2">AI Summary</h3>
-                            <pre className="text-sm text-blue-800 leading-relaxed whitespace-pre-wrap font-sans">{intelligence.summary.content}</pre>
+                            <pre className="text-sm text-blue-800 leading-relaxed whitespace-pre-wrap font-sans" dir={isRTL ? 'rtl' : 'ltr'} lang={i18n.language}>{intelligence.summary.content}</pre>
                           </div>
+                        </div>
+                      </div>
+                    )}
+                    {intelligence?.summary?.key_dates?.length > 0 && (
+                      <div>
+                        <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">Important Dates</h3>
+                        <div className="space-y-2">
+                          {intelligence.summary.key_dates.map((d: any, i: number) => (
+                            <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm">
+                              <div className="font-semibold text-slate-800">{d.date || 'Unknown date'}</div>
+                              {d.description && <div className="text-xs text-slate-500 mt-1">{d.description}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {intelligence?.tags?.length > 0 && (
+                      <div>
+                        <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">Tags</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {intelligence.tags.map((t: string, i: number) => (
+                            <span key={i} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-secondary-50 text-secondary-700 border border-secondary-200">
+                              <TagIcon className="h-3 w-3 mr-1 opacity-60" />
+                              {t}
+                            </span>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -293,7 +340,41 @@ export function DocumentViewer() {
                           {intelligence.metadata.entities.map((ent: any, i: number) => (
                             <div key={i} className="p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-start gap-3">
                               <Building2 className="h-5 w-5 text-indigo-500 mt-1" />
-                              <div><p className="font-bold text-slate-900">{ent.name}</p><p className="text-xs text-slate-500">{ent.role}</p></div>
+                              <div>
+                                <p className="font-bold text-slate-900">{ent.name}</p>
+                                <p className="text-xs text-slate-500">{ent.role}</p>
+                                {ent.id_number && <p className="text-[11px] text-slate-500">ID: {ent.id_number}</p>}
+                                {ent.firm && <p className="text-[11px] text-slate-500">Firm: {ent.firm}</p>}
+                                {ent.bar_number && <p className="text-[11px] text-slate-500">Bar: {ent.bar_number}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {intelligence?.metadata?.dates?.length > 0 && (
+                      <div>
+                        <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">Dates</h3>
+                        <div className="space-y-2">
+                          {intelligence.metadata.dates.map((d: any, i: number) => (
+                            <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm">
+                              <div className="font-semibold text-slate-800">{d.date || 'Unknown date'}</div>
+                              {d.description && <div className="text-xs text-slate-500 mt-1">{d.description}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {intelligence?.metadata?.amounts?.length > 0 && (
+                      <div>
+                        <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">Amounts</h3>
+                        <div className="space-y-2">
+                          {intelligence.metadata.amounts.map((a: any, i: number) => (
+                            <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm">
+                              <div className="font-semibold text-slate-800">
+                                {a.amount || 'Amount'}{a.currency ? ` ${a.currency}` : ''}
+                              </div>
+                              {a.description && <div className="text-xs text-slate-500 mt-1">{a.description}</div>}
                             </div>
                           ))}
                         </div>
@@ -305,7 +386,7 @@ export function DocumentViewer() {
             )}
 
             {activeTab === 'ocr' && (
-              <div dir="auto" className="prose prose-sm max-w-none text-slate-600 bg-slate-50 p-4 rounded-lg border border-slate-100 text-xs whitespace-pre-wrap font-sans">
+              <div dir={isRTL ? 'rtl' : 'ltr'} lang={i18n.language} className="prose prose-sm max-w-none text-slate-600 bg-slate-50 p-4 rounded-lg border border-slate-100 text-xs whitespace-pre-wrap font-sans">
                 {document.content}
               </div>
             )}

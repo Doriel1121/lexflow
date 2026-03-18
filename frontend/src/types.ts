@@ -94,6 +94,12 @@ export interface AskAIResponse {
   citations: Citation[];
 }
 
+export interface GlobalSearchResult {
+  documents: Document[];
+  cases: Case[];
+  clients: Client[];
+}
+
 export interface Token {
   access_token: string;
   token_type: string;

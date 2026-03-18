@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from datetime import timedelta
 import asyncio
+from pathlib import Path
 
 from app.db.session import engine, Base, AsyncSessionLocal
 from app.api import api_router
@@ -17,9 +19,10 @@ from app.schemas.user import UserCreate
 from app.core.config import settings
 from app.core.audit_middleware import AuditMiddleware
 from app.services.document_reaper import reap_stuck_documents
+from app.core.rate_limit import enforce_login_rate_limit
 
 app = FastAPI(
-    title="LexFlow Backend MVP",
+    title="LegalOS Backend MVP",
     version="0.1.0",
     description="Backend API for Legal Document Operating System MVP",
     openapi_url="/openapi.json",
@@ -42,12 +45,22 @@ app.add_middleware(
 )
 
 
+# Serve uploaded files (PDFs, etc.) from /uploads
+uploads_path = Path(__file__).resolve().parent.parent / "uploads"
+uploads_path.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(uploads_path)),
+    name="uploads",
+)
+
+
 @app.on_event("startup")
 async def startup_event():
     # Create database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("🚀 LexFlow Backend initialized.")
+    print("🚀 LegalOS Backend initialized.")
 
     async def _reaper_loop():
         # Run every 5 minutes
@@ -68,10 +81,15 @@ app.include_router(ws_notifications_router, prefix="/api/v1/ws/notifications", t
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Standard OAuth2 password login for token access."""
+    # Very lightweight rate limiting: key by IP and username
+    client_ip = request.client.host if request.client else "unknown"
+    enforce_login_rate_limit(f"{client_ip}:{form_data.username}")
+
     user = await user_crud.get_by_email(db, email=form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -105,4 +123,4 @@ async def login_for_access_token(
 
 @app.get("/")
 async def read_root():
-    return {"message": "Welcome to LexFlow Backend MVP!", "version": "0.1.0", "docs": "/docs"}
+    return {"message": "Welcome to LegalOS Backend MVP!", "version": "0.1.0", "docs": "/docs"}

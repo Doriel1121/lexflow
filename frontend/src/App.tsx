@@ -23,6 +23,7 @@ import { CreateClientPage } from "./pages/clients/CreateClientPage";
 import CreateCasePage from "./pages/CreateCasePage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { SnackbarProvider } from "./context/SnackbarContext";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import AdminDashboard from "./pages/admin/dashboard/AdminDashboard";
 import AdminOrganizations from "./pages/admin/organizations/AdminOrganizations";
@@ -37,7 +38,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin" />
-          <p className="text-slate-500 text-sm font-medium">Loading LexFlow...</p>
+          <p className="text-slate-500 text-sm font-medium">Loading LegalOS...</p>
         </div>
       </div>
     );
@@ -54,9 +55,10 @@ function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
+        <SnackbarProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/auth/callback" element={<OAuthCallback />} />
           <Route path="/auth/accept-invite" element={<AcceptInvite />} />
@@ -103,6 +105,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+        </SnackbarProvider>
       </NotificationProvider>
     </AuthProvider>
   );

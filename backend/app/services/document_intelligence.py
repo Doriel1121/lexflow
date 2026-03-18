@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import os
 import asyncio
 import logging
@@ -11,16 +11,33 @@ class DocumentIntelligenceService:
     def __init__(self):
         self.provider = get_ai_provider()
     
-    async def analyze_legal_document(self, text: str, filename: str) -> Dict[str, Any]:
+    def _language_instruction(self, language: Optional[str], text: str) -> str:
+        lang = (language or "").lower()
+        if lang.startswith("he") or any("\u0590" <= ch <= "\u05FF" for ch in text[:2000]):
+            return "You MUST answer in Hebrew."
+        if lang.startswith("ar"):
+            return "You MUST answer in Arabic."
+        if lang.startswith("ru"):
+            return "You MUST answer in Russian."
+        if lang.startswith("es"):
+            return "You MUST answer in Spanish."
+        if lang.startswith("fr"):
+            return "You MUST answer in French."
+        return "You MUST answer in the same language as the document."
+
+    async def analyze_legal_document(self, text: str, filename: str, language: Optional[str] = None) -> Dict[str, Any]:
         """
         Comprehensive legal document analysis extracting all critical information
         """
         if not self.provider.active:
             return self._fallback_analysis(text, filename)
+        lang_hint = self._language_instruction(language, text)
         prompt = f"""Analyze this legal document and extract ALL relevant information in JSON format.
 
 Document: {filename}
 Content: {text}
+
+Language requirement: {lang_hint}
 
 Extract and return ONLY valid JSON with this exact structure:
 {{

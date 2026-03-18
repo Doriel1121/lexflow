@@ -179,7 +179,7 @@
         "noAccount": "Don't have an account?",
         "register": "Sign up",
         "welcomeBack": "Welcome back",
-        "signInToContinue": "Sign in to continue to LexFlow"
+        "signInToContinue": "Sign in to continue to LegalOS"
     },
     "search": {
         "title": "Semantic Search",
@@ -374,7 +374,7 @@
         "signOut": "Sign out",
         "emailIntake": "Email Auto-Intake",
         "addEmail": "Add email",
-        "emailIntakeDesc": "Each configured email gets a unique intake address. Configure your fax machine or scanner to send documents to that address — LexFlow handles the rest automatically.",
+        "emailIntakeDesc": "Each configured email gets a unique intake address. Configure your fax machine or scanner to send documents to that address — LegalOS handles the rest automatically.",
         "addForm": {
             "label": "Fax / scanner email address to register",
             "placeholder": "fax@myfirm.co.il",
@@ -391,7 +391,7 @@
         "setup": "📋 Setup — one time only",
         "setup1": "Copy the inbound address above",
         "setup2": "On your fax machine / scanner, change the \"Send to email\" destination to that address",
-        "setup3": "Done — documents will appear in LexFlow automatically",
+        "setup3": "Done — documents will appear in LegalOS automatically",
         "security": "Security",
         "securityDesc": "All inbound emails are processed over TLS. Attachments are scanned and stored encrypted. Every ingested document is logged in the tamper-evident audit trail."
     },

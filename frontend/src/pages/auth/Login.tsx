@@ -42,7 +42,7 @@ export default function Login() {
         <div className="bg-primary p-3 rounded-xl shadow-lg shadow-primary/20 mb-4">
           <Scale className="h-10 w-10 text-primary-foreground" />
         </div>
-        <h1 className="text-4xl font-serif font-bold text-slate-900 tracking-tight">LexFlow</h1>
+        <h1 className="text-4xl font-serif font-bold text-slate-900 tracking-tight">LegalOS</h1>
         <p className="text-slate-500 mt-2 font-medium">Legal Operating System</p>
       </div>
 

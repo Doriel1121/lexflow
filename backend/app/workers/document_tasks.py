@@ -277,6 +277,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 ai_analysis = await document_intelligence_service.analyze_legal_document(
                     text=input_text,
                     filename=doc.filename if doc else str(document_id),
+                    language=ocr_result.get("language", "en"),
                 )
                 logger.info(f"[Doc {document_id}] AI analysis returned successfully.")
             except Exception as e:
