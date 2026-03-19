@@ -2,4 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-/* You can add custom global styles here */
+@layer base {
+  :root {
+    --font-english: 'Inter', system-ui, sans-serif;
+    --font-hebrew: 'Assistant', 'Inter', sans-serif;
+  }
+
+  html {
+    font-family: var(--font-english);
+  }
+
+  html[lang="he"] {
+    font-family: var(--font-hebrew);
+  }
+
+  /* Ensure consistent alignment based on direction */
+  [dir="rtl"] {
+    text-align: right;
+  }
+
+  [dir="ltr"] {
+    text-align: left;
+  }
+}
+
+/* Custom global styles */
+.font-serif {
+  font-family: 'Merriweather', Georgia, serif;
+}

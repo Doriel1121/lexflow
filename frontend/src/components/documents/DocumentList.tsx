@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
+import { useSnackbar } from "../../context/SnackbarContext";
 
 interface Document {
   id: number;
@@ -31,6 +32,7 @@ interface Document {
 export function DocumentList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { showSnackbar } = useSnackbar();
   const [searchTerm, setSearchTerm] = useState("");
   const [semanticSearchActive, setSemanticSearchActive] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -228,89 +230,91 @@ export function DocumentList() {
       event.target.value = "";
 
       // Show success message
+      showSnackbar('Document uploaded successfully', { type: 'success' });
       console.log("Document uploaded successfully:", newDoc.filename);
-    } catch (error: any) {
+      } catch (error: any) {
       console.error("Upload failed:", error);
       const errorMsg =
         error.response?.data?.detail ||
         error.message ||
         "Failed to upload document";
-      alert(`Upload failed: ${errorMsg}`);
-    } finally {
+      showSnackbar(`Upload failed: ${errorMsg}`, { type: 'error' });
+      } finally {
       setUploading(false);
-    }
-  };
+      }
+      };
 
-  const handleDeleteDocument = async (docId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setOpenDropdownId(null);
-    if (!window.confirm("Are you sure you want to delete this document?"))
+      const handleDeleteDocument = async (docId: number, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setOpenDropdownId(null);
+      if (!window.confirm("Are you sure you want to delete this document?"))
       return;
 
-    setDeletingId(docId);
-    try {
+      setDeletingId(docId);
+      try {
       await api.delete(`/v1/documents/${docId}`);
       // Refresh the list after successful deletion
       fetchDocuments(searchTerm, 0);
-    } catch (error) {
+      showSnackbar('Document deleted successfully', { type: 'success' });
+      } catch (error) {
       console.error("Failed to delete document:", error);
-      alert("Failed to delete document");
+      showSnackbar("Failed to delete document", { type: 'error' });
       setDeletingId(null);
-    }
-  };
+      }
+      };
 
-  const filteredDocs = React.useMemo(() => {
-    if (semanticSearchActive) return documents; // When semantic search is on, the backend does the filtering
+      const filteredDocs = React.useMemo(() => {
+      if (semanticSearchActive) return documents; // When semantic search is on, the backend does the filtering
 
-    return documents.filter((doc) => {
+      return documents.filter((doc) => {
       const term = searchTerm.toLowerCase();
       const matchFilename = doc.filename.toLowerCase().includes(term);
       const matchContent = doc.content?.toLowerCase().includes(term) ?? false;
       const matchClassification =
         doc.classification?.toLowerCase().includes(term) ?? false;
       return matchFilename || matchContent || matchClassification;
-    });
-  }, [documents, searchTerm, semanticSearchActive]);
+      });
+      }, [documents, searchTerm, semanticSearchActive]);
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "Unknown";
-    const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
-    const date = new Date(utcDateStr);
-    return date.toISOString().split("T")[0];
-  };
+      const formatDate = (dateStr: string) => {
+      if (!dateStr) return "Unknown";
+      const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
+      const date = new Date(utcDateStr);
+      return date.toISOString().split("T")[0];
+      };
 
-  const getNormalizedStatus = (status: string | undefined | null) => {
-    if (!status) return "completed"; // Legacy documents default to completed
-    return status.toLowerCase();
-  };
+      const getNormalizedStatus = (status: string | undefined | null) => {
+      if (!status) return "completed"; // Legacy documents default to completed
+      return status.toLowerCase();
+      };
 
-  const needsAIAnalysis = (doc: Document) => {
-    // Check if document is completed but classification indicates AI is pending
-    return (
+      const needsAIAnalysis = (doc: Document) => {
+      // Check if document is completed but classification indicates AI is pending
+      return (
       getNormalizedStatus(doc.processing_status) === "completed" &&
       (doc.classification === "Text Extracted (AI Pending)" ||
         doc.classification === "Pending Analysis" ||
         doc.processing_stage === "completed_without_ai")
-    );
-  };
+      );
+      };
 
-  const handleRetryAI = async (docId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!window.confirm("Retry AI analysis for this document?")) return;
+      const handleRetryAI = async (docId: number, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!window.confirm("Retry AI analysis for this document?")) return;
 
-    try {
+      try {
       await api.post(`/v1/documents/retry-ai-analysis/${docId}`);
       // Refresh document list
       fetchDocuments(searchTerm, 0);
-      alert("AI analysis queued successfully");
-    } catch (error: any) {
+      showSnackbar("AI analysis queued successfully", { type: 'success' });
+      } catch (error: any) {
       console.error("Failed to retry AI analysis:", error);
-      alert(`Failed: ${error.response?.data?.detail || error.message}`);
-    }
-  };
+      showSnackbar(`Failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
+      }
+      };
 
-  return (
-    <div className="relative">
+      return (
+      <div className="relative">
       {/* New documents toast */}
       {newDocsToast && (
         <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl animate-fade-in">
@@ -445,7 +449,7 @@ export function DocumentList() {
                   filteredDocs.map((doc) => {
                     const status = getNormalizedStatus(doc.processing_status);
                     const isViewable = status === "completed" || doc.content || doc.processing_stage === "ocr_completed" || doc.processing_stage === "ai_analysis" || doc.processing_stage === "embedding";
-                    
+
                     return (
                       <tr
                         key={doc.id}
@@ -608,8 +612,9 @@ export function DocumentList() {
                                     className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
                                     onClick={() => {
                                       setOpenDropdownId(null);
-                                      alert(
+                                      showSnackbar(
                                         "Download functionality not yet implemented in backend.",
+                                        { type: 'info' }
                                       );
                                     }}
                                   >
@@ -620,8 +625,9 @@ export function DocumentList() {
                                     className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
                                     onClick={() => {
                                       setOpenDropdownId(null);
-                                      alert(
+                                      showSnackbar(
                                         "Share functionality not yet implemented.",
+                                        { type: 'info' }
                                       );
                                     }}
                                   >
@@ -646,13 +652,12 @@ export function DocumentList() {
                         )}
                       </td>
                     </tr>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
               </tbody>
             </table>
           )}
-
           {/* Infinite Scroll Sentinel */}
           {!loading && (
             <div ref={observerTarget} className="py-4 text-center">

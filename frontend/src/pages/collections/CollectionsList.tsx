@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { Tag } from "../../types";
+import { useSnackbar } from "../../context/SnackbarContext";
 import {
   FolderGit2,
   Hash,
@@ -30,6 +31,7 @@ const CATEGORIES = [
 export function CollectionsList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { showSnackbar } = useSnackbar();
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -270,7 +272,7 @@ export function CollectionsList() {
                               className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                               onClick={() => {
                                 setOpenDropdownId(null);
-                                alert("Edit coming soon");
+                                showSnackbar("Edit coming soon", { type: "info" });
                               }}
                             >
                               {t("collections.editCollection")}
@@ -283,7 +285,7 @@ export function CollectionsList() {
                                 if (
                                   window.confirm(t("collections.deleteConfirm"))
                                 )
-                                  alert("Delete coming soon");
+                                  showSnackbar("Delete coming soon", { type: "info" });
                               }}
                             >
                               {t("collections.deleteCollection")}

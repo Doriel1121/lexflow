@@ -86,7 +86,7 @@ jspm_packages/
 
 # Optional stylelint cache
 .stylelintcache
-
+temp_files
 # Build outputs
 frontend/dist/
 frontend/dist-ssr/

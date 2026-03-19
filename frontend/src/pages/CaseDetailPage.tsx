@@ -8,6 +8,7 @@ import {
 import api from '../services/api';
 import { Case } from '../types';
 import AskAI from '../components/ai/AskAI';
+import { useSnackbar } from '../context/SnackbarContext';
 
 interface Deadline {
   id: number;
@@ -24,6 +25,7 @@ interface Deadline {
 const CaseDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { showSnackbar } = useSnackbar();
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,8 +109,9 @@ const CaseDetailPage: React.FC = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       fetchCase();
+      showSnackbar('Document uploaded successfully', { type: 'success' });
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Upload failed');
+      showSnackbar(err.response?.data?.detail || 'Upload failed', { type: 'error' });
       setUploading(false);
     }
   };
@@ -126,15 +129,17 @@ const CaseDetailPage: React.FC = () => {
       };
       if (editingDeadline) {
         await api.patch(`/v1/deadlines/${editingDeadline.id}`, payload);
+        showSnackbar('Deadline updated', { type: 'success' });
       } else {
         await api.post('/v1/deadlines/', payload);
+        showSnackbar('Deadline created', { type: 'success' });
       }
       setShowDeadlineModal(false);
       setEditingDeadline(null);
       setDeadlineForm({ title: '', deadline_date: '', deadline_time: '09:00', deadline_type: 'other', description: '', assignee_id: '' });
       fetchCase();
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to save deadline');
+      showSnackbar(err.response?.data?.detail || 'Failed to save deadline', { type: 'error' });
     } finally { setSavingDeadline(false); }
   };
 
@@ -142,15 +147,33 @@ const CaseDetailPage: React.FC = () => {
     try {
       await api.patch(`/v1/deadlines/${deadline.id}`, { is_completed: !deadline.is_completed });
       fetchCase();
-    } catch (e) { alert("Failed to update status"); }
+      showSnackbar(deadline.is_completed ? 'Deadline reopened' : 'Deadline completed', { type: 'info' });
+    } catch (e) { showSnackbar("Failed to update status", { type: 'error' }); }
   };
 
   const handleDeleteDeadline = async (deadlineId: number) => {
-    if (!confirm("Are you sure you want to delete this deadline?")) return;
+    if (!window.confirm("Are you sure you want to delete this deadline?")) return;
     try {
       await api.delete(`/v1/deadlines/${deadlineId}`);
       fetchCase();
-    } catch (e) { alert("Failed to delete"); }
+      showSnackbar('Deadline deleted', { type: 'success' });
+    } catch (e) { showSnackbar("Failed to delete", { type: 'error' }); }
+  };
+
+  const handleAddNote = async () => {
+    if (!noteContent.trim() || !id) return;
+    setAddingNote(true);
+    try {
+      await api.post(`/v1/cases/${id}/notes`, { content: noteContent });
+      setNoteContent('');
+      setShowNoteModal(false);
+      fetchCase();
+      showSnackbar('Note added successfully', { type: 'success' });
+    } catch (err: any) {
+      showSnackbar(err.response?.data?.detail || 'Failed to add note', { type: 'error' });
+    } finally {
+      setAddingNote(false);
+    }
   };
 
   const openEditDeadline = (d: Deadline) => {

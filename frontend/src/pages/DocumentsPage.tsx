@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 import { Document } from '../types';
+import { useSnackbar } from '../context/SnackbarContext';
 
 const DocumentsPage: React.FC = () => {
   const [documents, setDocuments] = useState<Document[]>([]);
+  const { showSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
@@ -37,7 +39,7 @@ const DocumentsPage: React.FC = () => {
         content: `Language: ${data.language}\nPages: ${data.page_count}\n\n${data.content}`
       });
     } catch (error: any) {
-      alert(`Failed: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     } finally {
       setProcessing(null);
     }
@@ -62,7 +64,7 @@ const DocumentsPage: React.FC = () => {
         content
       });
     } catch (error: any) {
-      alert(`Failed: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     } finally {
       setProcessing(null);
     }

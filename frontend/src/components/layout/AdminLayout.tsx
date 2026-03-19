@@ -30,9 +30,9 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50" dir={isRTL ? 'rtl' : 'ltr'}>
       <Sidebar />
-      <main className="flex-1 ms-60 p-8 overflow-y-auto">
+      <main className="flex-1 ps-60 p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto">
           <Outlet />
         </div>

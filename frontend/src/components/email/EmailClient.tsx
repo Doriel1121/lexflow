@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Mail, RefreshCw, Paperclip, ArrowRight, UserPlus, FolderPlus, Inbox, Archive, Trash2, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
+import { useSnackbar } from '../../context/SnackbarContext';
 
 interface Email {
   id: number;
@@ -14,6 +15,7 @@ interface Email {
 }
 
 export function EmailClient() {
+  const { showSnackbar } = useSnackbar();
   const [emails, setEmails] = useState<Email[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,15 +40,15 @@ export function EmailClient() {
     try {
       // Use simplified Gmail OAuth sync
       await api.post('/v1/email/sync-gmail');
-      alert('Emails synced successfully!');
+      showSnackbar('Emails synced successfully!', { type: 'success' });
       setTimeout(fetchEmails, 2000);
     } catch (error: any) {
       if (error.response?.status === 400) {
-        alert('Please login with Google to sync emails');
+        showSnackbar('Please login with Google to sync emails', { type: 'warning' });
       } else if (error.response?.status === 401) {
-        alert('Gmail access expired. Please login again.');
+        showSnackbar('Gmail access expired. Please login again.', { type: 'error' });
       } else {
-        alert(`Sync failed: ${error.response?.data?.detail || error.message}`);
+        showSnackbar(`Sync failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
       }
     }
   };

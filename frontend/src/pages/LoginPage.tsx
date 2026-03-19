@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import { useSnackbar } from '../context/SnackbarContext';
 
 const LoginPage: React.FC = () => {
   const { login } = useAuth();
+  const { showSnackbar } = useSnackbar();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +22,7 @@ const LoginPage: React.FC = () => {
       // Reload to trigger auth context
       window.location.href = '/';
     } catch (error: any) {
-      alert(`Login failed: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Login failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     } finally {
       setLoading(false);
     }

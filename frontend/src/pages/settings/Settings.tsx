@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
+import { useSnackbar } from '../../context/SnackbarContext';
 import { User, Mail, Shield, LogOut, Plus, Copy, CheckCheck, Trash2, ToggleLeft, ToggleRight, Inbox, Clock, FileCheck, Zap, ZapOff } from 'lucide-react';
 
 interface EmailConfig {
@@ -20,6 +21,7 @@ const INBOUND_DOMAIN = 'inbound.lexflow.app';
 const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
+  const { showSnackbar } = useSnackbar();
   const [emailConfigs, setEmailConfigs] = useState<EmailConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -66,7 +68,7 @@ const SettingsPage: React.FC = () => {
       });
       setBatterySave(nextValue);
     } catch (error: any) {
-      alert(`Failed to update AI settings: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Failed to update AI settings: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     } finally {
       setUpdatingBattery(false);
     }
@@ -82,7 +84,7 @@ const SettingsPage: React.FC = () => {
       setShowAddForm(false);
       await fetchEmailConfigs();
     } catch (error: any) {
-      alert(`Failed to add email: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Failed to add email: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     } finally {
       setAdding(false);
     }
@@ -94,7 +96,7 @@ const SettingsPage: React.FC = () => {
       await api.delete(`/v1/email/${id}`);
       setEmailConfigs(c => c.filter(cfg => cfg.id !== id));
     } catch (error: any) {
-      alert(`Failed to remove: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Failed to remove: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     }
   };
 
@@ -105,7 +107,7 @@ const SettingsPage: React.FC = () => {
         cfg.id === id ? { ...cfg, ingestion_enabled: res.data.ingestion_enabled } : cfg
       ));
     } catch (error: any) {
-      alert(`Toggle failed: ${error.response?.data?.detail || error.message}`);
+      showSnackbar(`Toggle failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
     }
   };
 

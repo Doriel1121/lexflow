@@ -1,7 +1,7 @@
 #!/bin/bash
-# Test Runner Script for LexFlow Backend
+# Test Runner Script for LegalOS Backend
 
-echo "🧪 LexFlow Test Suite"
+echo "🧪 LegalOS Test Suite"
 echo "===================="
 echo ""
 

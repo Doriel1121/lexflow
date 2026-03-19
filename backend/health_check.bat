@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo LexFlow Backend Health Check
+echo LegalOS Backend Health Check
 echo ========================================
 echo.
 

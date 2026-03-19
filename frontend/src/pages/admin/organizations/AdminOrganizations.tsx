@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Building2, Search, MoreVertical, Plus, X, Loader2, Zap, ZapOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../../../services/api';
+import { useSnackbar } from '../../../context/SnackbarContext';
 
 interface Organization {
   id: number;
@@ -15,6 +16,7 @@ interface Organization {
 
 export default function AdminOrganizations() {
   const { t } = useTranslation();
+  const { showSnackbar } = useSnackbar();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,8 +64,9 @@ export default function AdminOrganizations() {
       setIsModalOpen(false);
       setFormData({ organization_name: '', admin_name: '', admin_email: '', password: '' });
       fetchOrganizations();
+      showSnackbar('Organization provisioned successfully', { type: 'success' });
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to create organization');
+      showSnackbar(err.response?.data?.detail || 'Failed to create organization', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -78,8 +81,9 @@ export default function AdminOrganizations() {
       setOrganizations(orgs => orgs.map(o => 
         o.id === orgId ? { ...o, ai_battery_save_mode: nextVal } : o
       ));
+      showSnackbar(`AI mode updated to ${nextVal ? 'Battery Save' : 'Full Power'}`, { type: 'success' });
     } catch (err: any) {
-      alert('Failed to update AI settings');
+      showSnackbar('Failed to update AI settings', { type: 'error' });
     }
   };
 

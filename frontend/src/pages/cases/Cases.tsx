@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { EntityVerification } from "../../components/cases/EntityVerification";
+import { useSnackbar } from "../../context/SnackbarContext";
 
 interface Case {
   id: number;
@@ -35,6 +36,7 @@ interface Client {
 export default function Cases() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { showSnackbar } = useSnackbar();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,9 +116,10 @@ export default function Cases() {
       setFormData({ title: "", description: "", client_id: null });
       fetchCases();
     } catch (err: any) {
-      alert(
+      showSnackbar(
         err.response?.data?.detail ||
           "Failed to create case. Please try again.",
+        { type: "error" },
       );
     } finally {
       setCreating(false);
@@ -144,7 +147,9 @@ export default function Cases() {
       setSelectedClientId(null);
       fetchCases();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Failed to assign client");
+      showSnackbar(err.response?.data?.detail || "Failed to assign client", {
+        type: "error",
+      });
     } finally {
       setAssigning(false);
     }
@@ -393,7 +398,10 @@ export default function Cases() {
                                   if (
                                     window.confirm(t("casesPage.deleteConfirm"))
                                   )
-                                    alert(t("casesPage.deleteComingSoon"));
+                                    showSnackbar(
+                                      t("casesPage.deleteComingSoon"),
+                                      { type: "info" },
+                                    );
                                 }}
                               >
                                 {t("casesPage.deleteCase")}
