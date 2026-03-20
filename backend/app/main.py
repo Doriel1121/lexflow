@@ -18,8 +18,11 @@ from app.schemas.token import Token
 from app.schemas.user import UserCreate
 from app.core.config import settings
 from app.core.audit_middleware import AuditMiddleware
+from app.core.rbac_middleware import RBACMiddleware
 from app.services.document_reaper import reap_stuck_documents
+from app.services.system_analytics import run_daily_aggregation
 from app.core.rate_limit import enforce_login_rate_limit
+from app.db.models.user import UserRole
 
 app = FastAPI(
     title="LegalOS Backend MVP",
@@ -30,10 +33,18 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Audit Middleware
-app.add_middleware(AuditMiddleware)
+# ── Middleware stack (order matters: outer runs first on request) ──────────
+#
+#  Request  →  CORSMiddleware  →  AuditMiddleware  →  RBACMiddleware  →  Route
+#  Response ←  CORSMiddleware  ←  AuditMiddleware  ←  RBACMiddleware  ←  Route
+#
+# RBACMiddleware must run AFTER AuditMiddleware sets request.state.user.
+# In Starlette, add_middleware() wraps in reverse order, so we add
+# RBACMiddleware first (innermost) then AuditMiddleware (outermost of the two).
 
-# CORS middleware
+app.add_middleware(RBACMiddleware)   # innermost: runs after auth sets state.user
+app.add_middleware(AuditMiddleware)  # outermost: sets state.user, then logs
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"],
@@ -43,7 +54,6 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=3600,
 )
-
 
 # Serve uploaded files (PDFs, etc.) from /uploads
 uploads_path = Path(__file__).resolve().parent.parent / "uploads"
@@ -57,13 +67,11 @@ app.mount(
 
 @app.on_event("startup")
 async def startup_event():
-    # Create database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("🚀 LegalOS Backend initialized.")
 
     async def _reaper_loop():
-        # Run every 5 minutes
         while True:
             try:
                 await reap_stuck_documents()
@@ -71,10 +79,19 @@ async def startup_event():
                 pass
             await asyncio.sleep(300)
 
+    async def _analytics_aggregation_loop():
+        while True:
+            try:
+                await run_daily_aggregation()
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("Analytics aggregation error: %s", exc)
+            await asyncio.sleep(900)  # 15 minutes
+
     asyncio.create_task(_reaper_loop())
+    asyncio.create_task(_analytics_aggregation_loop())
 
 
-# Include all API routes
 app.include_router(api_router)
 app.include_router(ws_notifications_router, prefix="/api/v1/ws/notifications", tags=["websockets"])
 
@@ -85,8 +102,6 @@ async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    """Standard OAuth2 password login for token access."""
-    # Very lightweight rate limiting: key by IP and username
     client_ip = request.client.host if request.client else "unknown"
     enforce_login_rate_limit(f"{client_ip}:{form_data.username}")
 
@@ -98,26 +113,19 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    # include identifying info so downstream dependencies can avoid extra
-    # database lookups if desired (the payload is still verified on every
-    # request by get_current_user).
-    
-    # Handle legacy users without a role set
+
     if user.role is None:
         user.role = UserRole.LAWYER
         db.add(user)
         await db.commit()
-    
+
     token_data = {
         "email": user.email,
         "user_id": user.id,
         "org_id": user.organization_id,
         "role": user.role.value if hasattr(user.role, "value") else str(user.role),
     }
-    access_token = create_access_token(
-        data=token_data,
-        expires_delta=access_token_expires
-    )
+    access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
     return {"access_token": access_token, "token_type": "bearer"}
 
 

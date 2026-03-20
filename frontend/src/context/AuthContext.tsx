@@ -1,12 +1,25 @@
+/**
+ * context/AuthContext.tsx  —  REDESIGNED (v2)
+ * =============================================
+ * Changes from v1:
+ *   - `user.role` is now always a canonical lowercase AppRole.
+ *     normalizeRole() is applied at the API boundary so no component
+ *     ever needs to handle 'ADMIN', 'ORG_ADMIN', etc.
+ *   - `isSystemAdmin` helper added to context for quick checks.
+ *   - `isTenantUser` helper added.
+ */
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../services/api';
 import api from '../services/api';
+import { normalizeRole, AppRole, isSystemAdmin, isTenantUser } from '../lib/rbac';
 
 export interface User {
   id: number;
   name: string;
   email: string;
-  role: 'admin' | 'lawyer' | 'assistant' | 'viewer' | 'ADMIN' | 'LAWYER' | 'ASSISTANT' | 'VIEWER';
+  /** Always a canonical lowercase role — never 'ADMIN', 'ORG_ADMIN', etc. */
+  role: AppRole;
   is_superuser?: boolean;
   organization?: {
     id: number;
@@ -18,6 +31,10 @@ export interface User {
 interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
+  /** True only for role === 'admin' (system-level administrator). */
+  isSystemAdmin: boolean;
+  /** True for org_admin, lawyer, assistant, viewer — any tenant user. */
+  isTenantUser: boolean;
   login: (provider: string) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -35,11 +52,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.get('/v1/users/me');
       const userData = response.data;
+
+      // ── Normalize role at the API boundary ──────────────────────────
+      // From this point on, user.role is always a canonical AppRole.
+      const canonicalRole = normalizeRole(userData.role);
+
       setUser({
         id: userData.id,
         name: userData.full_name || userData.email,
         email: userData.email,
-        role: userData.role || 'lawyer',
+        role: canonicalRole,
         is_superuser: userData.is_superuser || false,
         organization: userData.organization || undefined,
       });
@@ -79,7 +101,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, refreshUser, isLoading }}>
+    <AuthContext.Provider value={{
+      isAuthenticated,
+      user,
+      isSystemAdmin: isSystemAdmin(user?.role),
+      isTenantUser: isTenantUser(user?.role),
+      login,
+      logout,
+      refreshUser,
+      isLoading,
+    }}>
       {children}
     </AuthContext.Provider>
   );

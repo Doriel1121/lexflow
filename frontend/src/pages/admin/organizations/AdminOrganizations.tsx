@@ -1,296 +1,225 @@
-import { useEffect, useState } from 'react';
-import { Building2, Search, MoreVertical, Plus, X, Loader2, Zap, ZapOff } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import api from '../../../services/api';
-import { useSnackbar } from '../../../context/SnackbarContext';
+/**
+ * AdminOrganizations.tsx  —  REDESIGNED (v2)
+ * ============================================
+ * Previously: displayed a full table of all organizations with names,
+ * slugs, member counts, and AI settings — a direct data isolation violation.
+ *
+ * Now:
+ *   ✅ Provision new tenant (POST /admin/organizations) — legitimate write
+ *   ✅ Show aggregated tenant stats (counts, not lists)
+ *   ❌ No table of org names, slugs, or IDs
+ *   ❌ No per-tenant member counts
+ */
 
-interface Organization {
-  id: number;
-  name: string;
-  slug: string;
-  is_active: boolean;
-  ai_battery_save_mode: boolean;
-  member_count: number;
-  created_at: string;
-}
+import { useEffect, useState, useCallback } from 'react';
+import { Building2, Plus, X, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { adminService, TenantStats } from '../../../services/adminService';
+import { useSnackbar } from '../../../context/SnackbarContext';
 
 export default function AdminOrganizations() {
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+
+  const [tenantStats, setTenantStats] = useState<TenantStats | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
   const [formData, setFormData] = useState({
     organization_name: '',
     admin_name: '',
     admin_email: '',
-    password: ''
+    password: '',
   });
 
-  useEffect(() => {
-    fetchOrganizations();
+  const loadStats = useCallback(async () => {
+    try {
+      const data = await adminService.getDashboard();
+      setTenantStats(data.tenant_stats);
+    } catch {
+      // Non-critical — stats display degrades gracefully
+    }
   }, []);
 
-  const fetchOrganizations = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get('/v1/admin/organizations');
-      setOrganizations(res.data);
-    } catch (err) {
-      console.error('Failed to load organizations', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredOrgs = organizations.filter(org => 
-    org.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    org.slug.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await api.post('/v1/admin/organizations', {
+      await adminService.provisionOrganization({
         organization_name: formData.organization_name,
         admin_name: formData.admin_name,
         admin_email: formData.admin_email,
-        password: formData.password || undefined // omit if empty so backend auto-generates
+        password: formData.password || undefined,
       });
       setIsModalOpen(false);
       setFormData({ organization_name: '', admin_name: '', admin_email: '', password: '' });
-      fetchOrganizations();
-      showSnackbar('Organization provisioned successfully', { type: 'success' });
+      showSnackbar('Tenant provisioned successfully', { type: 'success' });
+      loadStats();
     } catch (err: any) {
-      showSnackbar(err.response?.data?.detail || 'Failed to create organization', { type: 'error' });
+      showSnackbar(err.response?.data?.detail ?? 'Failed to provision tenant', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleToggleBatterySave = async (orgId: number, currentVal: boolean) => {
-    try {
-      const nextVal = !currentVal;
-      await api.patch(`/v1/organizations/${orgId}/settings`, {
-        ai_battery_save_mode: nextVal
-      });
-      setOrganizations(orgs => orgs.map(o => 
-        o.id === orgId ? { ...o, ai_battery_save_mode: nextVal } : o
-      ));
-      showSnackbar(`AI mode updated to ${nextVal ? 'Battery Save' : 'Full Power'}`, { type: 'success' });
-    } catch (err: any) {
-      showSnackbar('Failed to update AI settings', { type: 'error' });
-    }
-  };
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">{t('adminOrgs.title')}</h1>
-          <p className="text-muted-foreground mt-1">{t('adminOrgs.subtitle')}</p>
+          <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
+            Tenant Management
+          </h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            Provision new tenants · Aggregated stats only · No tenant identifiers displayed
+          </p>
         </div>
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
         >
           <Plus className="h-4 w-4" />
-          {t('adminOrgs.addOrg')}
+          Provision Tenant
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200">
-          <div className="relative max-w-sm">
-            <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder={t('adminOrgs.searchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full ps-9 pe-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
-            />
-          </div>
+      {/* Aggregated stats (no names or IDs) */}
+      {tenantStats && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Tenants',      value: tenantStats.total_tenants },
+            { label: 'Active Tenants',     value: tenantStats.active_tenants },
+            { label: 'Inactive Tenants',   value: tenantStats.inactive_tenants },
+            { label: 'New This Month',     value: tenantStats.new_tenants_this_month },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+              <div className="p-2 bg-purple-100 rounded-lg w-fit mb-3">
+                <Building2 className="h-5 w-5 text-purple-600" />
+              </div>
+              <p className="text-sm text-slate-500 font-medium">{label}</p>
+              <h3 className="text-3xl font-bold text-slate-800 mt-1 tabular-nums">
+                {value.toLocaleString()}
+              </h3>
+            </div>
+          ))}
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-start">
-            <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
-              <tr>
-                <th className="px-6 py-3">{t('adminOrgs.table.tenantName')}</th>
-                <th className="px-6 py-3">{t('adminOrgs.table.slug')}</th>
-                <th className="px-6 py-3">AI Mode</th>
-                <th className="px-6 py-3">{t('adminOrgs.table.members')}</th>
-                <th className="px-6 py-3">{t('adminOrgs.table.status')}</th>
-                <th className="px-6 py-3">{t('adminOrgs.table.created')}</th>
-                <th className="px-6 py-3 text-end">{t('adminOrgs.table.actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-purple-600 animate-spin mb-4" />
-                      {t('adminOrgs.loading')}
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredOrgs.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    {t('adminOrgs.noOrgs')}
-                  </td>
-                </tr>
-              ) : (
-                filteredOrgs.map((org) => (
-                  <tr key={org.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
-                          <Building2 className="h-5 w-5" />
-                        </div>
-                        <div className="font-semibold text-slate-700">{org.name}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 font-mono text-xs">{org.slug}</td>
-                    <td className="px-6 py-4">
-                      <button 
-                        onClick={() => handleToggleBatterySave(org.id, org.ai_battery_save_mode)}
-                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors border ${
-                          org.ai_battery_save_mode 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}
-                      >
-                        {org.ai_battery_save_mode ? <ZapOff className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
-                        {org.ai_battery_save_mode ? 'Battery Save' : 'Full Power'}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center justify-center bg-slate-100 text-slate-600 h-6 px-2.5 rounded-full font-medium text-xs">
-                        {t('adminOrgs.membersCount', { count: org.member_count })}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {org.is_active ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                          {t('status.active')}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
-                          {t('status.inactive')}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-slate-500">
-                      {new Date(org.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-end">
-                      <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Data boundary notice */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+        <div className="flex items-start gap-3">
+          <div className="p-1.5 bg-amber-100 rounded-lg mt-0.5">
+            <Building2 className="h-4 w-4 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-amber-800 text-sm">Data Isolation Policy</h3>
+            <p className="text-amber-700 text-sm mt-1 leading-relaxed">
+              Individual tenant records (names, slugs, member lists) are not accessible
+              from the system admin panel. This enforces multi-tenant data isolation.
+              To manage a specific tenant's settings, use the Org Admin role
+              within that organization.
+            </p>
+          </div>
         </div>
       </div>
 
+      {/* Provision modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-semibold text-lg text-slate-800">{t('adminOrgs.modal.title')}</h3>
-              <button 
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="font-semibold text-lg text-slate-800">Provision New Tenant</h3>
+              <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:bg-slate-100 hover:text-slate-600 p-1 rounded-md transition-colors"
+                className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-md transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
-            <form onSubmit={handleCreate} className="p-4 space-y-4">
+
+            <form onSubmit={handleCreate} className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{t('adminOrgs.modal.nameLabel')}</label>
-                <input 
-                  type="text" 
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Organization Name
+                </label>
+                <input
+                  type="text"
                   required
                   value={formData.organization_name}
-                  onChange={e => setFormData({...formData, organization_name: e.target.value})}
+                  onChange={e => setFormData({ ...formData, organization_name: e.target.value })}
+                  placeholder="e.g. Acme Law Firm"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                  placeholder={t('adminOrgs.modal.namePlaceholder')}
                 />
               </div>
 
               <div className="pt-2 border-t border-slate-100">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{t('adminOrgs.modal.adminSection')}</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  First Admin User
+                </p>
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">{t('adminOrgs.modal.adminNameLabel')}</label>
-                    <input 
-                      type="text" 
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                    <input
+                      type="text"
                       required
                       value={formData.admin_name}
-                      onChange={e => setFormData({...formData, admin_name: e.target.value})}
+                      onChange={e => setFormData({ ...formData, admin_name: e.target.value })}
+                      placeholder="e.g. Jane Smith"
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                      placeholder={t('adminOrgs.modal.adminNamePlaceholder')}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">{t('adminOrgs.modal.emailLabel')}</label>
-                    <input 
-                      type="email" 
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                    <input
+                      type="email"
                       required
                       value={formData.admin_email}
-                      onChange={e => setFormData({...formData, admin_email: e.target.value})}
+                      onChange={e => setFormData({ ...formData, admin_email: e.target.value })}
+                      placeholder="admin@firm.com"
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                      placeholder={t('adminOrgs.modal.emailPlaceholder')}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">{t('adminOrgs.modal.passwordLabel')}</label>
-                    <input 
-                      type="text" 
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Password{' '}
+                      <span className="text-slate-400 font-normal">(leave blank to auto-generate)</span>
+                    </label>
+                    <input
+                      type="text"
                       value={formData.password}
-                      onChange={e => setFormData({...formData, password: e.target.value})}
+                      onChange={e => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Auto-generated if empty"
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                      placeholder={t('adminOrgs.modal.passwordPlaceholder')}
                     />
                   </div>
                 </div>
               </div>
 
               <div className="pt-4 flex justify-end gap-2">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                 >
-                  {t('adminOrgs.modal.cancel')}
+                  Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors"
                 >
                   {isSubmitting ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> {t('adminOrgs.modal.provisioning')}</>
-                  ) : t('adminOrgs.modal.provision')}
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Provisioning…</>
+                  ) : 'Provision Tenant'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 }
