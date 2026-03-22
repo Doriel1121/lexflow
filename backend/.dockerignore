@@ -1,0 +1,56 @@
+# Backend .dockerignore
+# Keeps the build context small and avoids leaking secrets.
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+
+# Virtual environments (never needed inside the image)
+.venv/
+venv/
+env/
+
+# Test artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets & environment files (injected at runtime via env_file)
+.env
+.env.*
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Uploaded files (persisted on a Docker volume, not baked into the image)
+uploads/
+
+# Debug / temp scripts
+debug_*.py
+debug_*.log
+debug_output*.txt
+check_*.py
+fix_*.py
+seed_*.py
+test_*.py
+backups/
+
+# Alembic pyc
+alembic/versions/*.pyc
+
+# Docs
+docs/

@@ -1,66 +1,156 @@
+# ============================================================
+# LEXFLOW — docker-compose.yml
+# ============================================================
+# Services:
+#   db            PostgreSQL + pgvector
+#   redis         Celery broker + cache
+#   backend       FastAPI (uvicorn, --reload in dev)
+#   celery_worker Background task processor
+#   frontend      React SPA served by nginx
+#
+# Usage:
+#   Development  →  docker-compose up --build
+#   Production   →  docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ============================================================
+
 services:
+
+  # ── PostgreSQL + pgvector ─────────────────────────────────
   db:
-    image: ankane/pgvector:latest # A PostgreSQL image with pgvector pre-installed
+    image: ankane/pgvector:latest
+    container_name: lexflow_db
+    restart: unless-stopped
     ports:
       - "5432:5432"
     env_file:
       - ./backend/.env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-lexflow_db}
+      POSTGRES_USER:     ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in backend/.env}
+      POSTGRES_DB:       ${POSTGRES_DB:-lexflow_db}
     volumes:
-      - pgdata:/var/lib/postgresql/data # Persist data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Redis (Celery broker + result backend) ────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: lexflow_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 5
+
+  # ── FastAPI backend ───────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: ai-lawyer-backend:latest
+    image: lexflow-backend:latest
+    container_name: lexflow_backend
+    restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
     environment:
-      - APP_ENV=development
+      # Override DATABASE_URL to use Docker service name "db", not localhost
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lexflow_db}
+      APP_ENV: development
     volumes:
+      # Live-reload: mount source so --reload picks up changes
       - ./backend:/app/backend
+      # Persist uploaded files outside the container
+      - uploads_data:/app/backend/uploads
     working_dir: /app/backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-    restart: unless-stopped
-    
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
+    # Development command (hot-reload). Override in docker-compose.prod.yml
+    command: >
+      uvicorn app.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app/backend/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # ── Celery worker (background AI processing) ──────────────
   celery_worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: ai-lawyer-backend:latest
+    image: lexflow-backend:latest
+    container_name: lexflow_celery
+    restart: unless-stopped
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - ./backend/.env
     environment:
-      - APP_ENV=development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lexflow_db}
+      APP_ENV: development
     volumes:
       - ./backend:/app/backend
+      - uploads_data:/app/backend/uploads
     working_dir: /app/backend
-    command: ["celery", "-A", "app.core.celery", "worker", "--loglevel=info", "--pool=threads", "--concurrency=4"]
+    command: >
+      celery -A app.core.celery worker
+        --loglevel=info
+        --pool=threads
+        --concurrency=4
+        --queues=default,documents,ai
+
+  # ── React frontend (nginx) ────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # At build time, Vite bakes in the API URL.
+        # In dev, nginx proxies /api → backend:8000 so
+        # VITE_API_BASE_URL points to the nginx proxy itself.
+        VITE_API_BASE_URL: http://localhost:8000
+    image: lexflow-frontend:latest
+    container_name: lexflow_frontend
     restart: unless-stopped
-        
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# ── Named volumes ─────────────────────────────────────────────
 volumes:
   pgdata:
+    driver: local
   redis_data:
+    driver: local
+  uploads_data:
+    driver: local

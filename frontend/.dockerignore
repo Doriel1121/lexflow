@@ -1,0 +1,28 @@
+# Frontend .dockerignore
+# Keeps the build context small — node_modules alone is typically 300 MB+.
+
+# Dependencies (rebuilt inside the image by npm ci)
+node_modules/
+
+# Build output (regenerated inside the image by npm run build)
+dist/
+dist-ssr/
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local env files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Test artefacts
+coverage/
+
+# Logs
+*.log
+npm-debug.log*

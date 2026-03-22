@@ -1,0 +1,46 @@
+# ============================================================
+# docker-compose.prod.yml — production overrides
+# ============================================================
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from the base file:
+#   • backend runs without --reload, 4 uvicorn workers
+#   • APP_ENV=production (enables HMAC signature check on webhooks)
+#   • No source-code volume mounts (image is the source of truth)
+#   • frontend built with the real public API URL
+# ============================================================
+
+services:
+
+  backend:
+    environment:
+      APP_ENV: production
+    volumes:
+      # Production: only persist uploads, do NOT mount source code
+      - uploads_data:/app/backend/uploads
+    command: >
+      uvicorn app.main:app
+        --host 0.0.0.0
+        --port 8000
+        --workers 4
+        --proxy-headers
+        --forwarded-allow-ips "*"
+
+  celery_worker:
+    environment:
+      APP_ENV: production
+    volumes:
+      - uploads_data:/app/backend/uploads
+    command: >
+      celery -A app.core.celery worker
+        --loglevel=warning
+        --pool=threads
+        --concurrency=8
+        --queues=default,documents,ai
+
+  frontend:
+    build:
+      args:
+        # Replace with your real domain in production
+        VITE_API_BASE_URL: https://api.lexflow.app
