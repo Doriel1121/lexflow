@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, Float
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 import enum
@@ -19,14 +19,19 @@ class Case(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    assigned_lawyer_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    priority = Column(String, default="normal", nullable=False)  # critical / high / normal / low
+    priority_score = Column(Float, default=0.0, nullable=False)  # computed by priority engine
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     client = relationship("Client", backref="cases")
-    created_by = relationship("User", backref="created_cases")
+    created_by = relationship("User", foreign_keys=[created_by_user_id], backref="created_cases")
     organization = relationship("Organization", backref="cases")
+    assigned_lawyer = relationship("User", foreign_keys=[assigned_lawyer_id], backref="assigned_cases")
     notes = relationship("CaseNote", back_populates="case", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="case", cascade="all, delete-orphan")
+    events = relationship("CaseEvent", back_populates="case", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Case(title='{self.title}', status='{self.status.value}')>"

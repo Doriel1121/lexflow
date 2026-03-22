@@ -15,5 +15,6 @@ from .summary import Summary
 from .audit_log import AuditLog
 from .notification import Notification
 from .deadline import Deadline, DeadlineType
+from .case_event import CaseEvent
 from .email_config import EmailConfig
 from .email_message import EmailMessage

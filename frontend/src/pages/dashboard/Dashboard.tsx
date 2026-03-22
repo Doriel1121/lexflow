@@ -1,5 +1,9 @@
 
 import { OverviewCards } from '../../components/dashboard/OverviewCards';
+import { OrgAdminOverview } from '../../components/dashboard/OrgAdminOverview';
+import { EmployeeTable } from '../../components/dashboard/EmployeeTable';
+import { WorkloadChart } from '../../components/dashboard/WorkloadChart';
+import { DeadlineHealthWidget } from '../../components/dashboard/DeadlineHealthWidget';
 import { RecentDocs } from '../../components/dashboard/RecentDocs';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +20,8 @@ export default function Dashboard() {
     : hour < 18 ? 'dashboard.greeting.afternoon'
     : 'dashboard.greeting.evening';
   const firstName = user?.name?.split(' ')[0] ?? 'Counselor';
+
+  const isOrgAdmin = user?.role === 'org_admin' || user?.role === 'admin';
 
   const quickActions = [
     { icon: Briefcase, labelKey: 'dashboard.actions.newCase', descKey: 'dashboard.actions.newCaseDesc', path: '/cases/new', color: 'text-blue-600 bg-blue-50' },
@@ -38,8 +44,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats */}
-      <OverviewCards />
+      {/* Stats — org admin gets the enhanced version */}
+      {isOrgAdmin ? <OrgAdminOverview /> : <OverviewCards />}
+
+      {/* Org Admin Analytics Section */}
+      {isOrgAdmin && (
+        <>
+          {/* Employee Performance Table — full width */}
+          <EmployeeTable />
+
+          {/* Workload + Deadline Health — side by side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <WorkloadChart />
+            <DeadlineHealthWidget />
+          </div>
+        </>
+      )}
 
       {/* Two-column content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

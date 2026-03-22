@@ -17,14 +17,7 @@ import api from "../../services/api";
 import { EntityVerification } from "../../components/cases/EntityVerification";
 import { useSnackbar } from "../../context/SnackbarContext";
 
-interface Case {
-  id: number;
-  title: string;
-  description: string;
-  status: string;
-  client_id: number;
-  created_at: string;
-}
+import { Case } from "../../types";
 
 interface Client {
   id: number;
@@ -58,10 +51,27 @@ export default function Cases() {
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [assigning, setAssigning] = useState(false);
 
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [showAssignLawyerModal, setShowAssignLawyerModal] = useState(false);
+  const [selectedCaseForLawyerAssignment, setSelectedCaseForLawyerAssignment] = useState<number | null>(null);
+  const [selectedLawyerId, setSelectedLawyerId] = useState<number | null>(null);
+
   useEffect(() => {
     fetchCases();
     fetchClients();
+    fetchTeamMembers();
   }, []);
+
+  const fetchTeamMembers = async () => {
+    try {
+      const meRes = await api.get('/v1/users/me');
+      const orgId = meRes.data.organization_id;
+      const membersRes = await api.get(`/v1/organizations/${orgId}/members`);
+      setTeamMembers(membersRes.data);
+    } catch (e) {
+      console.error("Failed to fetch team members:", e);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdownId(null);
@@ -159,6 +169,30 @@ export default function Cases() {
     setSelectedCaseForAssignment(caseId);
     setShowAssignClientModal(true);
     setOpenDropdownId(null);
+  };
+
+  const openAssignLawyerModal = (caseId: number) => {
+    setSelectedCaseForLawyerAssignment(caseId);
+    setShowAssignLawyerModal(true);
+    setOpenDropdownId(null);
+  };
+
+  const handleAssignLawyerSubmit = async () => {
+    if (!selectedCaseForLawyerAssignment) return;
+    setAssigning(true);
+    try {
+      const lawyerId = selectedLawyerId || null;
+      await api.patch(`/v1/cases/${selectedCaseForLawyerAssignment}/assign-lawyer`, { lawyer_id: lawyerId });
+      showSnackbar(t("casesPage.lawyerAssigned", { defaultValue: "Lawyer assigned successfully" }), { type: "success" });
+      setShowAssignLawyerModal(false);
+      setSelectedCaseForLawyerAssignment(null);
+      setSelectedLawyerId(null);
+      fetchCases();
+    } catch (err: any) {
+      showSnackbar(err.response?.data?.detail || "Failed to assign lawyer", { type: "error" });
+    } finally {
+      setAssigning(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -307,8 +341,17 @@ export default function Cases() {
                     <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-32">
                       {t("casesPage.client")}
                     </th>
+                    <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-32">
+                      {t('casesPage.assignedTo', { defaultValue: 'Assigned To' })}
+                    </th>
                     <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-28">
                       {t("casesPage.date")}
+                    </th>
+                    <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-20">
+                      {t('casesPage.docs', { defaultValue: 'Docs' })}
+                    </th>
+                    <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-20">
+                      {t('casesPage.notes', { defaultValue: 'Notes' })}
                     </th>
                     <th className="px-2 py-2.5 text-right text-xs uppercase text-start tracking-wider w-12"></th>
                   </tr>
@@ -347,11 +390,29 @@ export default function Cases() {
                           ? getClientName(caseItem.client_id)
                           : t("casesPage.noClient")}
                       </td>
+                      <td className="px-2 py-2.5 text-sm">
+                        {caseItem.assigned_lawyer_id ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-5 w-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                              {caseItem.assigned_lawyer_name?.charAt(0) || 'L'}
+                            </div>
+                            <span className="text-slate-700">{caseItem.assigned_lawyer_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-xs">{t('casesPage.unassigned', { defaultValue: 'Unassigned' })}</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2.5 text-xs text-slate-600">
                         {new Date(caseItem.created_at).toLocaleDateString(
                           "en-US",
                           { month: "short", day: "numeric", year: "numeric" },
                         )}
+                      </td>
+                      <td className="px-2 py-2.5 text-center text-sm text-slate-600">
+                        {caseItem.documents?.length || 0}
+                      </td>
+                      <td className="px-2 py-2.5 text-center text-sm text-slate-600">
+                        {caseItem.notes?.length || 0}
                       </td>
                       <td className="px-2 py-2.5 text-right relative">
                         <button
@@ -389,6 +450,15 @@ export default function Cases() {
                               >
                                 <UserPlus className="h-3.5 w-3.5" />
                                 {t("casesPage.assignClient")}
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                onClick={() =>
+                                  openAssignLawyerModal(caseItem.id)
+                                }
+                              >
+                                <UserPlus className="h-3.5 w-3.5" />
+                                {t("casesPage.assignLawyer", { defaultValue: "Assign Lawyer" })}
                               </button>
                               <hr className="my-1 border-slate-100" />
                               <button
@@ -589,6 +659,73 @@ export default function Cases() {
                   {assigning
                     ? t("casesPage.assigning")
                     : t("casesPage.assignClient")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Lawyer Modal */}
+      {showAssignLawyerModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-slate-800">
+                {t("casesPage.assignLawyerModalTitle", { defaultValue: "Assign Lawyer" })}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowAssignLawyerModal(false);
+                  setSelectedCaseForLawyerAssignment(null);
+                  setSelectedLawyerId(null);
+                }}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  {t("casesPage.selectLawyer", { defaultValue: "Select Lawyer" })}
+                </label>
+                <select
+                  value={selectedLawyerId || ""}
+                  onChange={(e) => setSelectedLawyerId(Number(e.target.value) || null)}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary text-sm"
+                >
+                  <option value="">{t('casesPage.unassigned', { defaultValue: 'Unassigned' })}</option>
+                  {teamMembers.map((member: any) => (
+                    <option key={member.id} value={member.id}>
+                      {member.full_name || member.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAssignLawyerModal(false);
+                    setSelectedCaseForLawyerAssignment(null);
+                    setSelectedLawyerId(null);
+                  }}
+                  className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors"
+                >
+                  {t("casesPage.cancel")}
+                </button>
+                <button
+                  onClick={handleAssignLawyerSubmit}
+                  disabled={assigning}
+                  className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {assigning ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {assigning
+                    ? t("casesPage.assigning")
+                    : t("casesPage.assignLawyer", { defaultValue: "Assign Lawyer" })}
                 </button>
               </div>
             </div>

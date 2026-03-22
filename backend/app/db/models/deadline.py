@@ -7,7 +7,8 @@ from sqlalchemy import (
     ForeignKey,
     Float,
     Enum,
-    Boolean
+    Boolean,
+    JSON
 )
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -39,6 +40,7 @@ class Deadline(Base):
     
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime, nullable=True)
+    alert_sent_at = Column(DateTime, nullable=True)  # tracks when alert notification was sent
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

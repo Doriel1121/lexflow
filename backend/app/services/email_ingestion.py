@@ -2,13 +2,12 @@
 Email Inbound Ingestion Service
 ================================
 Processes a single email attachment through the full pipeline:
-  FILE BYTES → OCR → AI Analysis → Smart Router → Document.create → Smart Collections → Audit Log
+  FILE BYTES → storage → Document.create → background AI processing
 """
 from __future__ import annotations
 
 import hashlib
 import logging
-import tempfile
 import os
 from datetime import datetime
 from typing import Optional
@@ -20,50 +19,43 @@ from app.db.models.email_config import EmailConfig
 from app.db.models.document import Document, DocumentProcessingStatus
 from app.crud.document import document_crud
 from app.schemas.document import DocumentCreate
-from app.services.ocr import ocr_service
-from app.services.document_intelligence import DocumentIntelligenceService
-from app.services.smart_router import smart_router
-from app.services.smart_collections import smart_collections_service
 from app.services.storage import storage_service
 from app.services.audit import log_audit
 from app.services.document_processing_task import document_processing_service
-from app.api.ws.notifications import notification_manager
 
 logger = logging.getLogger(__name__)
 
-# ---- Supported attachment MIME types ----------------------------------------
+# ── Allowed MIME types ────────────────────────────────────────────────────────
 ALLOWED_MIME_PREFIXES = (
     "application/pdf",
     "image/",
     "application/msword",
     "application/vnd.openxmlformats",
+    "application/octet-stream",   # Postman / some providers send this for PDFs
 )
 
-# Max attachment size: 20 MB
-MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+# Allowed extensions as fallback when MIME is generic
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".doc", ".docx"}
+
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
-def _is_allowed(content_type: str) -> bool:
-    ct = (content_type or "").lower()
-    return any(ct.startswith(p) for p in ALLOWED_MIME_PREFIXES)
+def _is_allowed(content_type: str, filename: str = "") -> bool:
+    ct = (content_type or "").lower().split(";")[0].strip()
+    if any(ct.startswith(p) for p in ALLOWED_MIME_PREFIXES):
+        return True
+    ext = os.path.splitext(filename or "")[-1].lower()
+    allowed_by_ext = ext in ALLOWED_EXTENSIONS
+    if allowed_by_ext:
+        logger.info("email_ingestion: MIME '%s' not whitelisted but extension '%s' is — accepting", ct, ext)
+    return allowed_by_ext
 
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-async def _find_duplicate(db: AsyncSession, file_hash: str, org_id: Optional[int]) -> bool:
-    """Return True if a document with the same SHA-256 already exists for this org."""
-    stmt = select(Document).where(Document.email_subject == f"__hash__{file_hash}")
-    # We reuse email_subject as a cheap hash store to avoid a new column.
-    # A cleaner approach would add a file_hash column — acceptable as a follow-up.
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none() is not None
-
-
 class EmailIngestionService:
-    def __init__(self):
-        self._doc_intelligence = DocumentIntelligenceService()
 
     async def process_attachment(
         self,
@@ -78,41 +70,53 @@ class EmailIngestionService:
         email_received_at: datetime,
     ) -> Optional[Document]:
         """
-        Run one attachment through the full ingestion pipeline.
-        Returns the created Document or None if skipped.
+        Run one attachment through the ingestion pipeline.
+        Returns the created Document, or None if skipped.
         """
-        # 1. Content-type guard
-        if not _is_allowed(content_type):
-            logger.info("Inbound email: skipping unsupported MIME '%s' (%s)", content_type, filename)
+        logger.info(
+            "email_ingestion: received '%s'  mime='%s'  size=%d bytes  from='%s'",
+            filename, content_type, len(file_bytes), email_from,
+        )
+
+        # 1. MIME / extension guard
+        if not _is_allowed(content_type, filename):
+            logger.warning(
+                "email_ingestion: SKIP — unsupported mime='%s' ext='%s' file='%s'",
+                content_type, os.path.splitext(filename)[-1], filename,
+            )
             return None
 
         # 2. Size guard
         if len(file_bytes) > MAX_ATTACHMENT_BYTES:
-            logger.warning("Inbound email: attachment too large (%d bytes), skipping %s", len(file_bytes), filename)
+            logger.warning(
+                "email_ingestion: SKIP — file too large (%d bytes) '%s'",
+                len(file_bytes), filename,
+            )
             return None
 
-        # 3. SHA-256 deduplication
+        # 3. Duplicate check
         file_hash = _sha256(file_bytes)
         if await _is_duplicate(db, file_hash, config.organization_id):
-            logger.info("Inbound email: duplicate attachment skipped (%s)", filename)
+            logger.info("email_ingestion: SKIP — duplicate file '%s' (hash=%s)", filename, file_hash[:12])
             return None
 
-        logger.info("Inbound email: processing '%s' from %s", filename, email_from)
+        logger.info("email_ingestion: all checks passed — starting ingestion for '%s'", filename)
 
         try:
-            # 4. Persist file to storage
+            # 4. Save file to storage
+            # save_file_bytes returns (url: str, absolute_path: Path)
             folder = "inbox/email_inbound"
-            file_path_str, s3_url = await storage_service.save_file_bytes(file_bytes, folder, filename)
+            s3_url, file_path = await storage_service.save_file_bytes(
+                file_bytes, folder, filename
+            )
+            logger.info("email_ingestion: saved to storage → url=%s  path=%s", s3_url, file_path)
 
-            # Get actual file path for background OCR processing
-            file_path = await storage_service.get_file_path(f"{folder}/{filename}")
-
-            # 5. Create Document record placeholder
+            # 5. Create Document placeholder in DB
             owner_id = config.user_id
             doc_in = DocumentCreate(
                 filename=filename,
                 s3_url=s3_url,
-                case_id=None,  # Smart collections will route to case later
+                case_id=None,
                 content="Processing text...",
                 classification="Pending Analysis",
                 language=None,
@@ -124,35 +128,52 @@ class EmailIngestionService:
                 uploaded_by_user_id=owner_id,
                 organization_id=config.organization_id,
             )
+            logger.info("email_ingestion: document record created → id=%d", document.id)
 
-            # Stamp ingestion provenance directly
-            document.ingestion_method = "email_inbound"
-            document.email_from = email_from
-            document.email_subject = email_subject
+            # 6. Stamp email provenance fields
+            document.ingestion_method  = "email_inbound"
+            document.email_from        = email_from
+            document.email_subject     = email_subject
             document.email_received_at = email_received_at
-            document.organization_id = config.organization_id
+            document.organization_id   = config.organization_id
             document.processing_status = DocumentProcessingStatus.PENDING
             db.add(document)
-            
-            # Commit early so the document exists for relations
             await db.commit()
-            
-            from app.workers.document_tasks import process_document_pipeline
-            # 6. Queue Celery Task for Heavy AI OCR & Summarization & Vector Embeddings
-            process_document_pipeline.delay(
-                document_id=document.id,
-                file_path=str(file_path),
-                user_id=owner_id,
-                organization_id=config.organization_id
-            )
+            logger.info("email_ingestion: provenance stamped and committed for doc_id=%d", document.id)
 
-            # 7. Update config stats
-            config.total_ingested = (config.total_ingested or 0) + 1
+            # 7. Queue background AI processing
+            try:
+                from app.workers.document_tasks import process_document_pipeline
+                process_document_pipeline.delay(
+                    document_id=document.id,
+                    file_path=str(file_path),
+                    user_id=owner_id,
+                    organization_id=config.organization_id,
+                )
+                logger.info("email_ingestion: Celery task queued for doc_id=%d", document.id)
+            except Exception as celery_err:
+                # Celery not available → fall back to in-process background task
+                logger.warning(
+                    "email_ingestion: Celery unavailable (%s) — falling back to background task",
+                    celery_err,
+                )
+                import asyncio
+                asyncio.create_task(
+                    document_processing_service.process_document_background(
+                        document_id=document.id,
+                        file_path=str(file_path),
+                        user_id=owner_id,
+                        organization_id=config.organization_id,
+                    )
+                )
+
+            # 8. Update config stats
+            config.total_ingested  = (config.total_ingested or 0) + 1
             config.last_received_at = datetime.utcnow()
             db.add(config)
             await db.commit()
 
-            # 12. Audit log
+            # 9. Audit log (non-fatal)
             try:
                 await log_audit(
                     db,
@@ -165,21 +186,20 @@ class EmailIngestionService:
                         "from": email_from,
                         "subject": email_subject,
                         "filename": filename,
-                        "case_id": document.case_id,
                         "file_hash": file_hash,
-                    }
+                    },
                 )
             except Exception as audit_err:
-                logger.warning("Inbound email: audit log failed: %s", audit_err)
+                logger.warning("email_ingestion: audit log failed (non-fatal): %s", audit_err)
 
-            logger.info(
-                "Inbound email: ✅ ingested '%s' → doc_id=%d case_id=%s",
-                filename, document.id, document.case_id
-            )
+            logger.info("email_ingestion: ✅ SUCCESS  doc_id=%d  file='%s'", document.id, filename)
             return document
 
         except Exception as exc:
-            logger.error("Inbound email: ❌ failed to process '%s': %s", filename, exc, exc_info=True)
+            logger.error(
+                "email_ingestion: ❌ EXCEPTION processing '%s': %s",
+                filename, exc, exc_info=True,
+            )
             try:
                 await db.rollback()
             except Exception:
@@ -192,13 +212,10 @@ email_ingestion_service = EmailIngestionService()
 
 
 async def _is_duplicate(db: AsyncSession, file_hash: str, org_id: Optional[int]) -> bool:
-    """Check for a document already ingested from the same file bytes."""
-    stmt = (
-        select(Document)
-        .where(
-            Document.ingestion_method == "email_inbound",
-            Document.email_subject == f"__hash__{file_hash}",
-        )
+    """Return True if this exact file was already ingested for this org."""
+    stmt = select(Document).where(
+        Document.ingestion_method == "email_inbound",
+        Document.email_subject    == f"__hash__{file_hash}",
     )
     if org_id:
         stmt = stmt.where(Document.organization_id == org_id)

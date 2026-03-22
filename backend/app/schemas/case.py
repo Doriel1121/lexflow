@@ -46,11 +46,17 @@ class CaseUpdate(CaseBase):
     title: Optional[str] = None
     client_id: Optional[int] = None
     status: Optional[str] = None
+    assigned_lawyer_id: Optional[int] = None
+    priority: Optional[str] = None
 
 class Case(CaseBase):
     id: int
     client_id: Optional[int] = None
     created_by_user_id: int
+    assigned_lawyer_id: Optional[int] = None
+    assigned_lawyer_name: Optional[str] = None
+    priority: Optional[str] = "normal"
+    priority_score: Optional[float] = 0.0
     created_at: datetime
     updated_at: datetime
     notes: List[CaseNote] = []

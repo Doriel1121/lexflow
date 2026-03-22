@@ -14,6 +14,8 @@ class DocumentMetadata(Base):
     entities = Column(JSON, nullable=True)  # Person/Organization names
     amounts = Column(JSON, nullable=True)  # Monetary amounts
     case_numbers = Column(JSON, nullable=True)  # Possible case numbers
+    classification_category = Column(String, nullable=True)  # legal / financial / administrative / unknown
+    extracted_keywords = Column(JSON, nullable=True)  # Legal/financial term keywords
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

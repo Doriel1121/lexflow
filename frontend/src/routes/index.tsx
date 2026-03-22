@@ -15,6 +15,7 @@ import EmailIntake from "../pages/email/EmailIntake";
 import { ClientsPage } from "../pages/clients/ClientsPage";
 import { CreateClientPage } from "../pages/clients/CreateClientPage";
 import NotFoundPage from "../pages/NotFoundPage"; // To be created
+import Cases from "@/pages/cases/Cases";
 
 interface ProtectedRouteProps {
   children?: React.ReactNode;
@@ -39,7 +40,7 @@ const AppRoutes: React.FC = () => {
       {/* Protected Routes */}
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/cases" element={<CasesPage />} />
+        <Route path="/cases" element={<Cases />} />
         <Route path="/cases/new" element={<CreateCasePage />} />
         <Route path="/cases/:id" element={<CaseDetailPage />} />
         <Route path="/clients" element={<ClientsPage />} />
