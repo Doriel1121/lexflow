@@ -1,0 +1,53 @@
+# Root .dockerignore — used when building from the repo root (e.g. Render)
+
+# Frontend — not needed for the backend image
+frontend/node_modules/
+frontend/dist/
+frontend/.env*
+
+# Python virtual environments
+.venv/
+venv/
+env/
+backend/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Secrets (injected at runtime via Render environment variables)
+.env
+backend/.env
+backend/.env.*
+
+# Uploaded files (use Render Disk or object storage in production)
+backend/uploads/
+uploads/
+
+# Test / debug artefacts
+backend/.pytest_cache/
+backend/debug_*.py
+backend/debug_*.log
+backend/check_*.py
+backend/fix_*.py
+backend/test_output*.txt
+
+# Git & editor
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+
+# Local DB files
+*.db
+*.sqlite
+*.sqlite3
+
+# Docs and temp
+docs/
+temp_files/
+backups/
