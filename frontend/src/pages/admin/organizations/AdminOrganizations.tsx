@@ -13,12 +13,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Building2, Plus, X, Loader2 } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { adminService, TenantStats } from '../../../services/adminService';
 import { useSnackbar } from '../../../context/SnackbarContext';
 
 export default function AdminOrganizations() {
-  const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
 
   const [tenantStats, setTenantStats] = useState<TenantStats | null>(null);

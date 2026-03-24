@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Download, Tag as TagIcon, Bot, AlertTriangle, Loader2, Trash2, FolderGit2, Hash, Building2, Sparkles } from 'lucide-react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { ArrowLeft, Download, Tag as TagIcon, Bot, AlertTriangle, Loader2, Trash2, Building2, Sparkles } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../services/api';
 import AskAI from '../ai/AskAI';
 import { useSnackbar } from '../../context/SnackbarContext';
@@ -16,7 +16,6 @@ export function DocumentViewer() {
   const [document, setDocument] = useState<any>(null);
   const [intelligence, setIntelligence] = useState<any>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   // Normalize OCR content: collapse single newlines into spaces, preserving paragraph breaks.
   const normalizeContent = (text: string | null | undefined): string => {
@@ -72,7 +71,6 @@ export function DocumentViewer() {
   };
 
   const handleDelete = async () => {
-    setDeleting(true);
     try {
       await api.delete(`/v1/documents/${id}`);
       navigate('/documents');
@@ -80,7 +78,6 @@ export function DocumentViewer() {
       console.error('Failed to delete document:', error);
       showSnackbar('Failed to delete document', { type: 'error' });
     } finally {
-      setDeleting(false);
       setShowDeleteConfirm(false);
     }
   };

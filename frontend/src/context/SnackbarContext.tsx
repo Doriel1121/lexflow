@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useCallback,
   useContext,
@@ -83,4 +83,3 @@ export const useSnackbar = (): SnackbarContextValue => {
   }
   return ctx;
 };
-

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, Loader2, X, Sparkles, User as UserIcon } from 'lucide-react';
 import aiService from '../../services/ai';
-import { AskAIResponse, Citation } from '../../types';
+import { Citation } from '../../types';
 
 interface Message {
   id: string;

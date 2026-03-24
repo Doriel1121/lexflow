@@ -1,7 +1,24 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    DATABASE_URL: str
+    # Primary DB URL (prefer this)
+    DATABASE_URL: str = ""
+    # Render-provided URLs (optional; used if DATABASE_URL is empty)
+    RENDER_INTERNAL_DATABASE_URL: str | None = None
+    RENDER_EXTERNAL_DATABASE_URL: str | None = None
+    # Render-provided components (optional)
+    RENDER_DB_HOST: str | None = None
+    RENDER_DB_PORT: int | None = None
+    RENDER_DB_USER: str | None = None
+    RENDER_DB_PASSWORD: str | None = None
+    RENDER_DB_NAME: str | None = None
+    # Component parts fallback (optional)
+    DB_HOST: str | None = None
+    DB_PORT: int | None = None
+    DB_USER: str | None = None
+    DB_PASSWORD: str | None = None
+    DB_NAME: str | None = None
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -43,6 +60,40 @@ class Settings(BaseSettings):
     PASSWORD_MIN_LENGTH: int = 10
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 20
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Single source of truth: repo root .env
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parents[3] / ".env"),
+        extra="ignore",
+    )
+
+    def model_post_init(self, __context) -> None:
+        # Prefer explicit DATABASE_URL, otherwise fall back to Render URLs, then components.
+        if self.DATABASE_URL:
+            return
+
+        candidate = self.RENDER_INTERNAL_DATABASE_URL or self.RENDER_EXTERNAL_DATABASE_URL
+        if candidate:
+            self.DATABASE_URL = candidate
+            return
+
+        host = self.DB_HOST or self.RENDER_DB_HOST
+        user = self.DB_USER or self.RENDER_DB_USER
+        password = self.DB_PASSWORD or self.RENDER_DB_PASSWORD
+        name = self.DB_NAME or self.RENDER_DB_NAME
+        port = self.DB_PORT or self.RENDER_DB_PORT or 5432
+
+        if host and user and password and name:
+            self.DATABASE_URL = (
+                f"postgresql+asyncpg://{user}:{password}"
+                f"@{host}:{port}/{name}"
+            )
+            return
+
+        raise ValueError(
+            "DATABASE_URL is required. Set DATABASE_URL or "
+            "RENDER_INTERNAL_DATABASE_URL/RENDER_EXTERNAL_DATABASE_URL or "
+            "DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME or "
+            "RENDER_DB_HOST/RENDER_DB_PORT/RENDER_DB_USER/RENDER_DB_PASSWORD/RENDER_DB_NAME."
+        )
 
 settings = Settings()

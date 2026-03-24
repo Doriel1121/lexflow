@@ -33,14 +33,14 @@ const SettingsPage: React.FC = () => {
 
   useEffect(() => { 
     fetchEmailConfigs();
-    if (user?.organization_id) {
+    if (user?.organization?.id) {
       fetchOrgSettings();
     }
   }, [user]);
 
   const fetchOrgSettings = async () => {
     try {
-      const response = await api.get(`/v1/organizations/${user?.organization_id}`);
+      const response = await api.get(`/v1/organizations/${user?.organization?.id}`);
       setBatterySave(response.data.ai_battery_save_mode);
     } catch (error) {
       console.error('Failed to fetch org settings:', error);
@@ -59,11 +59,11 @@ const SettingsPage: React.FC = () => {
   };
 
   const toggleBatterySave = async () => {
-    if (!user?.organization_id) return;
+    if (!user?.organization?.id) return;
     setUpdatingBattery(true);
     try {
       const nextValue = !batterySave;
-      await api.patch(`/v1/organizations/${user.organization_id}/settings`, {
+      await api.patch(`/v1/organizations/${user.organization.id}/settings`, {
         ai_battery_save_mode: nextValue
       });
       setBatterySave(nextValue);
@@ -117,16 +117,16 @@ const SettingsPage: React.FC = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const roleLabel = (user?.role as string) === 'ORG_ADMIN' ? t('roles.orgAdmin')
-    : user?.role ? t(`roles.${user.role.toLowerCase()}`)
+  const roleLabel = user?.role === 'org_admin' ? t('roles.orgAdmin')
+    : user?.role ? t(`roles.${user.role}`)
     : t('roles.user');
 
   const roleColor: Record<string, string> = {
-    admin: 'bg-purple-100 text-purple-700', ADMIN: 'bg-purple-100 text-purple-700',
-    lawyer: 'bg-blue-100 text-blue-700', LAWYER: 'bg-blue-100 text-blue-700',
-    assistant: 'bg-green-100 text-green-700', ASSISTANT: 'bg-green-100 text-green-700',
-    viewer: 'bg-slate-100 text-slate-700', VIEWER: 'bg-slate-100 text-slate-700',
-    ORG_ADMIN: 'bg-indigo-100 text-indigo-700',
+    admin: 'bg-purple-100 text-purple-700',
+    org_admin: 'bg-indigo-100 text-indigo-700',
+    lawyer: 'bg-blue-100 text-blue-700',
+    assistant: 'bg-green-100 text-green-700',
+    viewer: 'bg-slate-100 text-slate-700',
   };
 
   return (
@@ -164,7 +164,7 @@ const SettingsPage: React.FC = () => {
       </div>
 
       {/* AI Settings - Only for System Super Admins (ADMIN) */}
-      {user?.role === 'ADMIN' && (
+      {user?.role === 'admin' && (
         <div className="bg-white rounded-2xl p-6 border-2 border-emerald-50">
           <div className="flex items-center justify-between">
             <div className="flex items-start gap-4">

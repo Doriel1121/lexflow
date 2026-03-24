@@ -3,9 +3,9 @@
  * Styled after the Angular reference design — card with left accent bar,
  * status chips, AI insight line, deadline badge, and hover quick-approve.
  */
-import { FileText, AlertTriangle, Clock, CheckCircle2, Loader2, Paperclip } from 'lucide-react';
+import { FileText, AlertTriangle, Clock, CheckCircle2, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import type { IntakeItem, IntakeStatus } from '../../services/intakeService';
+import type { IntakeItem } from '../../services/intakeService';
 
 // ── Priority accent colours (left border + dot) ───────────────────────────
 const PRIORITY_BORDER: Record<string, string> = {
@@ -13,13 +13,6 @@ const PRIORITY_BORDER: Record<string, string> = {
   high:   'border-l-orange-400',
   medium: 'border-l-amber-400',
   low:    'border-l-slate-300',
-};
-
-const PRIORITY_DOT: Record<string, string> = {
-  urgent: 'bg-red-500',
-  high:   'bg-orange-400',
-  medium: 'bg-amber-400',
-  low:    'bg-slate-300',
 };
 
 // ── Priority badge ────────────────────────────────────────────────────────

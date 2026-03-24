@@ -72,7 +72,6 @@ import { NotificationProvider } from './context/NotificationContext';
 import { SnackbarProvider } from './context/SnackbarContext';
 
 import { normalizeRole } from './lib/rbac';
-import CasesPage from './pages/CasesPage';
 
 // ─── Loading screen ───────────────────────────────────────────────────────
 

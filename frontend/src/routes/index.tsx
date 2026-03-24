@@ -5,7 +5,6 @@ import { useAuth } from "../context/AuthContext";
 import LoginPage from "../pages/LoginPage";
 import AuthCallback from "../pages/AuthCallback";
 import DashboardPage from "../pages/DashboardPage";
-import CasesPage from "../pages/CasesPage";
 import CreateCasePage from "../pages/CreateCasePage";
 import CaseDetailPage from "../pages/CaseDetailPage";
 import DocumentsPage from "../pages/DocumentsPage";

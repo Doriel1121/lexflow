@@ -395,7 +395,9 @@ export function IntakeDetailPanel({ itemId, onConfirmed, onDismissed }: Props) {
                         <span className="text-gray-500 truncate pr-3">{d.description || d.type || 'Date'}</span>
                         <div className="shrink-0 flex items-center gap-2">
                           {d.is_critical_deadline && (
-                            <BadgeCheck className="w-3.5 h-3.5 text-red-500" title="Critical deadline" />
+                            <span title="Critical deadline">
+                              <BadgeCheck className="w-3.5 h-3.5 text-red-500" />
+                            </span>
                           )}
                           <span className="font-medium text-gray-900">{d.date}</span>
                         </div>

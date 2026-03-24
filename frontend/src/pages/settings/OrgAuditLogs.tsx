@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Search, ShieldCheck, User } from 'lucide-react';
+import { Activity, Search, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../../services/api';
 import { cn } from '../../lib/utils';

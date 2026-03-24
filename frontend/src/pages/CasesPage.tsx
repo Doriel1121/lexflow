@@ -5,9 +5,6 @@ import {
   Filter,
   Plus,
   MoreVertical,
-  Calendar,
-  User,
-  FileText,
   Briefcase,
   ChevronDown,
 } from "lucide-react";

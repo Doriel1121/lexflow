@@ -13,7 +13,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Users, UserCheck, UserPlus, Activity, RefreshCw } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { adminService, UserStats, AuditLogEntry } from '../../../services/adminService';
 import { cn } from '../../../lib/utils';
@@ -40,7 +39,6 @@ function StatCard({ label, value, icon: Icon, color }: {
 }
 
 export default function AdminUsers() {
-  const { t } = useTranslation();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);

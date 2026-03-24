@@ -16,7 +16,7 @@ import {
   MoreVertical,
   ChevronDown,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 // Predefined collection categories (order determines tab order)
 const CATEGORIES = [

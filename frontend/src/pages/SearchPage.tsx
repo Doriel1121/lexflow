@@ -157,7 +157,7 @@ const SearchPage: React.FC = () => {
                         <h3 className="font-bold text-slate-800 group-hover:text-primary transition-colors">{caseItem.title}</h3>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            caseItem.status === 'OPEN' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                            caseItem.status?.toLowerCase() === 'open' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
                           }`}>
                             {caseItem.status}
                           </span>

@@ -87,7 +87,7 @@ export function DocumentList() {
           number,
           { status: string; progress: number; stage: string }
         > = {};
-        const results = await Promise.allSettled(
+        await Promise.allSettled(
           pendingDocs.map(async (pDoc) => {
             try {
               const sRes = await api.get(`/v1/documents/${pDoc.id}/status`);

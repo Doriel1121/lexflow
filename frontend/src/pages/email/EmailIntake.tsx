@@ -18,7 +18,6 @@ import {
 import { IntakeItemRow } from '../../components/intake/IntakeItemRow';
 import { IntakeDetailPanel } from '../../components/intake/IntakeDetailPanel';
 import { useSnackbar } from '../../context/SnackbarContext';
-import api from '../../services/api';
 
 // ── Tab definitions ───────────────────────────────────────────────────────
 

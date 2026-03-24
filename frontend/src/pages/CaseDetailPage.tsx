@@ -4,8 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { 
   ArrowLeft, Upload, FileText, Calendar, User, Plus, Loader2, X, 
   AlertCircle, Clock, CheckCircle2, Scale, FileSignature, Reply, 
-  Gavel, ShieldAlert, Edit2, CheckCircle, Trash2 as TrashIcon, Sparkles,
-  UserPlus
+  Gavel, ShieldAlert, Edit2, CheckCircle, Trash2 as TrashIcon
 } from 'lucide-react';
 import api from '../services/api';
 import { Case } from '../types';
