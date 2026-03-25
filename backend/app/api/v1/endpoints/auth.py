@@ -31,6 +31,16 @@ class UserRegister(BaseModel):
 router = APIRouter()
 
 
+def _cookie_settings() -> dict:
+    """
+    Cross-site cookies require SameSite=None and Secure=true.
+    Use stricter settings outside development.
+    """
+    if settings.ENVIRONMENT == "development":
+        return {"secure": False, "samesite": "lax"}
+    return {"secure": True, "samesite": "none"}
+
+
 @router.post("/register")
 async def register(
     user_in: UserRegister,
@@ -103,12 +113,13 @@ async def register(
     # For now we only return refresh token via HttpOnly cookie; frontend continues using access_token.
     # This is backwards compatible and sets us up for silent refresh later.
     target_response = response or Response()
+    cookie_kwargs = _cookie_settings()
     target_response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,  # consider True when using HTTPS
-        samesite="lax",
+        secure=cookie_kwargs["secure"],
+        samesite=cookie_kwargs["samesite"],
         max_age=int(refresh_expires.total_seconds()),
         path="/",
     )
@@ -179,12 +190,13 @@ async def login_native(
         }
     }
     target_response = response or Response()
+    cookie_kwargs = _cookie_settings()
     target_response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=cookie_kwargs["secure"],
+        samesite=cookie_kwargs["samesite"],
         max_age=int(refresh_expires.total_seconds()),
         path="/",
     )
@@ -384,12 +396,13 @@ async def dev_login(
     }
 
     target_response = response or Response()
+    cookie_kwargs = _cookie_settings()
     target_response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=cookie_kwargs["secure"],
+        samesite=cookie_kwargs["samesite"],
         max_age=int(refresh_expires.total_seconds()),
         path="/",
     )

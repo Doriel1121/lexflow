@@ -45,9 +45,20 @@ app = FastAPI(
 app.add_middleware(RBACMiddleware)   # innermost: runs after auth sets state.user
 app.add_middleware(AuditMiddleware)  # outermost: sets state.user, then logs
 
+def _get_frontend_origins() -> list[str]:
+    raw = settings.FRONTEND_ORIGINS or ""
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if settings.ENVIRONMENT == "development":
+        # Always allow local dev origins in development
+        for origin in ["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"]:
+            if origin not in origins:
+                origins.append(origin)
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"],
+    allow_origins=_get_frontend_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],

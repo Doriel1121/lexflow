@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 14  # 14 days
     FRONTEND_ORIGINS: str = "http://localhost:5173"
     ENVIRONMENT: str = "development"  # "development", "staging", "production"
+    # Back-compat env var
+    APP_ENV: str | None = None
     
     # OAuth
     GOOGLE_CLIENT_ID: str = ""
@@ -67,6 +69,10 @@ class Settings(BaseSettings):
     )
 
     def model_post_init(self, __context) -> None:
+        # Backwards compatibility: honor APP_ENV if ENVIRONMENT wasn't explicitly set
+        if self.ENVIRONMENT == "development" and self.APP_ENV:
+            self.ENVIRONMENT = self.APP_ENV
+
         # Prefer explicit DATABASE_URL, otherwise fall back to Render URLs, then components.
         if self.DATABASE_URL:
             return
