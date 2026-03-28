@@ -60,6 +60,9 @@ backend/debug_*.py
 backend/debug_*.log
 debug_*.txt
 
+# Development scripts (local testing/setup utilities)
+backend/dev-scripts/
+
 # ==============================================================================
 # Node / Frontend
 # ==============================================================================

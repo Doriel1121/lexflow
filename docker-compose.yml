@@ -10,7 +10,10 @@
 #
 # Usage:
 #   Development  →  docker-compose up --build
-#   Production   →  docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#                   (runs all services: db, redis, backend, celery, frontend)
+#
+#   Production   →  docker-compose up -d
+#                   (runs only: backend, celery | uses external db/redis/frontend)
 # ============================================================
 
 services:
@@ -20,6 +23,7 @@ services:
     image: ankane/pgvector:latest
     container_name: lexflow_db
     restart: unless-stopped
+    profiles: ["dev"]  # Only run in development
     ports:
       - "5432:5432"
     env_file:
@@ -42,6 +46,7 @@ services:
     image: redis:7-alpine
     container_name: lexflow_redis
     restart: unless-stopped
+    profiles: ["dev"]  # Only run in development
     ports:
       - "6379:6379"
     volumes:
@@ -60,11 +65,9 @@ services:
     image: lexflow-backend:latest
     container_name: lexflow_backend
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # Note: Runs in both dev and production
+    # - Dev: connects to local containerized db/redis
+    # - Production: connects to external managed services via .env
     ports:
       - "8000:8000"
     env_file:
@@ -99,11 +102,9 @@ services:
     image: lexflow-celery:latest
     container_name: lexflow_celery
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # Note: Runs in both dev and production
+    # - Dev: connects to local containerized db/redis
+    # - Production: connects to external managed services via .env
     env_file:
       - ./.env
     environment:
@@ -132,6 +133,7 @@ services:
     image: lexflow-frontend:latest
     container_name: lexflow_frontend
     restart: unless-stopped
+    profiles: ["dev"]  # Only run in development
     depends_on:
       - backend
     ports:

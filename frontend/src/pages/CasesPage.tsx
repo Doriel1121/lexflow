@@ -106,7 +106,7 @@ const CasesPage: React.FC = () => {
   }, [cases, searchTerm, statusFilter]);
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return "N/A";
+    if (!dateStr) return t("casesPage.notAvailable");
     const date = new Date(dateStr);
     return date.toLocaleDateString("en-US", {
       month: "short",
@@ -127,7 +127,9 @@ const CasesPage: React.FC = () => {
   if (loading && page === 0) {
     return (
       <div className="h-full flex items-center justify-center">
-        <span className="animate-pulse text-neutral-500">Loading cases...</span>
+        <span className="animate-pulse text-neutral-500">
+          {t("casesPage.loading")}
+        </span>
       </div>
     );
   }
@@ -137,16 +139,14 @@ const CasesPage: React.FC = () => {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-serif font-bold text-neutral-900 tracking-tight">
-          {t('casesPage.title')}
+          {t("casesPage.title")}
         </h1>
-        <p className="text-neutral-600 mt-1">
-          {t('casesPage.subtitle')}
-        </p>
+        <p className="text-neutral-600 mt-1">{t("casesPage.subtitle")}</p>
       </div>
 
       {error && (
         <div className="mb-4 bg-error-light border border-error/20 text-error-dark px-4 py-3 rounded-lg">
-          <strong>{t('common.error')}:</strong> {error}
+          <strong>{t("common.error")}:</strong> {error}
         </div>
       )}
 
@@ -160,7 +160,7 @@ const CasesPage: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
               <input
                 type="text"
-                placeholder={t('casesPage.searchPlaceholder')}
+                placeholder={t("casesPage.searchPlaceholder")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-border-light focus:border-primary-500 focus:ring-2 focus:ring-primary-100 rounded-lg text-sm outline-none transition-all"
@@ -174,10 +174,10 @@ const CasesPage: React.FC = () => {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="appearance-none pl-4 pr-10 py-2.5 bg-white border border-border-light rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-all cursor-pointer outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
               >
-                <option value="all">{t('casesPage.allStatus')}</option>
-                <option value="open">{t('casesPage.open')}</option>
-                <option value="pending">{t('casesPage.pending')}</option>
-                <option value="closed">{t('casesPage.closed')}</option>
+                <option value="all">{t("casesPage.allStatus")}</option>
+                <option value="open">{t("casesPage.open")}</option>
+                <option value="pending">{t("casesPage.pending")}</option>
+                <option value="closed">{t("casesPage.closed")}</option>
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none" />
             </div>
@@ -187,14 +187,14 @@ const CasesPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <button className="flex items-center gap-2 px-3 py-2.5 bg-white text-neutral-600 border border-border-light rounded-lg hover:bg-neutral-50 text-sm font-medium transition-all">
               <Filter className="h-4 w-4" />
-              <span>{t('casesPage.moreFilters')}</span>
+              <span>{t("casesPage.moreFilters")}</span>
             </button>
             <Link
               to="/cases/new"
               className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-800 transition-all shadow-sm"
             >
               <Plus className="h-4 w-4" />
-              <span>{t('casesPage.newCase')}</span>
+              <span>{t("casesPage.newCase")}</span>
             </Link>
           </div>
         </div>
@@ -204,18 +204,18 @@ const CasesPage: React.FC = () => {
             <div className="p-12 text-center text-neutral-500">
               <div className="flex flex-col items-center gap-3">
                 <Briefcase className="h-16 w-16 text-neutral-300" />
-                <p className="font-medium text-lg">{t('casesPage.noCases')}</p>
+                <p className="font-medium text-lg">{t("casesPage.noCases")}</p>
                 <p className="text-sm text-neutral-400">
                   {searchTerm || statusFilter !== "all"
-                    ? t('casesPage.noCases')
-                    : t('casesPage.createFirstCase')}
+                    ? t("casesPage.noCases")
+                    : t("casesPage.createFirstCase")}
                 </p>
                 {!searchTerm && statusFilter === "all" && (
                   <Link
                     to="/cases/new"
                     className="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-800 transition-all"
                   >
-                    {t('casesPage.createFirstCase')}
+                    {t("casesPage.createFirstCase")}
                   </Link>
                 )}
               </div>
@@ -226,22 +226,22 @@ const CasesPage: React.FC = () => {
                 <tr>
                   <th className="px-4 py-2.5 text-left text-xs uppercase text-start tracking-wider w-12"></th>
                   <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider">
-                    {t('casesPage.caseTitle')}
+                    {t("casesPage.caseTitle")}
                   </th>
                   <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-24">
-                    {t('casesPage.status')}
+                    {t("casesPage.status")}
                   </th>
                   <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-32">
-                    {t('casesPage.client')}
+                    {t("casesPage.client")}
                   </th>
                   <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-28">
-                    {t('casesPage.date')}
+                    {t("casesPage.date")}
                   </th>
                   <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-20">
-                    {t('casesPage.docs')}
+                    {t("casesPage.docs")}
                   </th>
                   <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-20">
-                    {t('casesPage.notes')}
+                    {t("casesPage.notes")}
                   </th>
                   <th className="px-2 py-2.5 text-right text-xs uppercase text-start tracking-wider w-12"></th>
                 </tr>
@@ -272,13 +272,19 @@ const CasesPage: React.FC = () => {
                       <span
                         className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadge(caseItem.status)}`}
                       >
-                        {caseItem.status === 'open' ? t('casesPage.open') : 
-                         caseItem.status === 'pending' ? t('casesPage.pending') : 
-                         caseItem.status === 'closed' ? t('casesPage.closed') : caseItem.status}
+                        {caseItem.status === "open"
+                          ? t("casesPage.open")
+                          : caseItem.status === "pending"
+                            ? t("casesPage.pending")
+                            : caseItem.status === "closed"
+                              ? t("casesPage.closed")
+                              : caseItem.status}
                       </span>
                     </td>
                     <td className="px-2 py-2.5 text-sm text-neutral-700">
-                      {caseItem.client_id ? `${t('casesPage.client')} #${caseItem.client_id}` : t('casesPage.noClient')}
+                      {caseItem.client_id
+                        ? `${t("casesPage.client")} #${caseItem.client_id}`
+                        : t("casesPage.noClient")}
                     </td>
                     <td className="px-2 py-2.5 text-xs text-neutral-600">
                       {formatDate(caseItem.created_at)}
@@ -311,27 +317,34 @@ const CasesPage: React.FC = () => {
                               className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
                               onClick={() => navigate(`/cases/${caseItem.id}`)}
                             >
-                              {t('casesPage.viewDetails')}
+                              {t("casesPage.viewDetails")}
                             </button>
                             <button
                               className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
                               onClick={() => {
                                 setOpenDropdownId(null);
-                                showSnackbar(t("casesPage.editComingSoon"), { type: "info" });
+                                showSnackbar(t("casesPage.editComingSoon"), {
+                                  type: "info",
+                                });
                               }}
                             >
-                              {t('casesPage.editCase')}
+                              {t("casesPage.editCase")}
                             </button>
                             <hr className="my-1 border-neutral-100" />
                             <button
                               className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error-light"
                               onClick={() => {
                                 setOpenDropdownId(null);
-                                if (window.confirm(t("casesPage.deleteConfirm")))
-                                  showSnackbar(t("casesPage.deleteComingSoon"), { type: "info" });
+                                if (
+                                  window.confirm(t("casesPage.deleteConfirm"))
+                                )
+                                  showSnackbar(
+                                    t("casesPage.deleteComingSoon"),
+                                    { type: "info" },
+                                  );
                               }}
                             >
-                              {t('casesPage.deleteCase')}
+                              {t("casesPage.deleteCase")}
                             </button>
                           </div>
                         </div>
@@ -352,12 +365,12 @@ const CasesPage: React.FC = () => {
           >
             {fetchingMore && (
               <span className="text-sm text-neutral-500 animate-pulse">
-                {t('casesPage.loading')}
+                {t("casesPage.loading")}
               </span>
             )}
             {!hasMore && cases.length > 0 && (
               <span className="text-xs text-neutral-400">
-                {t('adminAudit.endOfRecords')}
+                {t("adminAudit.endOfRecords")}
               </span>
             )}
           </div>

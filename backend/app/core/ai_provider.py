@@ -6,6 +6,7 @@ import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import google.generativeai as genai
@@ -48,7 +49,9 @@ class GeminiProvider(BaseAIProvider):
     INITIAL_BACKOFF = 15  # seconds - much more patient for Free Tier
 
     def __init__(self):
-        load_dotenv()
+        # Load .env from project root (3 levels up from this file)
+        env_path = Path(__file__).resolve().parents[3] / ".env"
+        load_dotenv(env_path)
         api_key = os.getenv("GEMINI_API_KEY")
         self.active = False
         self.model = None
@@ -126,7 +129,16 @@ class GeminiProvider(BaseAIProvider):
             result_text = result_text.strip()
 
             try:
-                return json.loads(result_text)
+                parsed = json.loads(result_text)
+                # Ensure it's a dict, not some other JSON type (string, number, array, etc.)
+                if not isinstance(parsed, dict):
+                    logger.error(
+                        "Gemini returned JSON but not a dict (got %s): %s",
+                        type(parsed).__name__,
+                        result_text[:300],
+                    )
+                    return None
+                return parsed
             except json.JSONDecodeError:
                 logger.error(
                     "Gemini returned invalid JSON (first 300 chars): %s",
@@ -159,7 +171,9 @@ class OpenRouterProvider(BaseAIProvider):
     """OpenRouter (OpenAI-compatible) chat + embeddings API."""
 
     def __init__(self):
-        load_dotenv()
+        # Load .env from project root (3 levels up from this file)
+        env_path = Path(__file__).resolve().parents[3] / ".env"
+        load_dotenv(env_path)
         self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
         self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.model = os.getenv("OPENROUTER_MODEL", "").strip()
@@ -225,7 +239,16 @@ class OpenRouterProvider(BaseAIProvider):
         if not content:
             return None
         try:
-            return json.loads(content)
+            parsed = json.loads(content)
+            # Ensure it's a dict, not some other JSON type
+            if not isinstance(parsed, dict):
+                logger.error(
+                    "OpenRouter returned JSON but not a dict (got %s): %s",
+                    type(parsed).__name__,
+                    content[:300],
+                )
+                return None
+            return parsed
         except json.JSONDecodeError:
             logger.error("OpenRouter returned invalid JSON (first 300 chars): %s", content[:300])
             return None
@@ -258,7 +281,9 @@ class CohereProvider(BaseAIProvider):
     """Cohere chat + embeddings API."""
 
     def __init__(self):
-        load_dotenv()
+        # Load .env from project root (3 levels up from this file)
+        env_path = Path(__file__).resolve().parents[3] / ".env"
+        load_dotenv(env_path)
         raw_url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com")
         compat_raw = os.getenv("COHERE_COMPAT_BASE_URL", "https://api.cohere.ai/compatibility/v1")
         # Native (v2) base URL
@@ -272,10 +297,17 @@ class CohereProvider(BaseAIProvider):
         self.timeout_s = float(os.getenv("COHERE_TIMEOUT_SECONDS", "120"))
         self.active = bool(self.api_key and self.model)
 
+        logger.info(f"CohereProvider init: api_key_present={bool(self.api_key)}, model={self.model}, active={self.active}")
+        
         if not self.active:
-            logger.warning("Cohere API key/model not set — provider inactive.")
+            missing = []
+            if not self.api_key:
+                missing.append("COHERE_API_KEY")
+            if not self.model:
+                missing.append("COHERE_MODEL")
+            logger.warning(f"Cohere Provider INACTIVE - Missing: {', '.join(missing)}")
         else:
-            logger.info("Cohere Provider initialised. model=%s", self.model)
+            logger.info(f"Cohere Provider initialised. model={self.model}, base_url={self.base_url}")
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -293,73 +325,47 @@ class CohereProvider(BaseAIProvider):
         if not self.active:
             logger.warning("Cohere Provider inactive — skipping generate_text.")
             return None
-        compat_url = self.compat_base_url + "/chat/completions"
-        native_url = self.base_url.rstrip("/") + "/v2/chat"
+        # Use v1 endpoint (compat_base_url is now https://api.cohere.com/v1)
+        url = self.compat_base_url.rstrip("/") + "/chat"
 
-        compat_payload = {
+        # Cohere v1 chat endpoint uses 'message' (string), not 'messages' (array)
+        payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "message": prompt,
         }
         try:
-            result = await self._post(compat_url, compat_payload)
-            return result["choices"][0]["message"]["content"]
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code not in (404, 405):
-                raise
-
-        native_payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-        }
-        result = await self._post(native_url, native_payload)
-        try:
-            # v2 returns message.content as a list of parts
-            parts = result.get("message", {}).get("content") or []
-            return "".join([p.get("text", "") for p in parts if isinstance(p, dict)])
-        except Exception:
-            return result.get("text")
+            result = await self._post(url, payload)
+            # Cohere v1 returns {"text": "...", ...}, not OpenAI format
+            return result.get("text", "").strip()
+        except Exception as e:
+            logger.error("Cohere text generation failed: %s", e)
+            return None
 
     async def generate_json(self, prompt: str) -> Optional[Dict[str, Any]]:
         if not self.active:
             logger.warning("Cohere Provider inactive — skipping generate_json.")
             return None
-        compat_url = self.compat_base_url + "/chat/completions"
-        native_url = self.base_url.rstrip("/") + "/v2/chat"
+        # Use v1 endpoint (compat_base_url is now https://api.cohere.com/v1)
+        url = self.compat_base_url.rstrip("/") + "/chat"
 
-        content = ""
-        # Try OpenAI-compatible endpoint first
-        compat_payload = {
+        # Cohere v1 chat endpoint uses 'message' (string), not 'messages' (array)
+        # Note: response_format is not supported by Cohere v1, so we rely on prompt engineering
+        payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"},
+            "message": prompt,
         }
         try:
-            result = await self._post(compat_url, compat_payload)
-            content = (result["choices"][0]["message"]["content"] or "").strip()
+            result = await self._post(url, payload)
+            # Cohere v1 returns {"text": "...", ...}, not OpenAI format
+            content = (result.get("text") or "").strip()
         except Exception as e:
-            logger.debug("Cohere compat JSON failed (expected if endpoint missing): %s", e)
+            logger.debug("Cohere JSON call failed: %s", e)
             content = ""
-
-        # Fallback to native Cohere Chat API (v2)
-        if not content:
-            native_payload = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-            }
-            try:
-                result = await self._post(native_url, native_payload)
-                parts = result.get("message", {}).get("content") or []
-                content = "".join([p.get("text", "") for p in parts if isinstance(p, dict)]).strip()
-            except Exception as e:
-                logger.error("Cohere native JSON failed: %s", e)
-                return None
 
         if not content:
             return None
 
-        # Clean up markdown code fences if the model ignored response_format
+        # Clean up markdown code fences if present
         for fence in ("```json", "```"):
             if content.startswith(fence):
                 content = content[len(fence):]
@@ -368,7 +374,16 @@ class CohereProvider(BaseAIProvider):
         content = content.strip()
 
         try:
-            return json.loads(content)
+            parsed = json.loads(content)
+            # Ensure it's a dict, not some other JSON type
+            if not isinstance(parsed, dict):
+                logger.error(
+                    "Cohere returned JSON but not a dict (got %s): %s",
+                    type(parsed).__name__,
+                    content[:300],
+                )
+                return None
+            return parsed
         except json.JSONDecodeError:
             logger.error("Cohere returned invalid JSON (first 300 chars): %s", content[:300])
             return None
@@ -381,72 +396,58 @@ class CohereProvider(BaseAIProvider):
             logger.warning("Cohere embedding model not set — returning zero vector.")
             return [0.0] * self.embedding_dimension
         
-        compat_url = self.compat_base_url + "/embeddings"
-        native_url = self.base_url.rstrip("/") + "/v2/embed"
+        # Use v1 endpoint
+        url = self.compat_base_url.rstrip("/") + "/embed"
 
-        embeddings = []
-        # Try compat first
-        compat_payload = {
+        payload = {
             "model": self.embedding_model,
-            "input": [text],
+            "texts": [text],
+            "input_type": "search_document"  # Required for embedding models
         }
         try:
-            result = await self._post(compat_url, compat_payload)
-            data = result.get("data") or []
-            if data and isinstance(data[0], dict):
-                embeddings = [data[0].get("embedding")]
-        except Exception:
-            embeddings = []
-
-        # Fallback to native
-        if not embeddings:
-            native_payload = {
-                "model": self.embedding_model,
-                "texts": [text],
-                "input_type": "search_document", # Required for v3 models
-                "embedding_types": ["float"],
-            }
-            try:
-                result = await self._post(native_url, native_payload)
-                if isinstance(result.get("embeddings"), dict):
-                    embeddings = result.get("embeddings", {}).get("float") or []
+            result = await self._post(url, payload)
+            embeddings = result.get("embeddings") or []
+            if embeddings and isinstance(embeddings[0], list):
+                vector = embeddings[0]
+                # Ensure correct dimensionality
+                if len(vector) > self.embedding_dimension:
+                    vector = vector[: self.embedding_dimension]
                 else:
-                    embeddings = result.get("embeddings") or []
-            except Exception as e:
-                logger.error("Cohere native embedding failed: %s", e)
-                return [0.0] * self.embedding_dimension
-
-        if not embeddings:
-            return [0.0] * self.embedding_dimension
+                    vector = vector + ([0.0] * (self.embedding_dimension - len(vector)))
+                return vector
+        except Exception as e:
+            logger.error("Cohere embedding failed: %s", e)
         
-        vector = embeddings[0]
-        if not vector:
-            return [0.0] * self.embedding_dimension
-            
-        if len(vector) != self.embedding_dimension:
-            if len(vector) > self.embedding_dimension:
-                vector = vector[: self.embedding_dimension]
-            else:
-                vector = vector + ([0.0] * (self.embedding_dimension - len(vector)))
-        return vector
+        return [0.0] * self.embedding_dimension
 
 
 def get_ai_provider() -> BaseAIProvider:
     """Factory — returns the configured AI provider singleton."""
-    load_dotenv()
+    # Load .env from project root (3 levels up from this file)
+    env_path = Path(__file__).resolve().parents[3] / ".env"
+    load_dotenv(env_path)
     provider_name = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
     
+    logger.info(f"🔍 get_ai_provider(): AI_PROVIDER={provider_name}")
+    
     if provider_name == "ollama":
+        logger.info("📡 Initialising Ollama AI provider...")
         provider = OllamaProvider()
     elif provider_name == "openrouter":
+        logger.info("📡 Initialising OpenRouter AI provider...")
         provider = OpenRouterProvider()
     elif provider_name == "cohere":
+        logger.info("📡 Initialising Cohere AI provider...")
         provider = CohereProvider()
     else:
+        logger.info("📡 Initialising Gemini AI provider (default)...")
         provider = GeminiProvider()
+    
+    is_active = getattr(provider, "active", False)
+    logger.info(f"✅ Provider '{provider_name}' created. Active: {is_active}")
         
-    if not getattr(provider, "active", False):
-        logger.warning(f"AI Provider '{provider_name}' is INACTIVE. Check your API keys and configuration.")
+    if not is_active:
+        logger.warning(f"⚠️ AI Provider '{provider_name}' is INACTIVE. Check your API keys and configuration.")
         
     return provider
 
@@ -455,7 +456,9 @@ class OllamaProvider(BaseAIProvider):
     """Concrete implementation for local Ollama REST API."""
 
     def __init__(self):
-        load_dotenv()
+        # Load .env from project root (3 levels up from this file)
+        env_path = Path(__file__).resolve().parents[3] / ".env"
+        load_dotenv(env_path)
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.model = os.getenv("OLLAMA_MODEL", "").strip()
         self.embedding_model = os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or self.model
@@ -508,7 +511,16 @@ class OllamaProvider(BaseAIProvider):
         if not raw:
             return None
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            # Ensure it's a dict, not some other JSON type
+            if not isinstance(parsed, dict):
+                logger.error(
+                    "Ollama returned JSON but not a dict (got %s): %s",
+                    type(parsed).__name__,
+                    raw[:300],
+                )
+                return None
+            return parsed
         except json.JSONDecodeError:
             logger.error("Ollama returned invalid JSON (first 300 chars): %s", raw[:300])
             return None

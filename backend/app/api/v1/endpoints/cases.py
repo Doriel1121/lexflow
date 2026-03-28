@@ -108,7 +108,9 @@ async def read_cases(
     """
     user_id = current_user.id
     user_role = current_user.role.value if current_user.role else None
-    query = select(DBCase).offset(skip).limit(limit)
+    query = select(DBCase).options(
+        selectinload(DBCase.assigned_lawyer)
+    ).offset(skip).limit(limit)
     query = apply_user_org_filter(query, DBCase, user_id, org_id, user_role)
     result = await db.execute(query)
     cases = result.scalars().all()
@@ -120,6 +122,8 @@ async def read_cases(
         "status": c.status.value if hasattr(c.status, 'value') else c.status,
         "client_id": c.client_id,
         "created_by_user_id": c.created_by_user_id,
+        "assigned_lawyer_id": c.assigned_lawyer_id,
+        "assigned_lawyer_name": c.assigned_lawyer.full_name if c.assigned_lawyer else None,
         "created_at": c.created_at,
         "updated_at": c.updated_at,
         "notes": [],

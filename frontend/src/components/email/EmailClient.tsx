@@ -1,8 +1,20 @@
-import { useState, useEffect } from 'react';
-import { Mail, RefreshCw, Paperclip, ArrowRight, UserPlus, FolderPlus, Inbox, Archive, Trash2, Search } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import api from '../../services/api';
-import { useSnackbar } from '../../context/SnackbarContext';
+import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  Mail,
+  RefreshCw,
+  Paperclip,
+  ArrowRight,
+  UserPlus,
+  FolderPlus,
+  Inbox,
+  Archive,
+  Trash2,
+  Search,
+} from "lucide-react";
+import { cn } from "../../lib/utils";
+import api from "../../services/api";
+import { useSnackbar } from "../../context/SnackbarContext";
 
 interface Email {
   id: number;
@@ -15,11 +27,12 @@ interface Email {
 }
 
 export function EmailClient() {
+  const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
   const [emails, setEmails] = useState<Email[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
   useEffect(() => {
     fetchEmails();
   }, []);
@@ -27,10 +40,10 @@ export function EmailClient() {
   const fetchEmails = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/v1/email/messages');
+      const response = await api.get("/v1/email/messages");
       setEmails(response.data);
     } catch (error) {
-      console.error('Failed to fetch emails:', error);
+      console.error("Failed to fetch emails:", error);
     } finally {
       setLoading(false);
     }
@@ -39,59 +52,70 @@ export function EmailClient() {
   const handleSync = async () => {
     try {
       // Use simplified Gmail OAuth sync
-      await api.post('/v1/email/sync-gmail');
-      showSnackbar('Emails synced successfully!', { type: 'success' });
+      await api.post("/v1/email/sync-gmail");
+      showSnackbar(t("emailClient.syncSuccess"), { type: "success" });
       setTimeout(fetchEmails, 2000);
     } catch (error: any) {
       if (error.response?.status === 400) {
-        showSnackbar('Please login with Google to sync emails', { type: 'warning' });
+        showSnackbar(t("emailClient.loginPrompt"), { type: "warning" });
       } else if (error.response?.status === 401) {
-        showSnackbar('Gmail access expired. Please login again.', { type: 'error' });
+        showSnackbar(t("emailClient.accessExpired"), { type: "error" });
       } else {
-        showSnackbar(`Sync failed: ${error.response?.data?.detail || error.message}`, { type: 'error' });
+        showSnackbar(
+          t("emailClient.syncFailed", {
+            error: error.response?.data?.detail || error.message,
+          }),
+          { type: "error" },
+        );
       }
     }
   };
 
-  const activeEmail = emails.find(e => e.id === selectedEmail);
+  const activeEmail = emails.find((e) => e.id === selectedEmail);
 
   return (
     <div className="flex h-[calc(100vh-8rem)] bg-card border border-border rounded-xl shadow-sm overflow-hidden">
       {/* 1. Left Sidebar: Inboxes */}
       <div className="w-64 bg-slate-50 border-r border-border flex flex-col">
         <div className="p-4 border-b border-border">
-          <button 
+          <button
             onClick={handleSync}
             className="w-full flex items-center justify-center space-x-2 bg-white border border-border hover:bg-slate-50 text-slate-700 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
           >
             <RefreshCw className="h-4 w-4" />
-            <span>Sync Inboxes</span>
+            <span>{t("emailClient.syncInboxes")}</span>
           </button>
         </div>
         <nav className="flex-1 p-2 space-y-1">
           <button className="w-full flex items-center justify-between px-3 py-2 bg-white shadow-sm border border-slate-200 rounded-lg text-sm font-medium text-slate-900">
             <div className="flex items-center space-x-3">
               <Inbox className="h-4 w-4 text-primary" />
-              <span>Intake</span>
+              <span>{t("emailClient.intake")}</span>
             </div>
-            <span className="bg-primary text-primary-foreground px-2 py-0.5 rounded-full text-xs">{emails.length}</span>
+            <span className="bg-primary text-primary-foreground px-2 py-0.5 rounded-full text-xs">
+              {emails.length}
+            </span>
           </button>
           <button className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-100 rounded-lg text-sm font-medium text-slate-600 transition-colors">
             <div className="flex items-center space-x-3">
               <Archive className="h-4 w-4" />
-              <span>Processed</span>
+              <span>{t("emailClient.processed")}</span>
             </div>
           </button>
           <button className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-100 rounded-lg text-sm font-medium text-slate-600 transition-colors">
             <div className="flex items-center space-x-3">
               <Trash2 className="h-4 w-4" />
-              <span>Trash</span>
+              <span>{t("emailClient.trash")}</span>
             </div>
           </button>
         </nav>
         <div className="p-4 bg-slate-100 border-t border-border">
-           <p className="text-xs text-slate-500 font-medium mb-2">Gmail Connected</p>
-           <p className="text-xs text-slate-600">Login with Google to sync</p>
+          <p className="text-xs text-slate-500 font-medium mb-2">
+            {t("emailClient.gmailConnected")}
+          </p>
+          <p className="text-xs text-slate-600">
+            {t("emailClient.loginGoogle")}
+          </p>
         </div>
       </div>
 
@@ -99,34 +123,62 @@ export function EmailClient() {
       <div className="w-80 border-r border-border flex flex-col bg-white">
         <div className="p-4 border-b border-border">
           <div className="relative">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-             <input type="text" placeholder="Search mail..." className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-primary" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder={t("emailClient.searchPlaceholder")}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-primary"
+            />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading emails...</div>
+            <div className="p-4 text-center text-gray-500">
+              {t("emailClient.loading")}
+            </div>
           ) : emails.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
-              <p>No emails yet.</p>
-              <p className="text-sm mt-2">Click "Sync Inboxes" to fetch emails.</p>
+              <p>{t("emailClient.noEmails")}</p>
+              <p className="text-sm mt-2">{t("emailClient.clickSync")}</p>
             </div>
           ) : (
-            emails.map(email => (
-              <div 
+            emails.map((email) => (
+              <div
                 key={email.id}
                 onClick={() => setSelectedEmail(email.id)}
                 className={cn(
                   "p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors",
-                  selectedEmail === email.id ? "bg-blue-50/50 border-l-4 border-l-primary" : "border-l-4 border-l-transparent",
-                  email.unread ? "bg-slate-50" : "bg-white"
+                  selectedEmail === email.id
+                    ? "bg-blue-50/50 border-l-4 border-l-primary"
+                    : "border-l-4 border-l-transparent",
+                  email.unread ? "bg-slate-50" : "bg-white",
                 )}
               >
                 <div className="flex justify-between items-start mb-1">
-                  <span className={cn("text-sm font-medium truncate pr-2", email.unread ? "text-slate-900 font-bold" : "text-slate-700")}>{email.from}</span>
-                  <span className="text-xs text-slate-400 whitespace-nowrap">{email.date}</span>
+                  <span
+                    className={cn(
+                      "text-sm font-medium truncate pr-2",
+                      email.unread
+                        ? "text-slate-900 font-bold"
+                        : "text-slate-700",
+                    )}
+                  >
+                    {email.from}
+                  </span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">
+                    {email.date}
+                  </span>
                 </div>
-                <p className={cn("text-sm mb-1 truncate", email.unread ? "font-semibold text-slate-800" : "text-slate-600")}>{email.subject}</p>
+                <p
+                  className={cn(
+                    "text-sm mb-1 truncate",
+                    email.unread
+                      ? "font-semibold text-slate-800"
+                      : "text-slate-600",
+                  )}
+                >
+                  {email.subject}
+                </p>
                 <p className="text-xs text-slate-500 truncate">{email.text}</p>
                 {email.attachments.length > 0 && (
                   <div className="mt-2 flex items-center space-x-2">
@@ -149,25 +201,31 @@ export function EmailClient() {
             <div className="p-6 border-b border-border">
               <div className="flex justify-between items-start mb-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900 mb-2">{activeEmail.subject}</h2>
+                  <h2 className="text-xl font-bold text-slate-900 mb-2">
+                    {activeEmail.subject}
+                  </h2>
                   <div className="flex items-center space-x-2 text-sm text-slate-600">
-                    <span className="font-medium text-slate-900">{activeEmail.from}</span>
+                    <span className="font-medium text-slate-900">
+                      {activeEmail.from}
+                    </span>
                     <span className="text-slate-400">to</span>
                     <span>Me</span>
                   </div>
                 </div>
-                <span className="text-sm text-slate-500">{activeEmail.date}</span>
+                <span className="text-sm text-slate-500">
+                  {activeEmail.date}
+                </span>
               </div>
 
               {/* Action Toolbar */}
               <div className="flex space-x-3">
                 <button className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm">
                   <FolderPlus className="h-4 w-4" />
-                  <span>Attach to Case</span>
+                  <span>{t("emailClient.attachToCase")}</span>
                 </button>
                 <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm">
                   <UserPlus className="h-4 w-4" />
-                  <span>Create Client</span>
+                  <span>{t("emailClient.createClient")}</span>
                 </button>
               </div>
             </div>
@@ -184,19 +242,25 @@ export function EmailClient() {
                 <div className="mt-8 border-t border-slate-100 pt-6">
                   <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center">
                     <Paperclip className="h-4 w-4 mr-2" />
-                    Attachments ({activeEmail.attachments.length})
+                    {t("emailClient.attachments")} (
+                    {activeEmail.attachments.length})
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     {activeEmail.attachments.map((file, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer group transition-colors">
+                      <div
+                        key={i}
+                        className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer group transition-colors"
+                      >
                         <div className="flex items-center space-x-3">
                           <div className="p-2 bg-red-100 rounded text-red-600">
                             <ArrowRight className="h-4 w-4 -rotate-45" />
                           </div>
-                          <span className="text-sm font-medium text-slate-700">{file}</span>
+                          <span className="text-sm font-medium text-slate-700">
+                            {file}
+                          </span>
                         </div>
                         <button className="text-primary text-xs font-medium hover:underline opacity-0 group-hover:opacity-100 transition-opacity">
-                          Preview
+                          {t("emailClient.preview")}
                         </button>
                       </div>
                     ))}
@@ -210,8 +274,12 @@ export function EmailClient() {
             <div className="bg-slate-100 p-4 rounded-full mb-4">
               <Mail className="h-8 w-8 text-slate-400" />
             </div>
-            <h3 className="text-lg font-medium text-slate-800">No emails loaded</h3>
-            <p className="max-w-xs mt-2 text-sm">Click "Sync Inboxes" to fetch emails from your configured accounts.</p>
+            <h3 className="text-lg font-medium text-slate-800">
+              {t("emailClient.noEmailsLoaded")}
+            </h3>
+            <p className="max-w-xs mt-2 text-sm">
+              {t("emailClient.syncInstruction")}
+            </p>
           </div>
         )}
       </div>
