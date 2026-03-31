@@ -307,15 +307,6 @@
         "SUPERADMIN": "מנהל על",
         "USER": "משתמש"
     },
-    "status": {
-        "active": "פעיל",
-        "inactive": "לא פעיל",
-        "pending": "ממתין",
-        "processed": "עובד",
-        "processing": "בעיבוד",
-        "error": "שגיאה",
-        "paused": "מושהה"
-    },
     "adminOrgs": {
         "title": "ארגונים",
         "subtitle": "נהל סביבות עבודה ומנויים.",
@@ -431,7 +422,11 @@
         "downloadNotImplemented": "פונקציונליות הורדה עדיין לא מומשה בטכנולוגיית الخلفية.",
         "shareNotImplemented": "פונקציונליות שיתוף עדיין לא מומשה.",
         "loadingMore": "טוען עוד מסמכים...",
-        "endOfRecords": "סוף הרשומות"
+        "endOfRecords": "סוף הרשומות",
+        "appliedFilters": "סינונים מיושמים",
+        "status": "סטטוס",
+        "classification": "סיווג",
+        "dateRange": "טווח תאריכים"
     },
     "adminDashboard": {
         "title": "סקירת מערכת",
@@ -574,5 +569,59 @@
         "unclassified": "לא מסווג",
         "noMatches": "לא נמצאו תוצאות",
         "noMatchesDesc": "לא הצלחנו למצוא לקוחות, תיקים או מסמכים התואמים ל-\"{{query}}\"."
+    },
+    "forms": {
+        "emailAddress": "כתובת דוא״ל",
+        "password": "סיסמה",
+        "fullName": "שם מלא",
+        "companyName": "שם חברה",
+        "phoneNumber": "מספר טלפון",
+        "address": "כתובת",
+        "contactEmail": "דוא״ל ליצירת קשר",
+        "contactPerson": "איש קשר",
+        "forgotPassword": "שכחת סיסמה?",
+        "agree": "אני מסכים ל",
+        "termsAndConditions": "תנאים והגבלות"
+    },
+    "admin": {
+        "userAnalytics": "ניתוח משתמשים",
+        "aggregatedUserStatistics": "סטטיסטיקות משתמשים מצטברות בפלטפורמה",
+        "roleDistribution": "התפלגות תפקידים",
+        "totalUsers": "סה״כ משתמשים",
+        "activeToday": "פעילים היום",
+        "newToday": "חדשים היום",
+        "avgUsersPerTenant": "ממוצע משתמשים לארגון",
+        "systemAdminMode": "⚙ מצב מנהל מערכת",
+        "systemAdmin": "מנהל מערכת"
+    },
+    "status": {
+        "active": "פעיל",
+        "inactive": "לא פעיל",
+        "pending": "בהמתנה",
+        "processed": "מעובד",
+        "processing": "בעיבוד",
+        "error": "שגיאה",
+        "paused": "הושהה",
+        "completed": "הושלם",
+        "failed": "נכשל",
+        "archived": "בארכיון"
+    },
+    "documentViewer": {
+        "fullText": "הטקסט המלא",
+        "metadata": "מטא-דטה",
+        "dates": "תאריכים",
+        "entities": "ישויות",
+        "amounts": "סכומים",
+        "caseNumbers": "מספרי תיqים",
+        "noContentExtracted": "טקסט עדיין לא הוצא",
+        "viewContentInstructions": "עבור לעמוד התיק וlחץ על ״צפה בתוכן״ כדי לחלץ טקסט"
+    },
+    "modals": {
+        "confirm": "אישור",
+        "confirmDelete": "האם אתה בטוח שברצונך למחוק זאת?",
+        "deleteSuccessfully": "נמחק בהצלחה",
+        "deleteFailed": "הבחירה נכשלה",
+        "saveChanges": "שמור שינויים",
+        "discardChanges": "בטל שינויים"
     }
 }

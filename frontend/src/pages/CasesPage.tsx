@@ -1,4 +1,15 @@
 import React, { useEffect, useState } from "react";
+import {
+  useFloating,
+  autoUpdate,
+  offset,
+  flip,
+  shift,
+  useClick,
+  useDismiss,
+  useRole,
+  useInteractions,
+} from "@floating-ui/react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Search,
@@ -23,6 +34,30 @@ const CasesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
+  const [dropdownButtonElement, setDropdownButtonElement] =
+    useState<HTMLElement | null>(null);
+
+  // Set up Floating UI for smart dropdown positioning
+  const { refs, floatingStyles, context } = useFloating({
+    open: openDropdownId !== null,
+    onOpenChange: (open) => {
+      if (!open) setOpenDropdownId(null);
+    },
+    elements: {
+      reference: dropdownButtonElement,
+    },
+    middleware: [
+      offset(8), // 8px gap between button and menu
+      flip({ padding: 8 }), // Flip to opposite side if goes off-screen
+      shift({ padding: 8 }), // Shift to stay within viewport
+    ],
+    whileElementsMounted: autoUpdate, // Auto-update on scroll/resize
+  });
+
+  const click = useClick(context);
+  const dismiss = useDismiss(context);
+  const role = useRole(context);
+  const { getFloatingProps } = useInteractions([click, dismiss, role]);
 
   // Infinite Scroll State
   const [page, setPage] = useState(0);
@@ -300,6 +335,11 @@ const CasesPage: React.FC = () => {
                         className="p-1 hover:bg-neutral-200 rounded text-neutral-400 hover:text-neutral-600 opacity-0 group-hover:opacity-100 transition-all"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setDropdownButtonElement(
+                            openDropdownId === caseItem.id
+                              ? null
+                              : (e.currentTarget as HTMLElement),
+                          );
                           setOpenDropdownId(
                             openDropdownId === caseItem.id ? null : caseItem.id,
                           );
@@ -307,48 +347,6 @@ const CasesPage: React.FC = () => {
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {openDropdownId === caseItem.id && (
-                        <div
-                          className="absolute right-8 top-8 w-44 bg-white border border-border-light rounded-lg shadow-legal-lg z-50"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="py-1">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-                              onClick={() => navigate(`/cases/${caseItem.id}`)}
-                            >
-                              {t("casesPage.viewDetails")}
-                            </button>
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                showSnackbar(t("casesPage.editComingSoon"), {
-                                  type: "info",
-                                });
-                              }}
-                            >
-                              {t("casesPage.editCase")}
-                            </button>
-                            <hr className="my-1 border-neutral-100" />
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error-light"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                if (
-                                  window.confirm(t("casesPage.deleteConfirm"))
-                                )
-                                  showSnackbar(
-                                    t("casesPage.deleteComingSoon"),
-                                    { type: "info" },
-                                  );
-                              }}
-                            >
-                              {t("casesPage.deleteCase")}
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -356,6 +354,54 @@ const CasesPage: React.FC = () => {
             </table>
           )}
         </div>
+
+        {/* Dropdown Menu - Rendered at root level to avoid clipping */}
+        {openDropdownId !== null && (
+          <div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            className="w-44 bg-white border border-border-light rounded-lg shadow-legal-lg z-50"
+            {...getFloatingProps({
+              onClick: (e) => e.stopPropagation(),
+            })}
+          >
+            <div className="py-1">
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                onClick={() => {
+                  navigate(`/cases/${openDropdownId}`);
+                  setOpenDropdownId(null);
+                }}
+              >
+                {t("casesPage.viewDetails")}
+              </button>
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                onClick={() => {
+                  setOpenDropdownId(null);
+                  showSnackbar(t("casesPage.editComingSoon"), {
+                    type: "info",
+                  });
+                }}
+              >
+                {t("casesPage.editCase")}
+              </button>
+              <hr className="my-1 border-neutral-100" />
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error-light"
+                onClick={() => {
+                  setOpenDropdownId(null);
+                  if (window.confirm(t("casesPage.deleteConfirm")))
+                    showSnackbar(t("casesPage.deleteComingSoon"), {
+                      type: "info",
+                    });
+                }}
+              >
+                {t("casesPage.deleteCase")}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Infinite Scroll Sentinel */}
         {!loading && filteredCases.length > 0 && (

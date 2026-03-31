@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from "react";
 import {
+  useFloating,
+  autoUpdate,
+  offset,
+  flip,
+  shift,
+  useClick,
+  useDismiss,
+  useRole,
+  useInteractions,
+} from "@floating-ui/react";
+import {
   Search,
   Filter,
   FileText,
@@ -40,17 +51,38 @@ export function DocumentList() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
+  const [dropdownButtonElement, setDropdownButtonElement] =
+    useState<HTMLElement | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newDocsToast, setNewDocsToast] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState<{
-    top: number;
-    left?: number;
-    right?: number;
-  }>({ top: 0, right: 0 });
+
+  // Floating UI Setup
+  const { refs, floatingStyles, context } = useFloating({
+    open: openDropdownId !== null,
+    onOpenChange: (open) => {
+      if (!open) setOpenDropdownId(null);
+    },
+    elements: { reference: dropdownButtonElement },
+    middleware: [offset(8), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  });
+
+  const click = useClick(context);
+  const dismiss = useDismiss(context);
+  const role = useRole(context);
+  const { getFloatingProps } = useInteractions([click, dismiss, role]);
+
   const dropdownButtonRef = React.useRef<HTMLButtonElement>(null);
   const docCountRef = React.useRef<number>(0);
   // Always hold a reference to the current documents array (fixes stale closure bug in polling)
   const documentsRef = React.useRef<Document[]>([]);
+
+  // Filter State
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>(""); // "completed" | "pending" | "processing" | "failed"
+  const [filterClassification, setFilterClassification] = useState<string>("");
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
 
   // Infinite Scroll State
   const [page, setPage] = useState(0);
@@ -323,14 +355,59 @@ export function DocumentList() {
     if (semanticSearchActive) return documents; // When semantic search is on, the backend does the filtering
 
     return documents.filter((doc) => {
+      // Search term filter
       const term = searchTerm.toLowerCase();
       const matchFilename = doc.filename.toLowerCase().includes(term);
       const matchContent = doc.content?.toLowerCase().includes(term) ?? false;
       const matchClassification =
         doc.classification?.toLowerCase().includes(term) ?? false;
-      return matchFilename || matchContent || matchClassification;
+      const matchesSearch =
+        matchFilename || matchContent || matchClassification;
+
+      if (!matchesSearch) return false;
+
+      // Status filter
+      if (filterStatus) {
+        const normalizedStatus = getNormalizedStatus(doc.processing_status);
+        if (normalizedStatus !== filterStatus) return false;
+      }
+
+      // Classification filter
+      if (filterClassification) {
+        if (
+          !doc.classification ||
+          !doc.classification
+            .toLowerCase()
+            .includes(filterClassification.toLowerCase())
+        ) {
+          return false;
+        }
+      }
+
+      // Date range filter
+      if (filterDateFrom || filterDateTo) {
+        const docDate = new Date(doc.created_at).getTime();
+        if (filterDateFrom) {
+          const fromDate = new Date(filterDateFrom).getTime();
+          if (docDate < fromDate) return false;
+        }
+        if (filterDateTo) {
+          const toDate = new Date(filterDateTo).getTime();
+          if (docDate > toDate) return false;
+        }
+      }
+
+      return true;
     });
-  }, [documents, searchTerm, semanticSearchActive]);
+  }, [
+    documents,
+    searchTerm,
+    semanticSearchActive,
+    filterStatus,
+    filterClassification,
+    filterDateFrom,
+    filterDateTo,
+  ]);
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "Unknown";
@@ -399,7 +476,7 @@ export function DocumentList() {
           New documents received via email intake
           <button
             onClick={() => setNewDocsToast(false)}
-            className="ml-2 text-slate-400 hover:text-white"
+            className="ms-2 text-slate-400 hover:text-white"
           >
             &times;
           </button>
@@ -422,7 +499,7 @@ export function DocumentList() {
               onChange={(e) => {
                 setSearchTerm(e.target.value);
               }}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-border-light focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-100 rounded-lg text-sm outline-none transition-all duration-200"
+              className="w-full ps-10 pe-4 py-2.5 bg-white border border-border-light focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-100 rounded-lg text-sm outline-none transition-all duration-200"
             />
           </div>
           <div className="flex items-center space-x-2">
@@ -435,7 +512,7 @@ export function DocumentList() {
               }}
               className={`flex items-center space-x-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${semanticSearchActive ? "bg-primary-50 text-primary-700 border border-primary-200 shadow-sm" : "bg-white text-neutral-600 border border-border-light hover:bg-neutral-50"}`}
             >
-              <span className="relative flex h-2 w-2 mr-1">
+              <span className="relative flex h-2 w-2 me-1">
                 <span
                   className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${semanticSearchActive ? "bg-primary-500" : "hidden"}`}
                 ></span>
@@ -445,9 +522,29 @@ export function DocumentList() {
               </span>
               <span>AI Search</span>
             </button>
-            <button className="flex items-center space-x-2 px-3 py-2.5 bg-white text-neutral-600 border border-border-light rounded-lg hover:bg-neutral-50 text-sm font-medium transition-all">
+            <button
+              onClick={() => setShowFilterModal(true)}
+              className={`flex items-center space-x-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                filterStatus ||
+                filterClassification ||
+                filterDateFrom ||
+                filterDateTo
+                  ? "bg-primary-50 text-primary-700 border border-primary-200"
+                  : "bg-white text-neutral-600 border border-border-light hover:bg-neutral-50"
+              }`}
+            >
               <Filter className="h-4 w-4" />
               <span>Filter</span>
+              {(filterStatus ||
+                filterClassification ||
+                filterDateFrom ||
+                filterDateTo) && (
+                <span className="ms-1 inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary-600 text-white text-xs font-bold">
+                  {(filterStatus ? 1 : 0) +
+                    (filterClassification ? 1 : 0) +
+                    (filterDateFrom || filterDateTo ? 1 : 0)}
+                </span>
+              )}
             </button>
             <label className="bg-primary text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-primary-800 transition-all shadow-sm cursor-pointer">
               {uploading ? "Uploading..." : "Upload"}
@@ -476,6 +573,73 @@ export function DocumentList() {
             </div>
           </div>
         </div>
+
+        {/* Applied Filters Display */}
+        {(filterStatus ||
+          filterClassification ||
+          filterDateFrom ||
+          filterDateTo) && (
+          <div className="mx-4 mt-4 p-3 bg-primary-50 border border-primary-200 rounded-lg">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-primary-700 uppercase">
+                {t("documentList.appliedFilters", "Applied Filters")}:
+              </span>
+              {filterStatus && (
+                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-primary-300 rounded-full text-xs text-neutral-700">
+                  <span className="font-medium">
+                    {t("documentList.status", "Status")}:
+                  </span>
+                  <span className="text-primary-600">{filterStatus}</span>
+                  <button
+                    onClick={() => setFilterStatus("")}
+                    className="ms-1 text-neutral-400 hover:text-neutral-600 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              {filterClassification && (
+                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-primary-300 rounded-full text-xs text-neutral-700">
+                  <span className="font-medium">
+                    {t("documentList.classification", "Classification")}:
+                  </span>
+                  <span className="text-primary-600">
+                    {filterClassification}
+                  </span>
+                  <button
+                    onClick={() => setFilterClassification("")}
+                    className="ms-1 text-neutral-400 hover:text-neutral-600 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              {(filterDateFrom || filterDateTo) && (
+                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-primary-300 rounded-full text-xs text-neutral-700">
+                  <span className="font-medium">
+                    {t("documentList.dateRange", "Date Range")}:
+                  </span>
+                  <span className="text-primary-600">
+                    {filterDateFrom &&
+                      new Date(filterDateFrom).toLocaleDateString()}
+                    {filterDateFrom && filterDateTo && " - "}
+                    {filterDateTo &&
+                      new Date(filterDateTo).toLocaleDateString()}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setFilterDateFrom("");
+                      setFilterDateTo("");
+                    }}
+                    className="ms-1 text-neutral-400 hover:text-neutral-600 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-auto">
           {loading ? (
@@ -565,7 +729,7 @@ export function DocumentList() {
                                   key={tag.id}
                                   className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-secondary-50 text-secondary-700 border border-secondary-200"
                                 >
-                                  <Tag className="h-3 w-3 mr-1 opacity-60" />
+                                  <Tag className="h-3 w-3 me-1 opacity-60" />
                                   {tag.name}
                                 </span>
                               ))
@@ -579,7 +743,7 @@ export function DocumentList() {
                         </td>
                         <td className="px-6 py-4 text-neutral-500">
                           <div className="flex items-center">
-                            <Calendar className="h-3.5 w-3.5 mr-1.5 opacity-70" />
+                            <Calendar className="h-3.5 w-3.5 me-1.5 opacity-70" />
                             {formatDate(doc.created_at)}
                           </div>
                         </td>
@@ -591,7 +755,7 @@ export function DocumentList() {
                             <div className="flex flex-col space-y-2 max-w-[160px]">
                               <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-warning-light text-warning-dark shadow-sm border border-warning/20">
                                 <svg
-                                  className="animate-spin -ml-0.5 mr-2 h-3.5 w-3.5"
+                                  className="animate-spin -ms-0.5 me-2 h-3.5 w-3.5"
                                   xmlns="http://www.w3.org/2000/svg"
                                   fill="none"
                                   viewBox="0 0 24 24"
@@ -665,132 +829,18 @@ export function DocumentList() {
                             className="p-2 hover:bg-neutral-100 rounded-lg text-neutral-400 hover:text-neutral-600 transition-all disabled:opacity-50"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (openDropdownId === doc.id) {
-                                setOpenDropdownId(null);
-                              } else {
-                                // Calculate dropdown position based on button
-                                const rect = (e.target as HTMLElement)
-                                  .closest("button")
-                                  ?.getBoundingClientRect();
-                                if (rect) {
-                                  const DROPDOWN_WIDTH = 192; // w-48 = 12rem = 192px
-                                  const DROPDOWN_HEIGHT = 280; // Approximate height
-                                  const GAP = 8;
-
-                                  let top = rect.bottom + GAP;
-                                  let left: number | undefined;
-                                  let right: number | undefined;
-
-                                  // Check if dropdown would go off right edge
-                                  const rightEdge = rect.right + DROPDOWN_WIDTH;
-                                  if (rightEdge > window.innerWidth - 16) {
-                                    // 16px buffer
-                                    // Align to button's left instead
-                                    left = rect.left;
-                                  } else {
-                                    // Align to button's right (original behavior)
-                                    right = window.innerWidth - rect.right;
-                                  }
-
-                                  // Check if dropdown would go off bottom edge
-                                  if (
-                                    top + DROPDOWN_HEIGHT >
-                                    window.innerHeight - 16
-                                  ) {
-                                    // Position above button instead
-                                    top = rect.top - DROPDOWN_HEIGHT - GAP;
-                                  }
-
-                                  setDropdownPos({
-                                    top: Math.max(16, top), // Stay within viewport
-                                    left,
-                                    right,
-                                  });
-                                }
-                                setOpenDropdownId(doc.id);
-                              }
+                              setDropdownButtonElement(
+                                openDropdownId === doc.id
+                                  ? null
+                                  : (e.currentTarget as HTMLElement),
+                              );
+                              setOpenDropdownId(
+                                openDropdownId === doc.id ? null : doc.id,
+                              );
                             }}
                           >
                             <MoreVertical className="h-4 w-4" />
                           </button>
-
-                          {/* Dropdown Menu - Fixed Position with Smart Placement */}
-                          {openDropdownId === doc.id && (
-                            <div
-                              className="fixed w-48 bg-white border border-border-light rounded-lg shadow-legal-lg z-50 overflow-hidden"
-                              style={{
-                                top: `${dropdownPos.top}px`,
-                                ...(dropdownPos.left !== undefined && {
-                                  left: `${dropdownPos.left}px`,
-                                }),
-                                ...(dropdownPos.right !== undefined && {
-                                  right: `${dropdownPos.right}px`,
-                                }),
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div className="py-1">
-                                {getNormalizedStatus(doc.processing_status) ===
-                                  "completed" && (
-                                  <button
-                                    className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
-                                    onClick={() =>
-                                      navigate(`/documents/${doc.id}`)
-                                    }
-                                  >
-                                    <FileText className="h-4 w-4 text-neutral-400" />
-                                    {t("documentList.preview")}
-                                  </button>
-                                )}
-                                {getNormalizedStatus(doc.processing_status) ===
-                                  "completed" && (
-                                  <>
-                                    <button
-                                      className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
-                                      onClick={() => {
-                                        setOpenDropdownId(null);
-                                        showSnackbar(
-                                          t(
-                                            "documentList.downloadNotImplemented",
-                                          ),
-                                          { type: "info" },
-                                        );
-                                      }}
-                                    >
-                                      <Download className="h-4 w-4 text-neutral-400" />
-                                      {t("documentList.download")}
-                                    </button>
-                                    <button
-                                      className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
-                                      onClick={() => {
-                                        setOpenDropdownId(null);
-                                        showSnackbar(
-                                          t("documentList.shareNotImplemented"),
-                                          { type: "info" },
-                                        );
-                                      }}
-                                    >
-                                      <Share2 className="h-4 w-4 text-neutral-400" />
-                                      {t("documentList.share")}
-                                    </button>
-                                    <hr className="my-1 border-neutral-100" />
-                                  </>
-                                )}
-                                <button
-                                  className="w-full text-left px-4 py-2.5 text-sm text-error hover:bg-error-light flex items-center gap-3 disabled:opacity-50 transition-colors"
-                                  onClick={(e) =>
-                                    handleDeleteDocument(doc.id, e)
-                                  }
-                                  disabled={deletingId === doc.id}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  {deletingId === doc.id
-                                    ? t("common.loading")
-                                    : t("common.delete")}
-                                </button>
-                              </div>
-                            </div>
-                          )}
                         </td>
                       </tr>
                     );
@@ -816,6 +866,182 @@ export function DocumentList() {
           )}
         </div>
       </div>
+
+      {/* Dropdown Menu - Rendered at root level to avoid clipping */}
+      {openDropdownId !== null && (
+        <div
+          ref={refs.setFloating}
+          style={floatingStyles}
+          className="w-48 bg-white border border-border-light rounded-lg shadow-legal-lg z-50 overflow-hidden"
+          {...getFloatingProps({
+            onClick: (e) => e.stopPropagation(),
+          })}
+        >
+          <div className="py-1">
+            {documents.find((d) => d.id === openDropdownId) &&
+              getNormalizedStatus(
+                documents.find((d) => d.id === openDropdownId)
+                  ?.processing_status,
+              ) === "completed" && (
+                <button
+                  className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
+                  onClick={() => {
+                    navigate(`/documents/${openDropdownId}`);
+                    setOpenDropdownId(null);
+                  }}
+                >
+                  <FileText className="h-4 w-4 text-neutral-400" />
+                  {t("documentList.preview")}
+                </button>
+              )}
+            {documents.find((d) => d.id === openDropdownId) &&
+              getNormalizedStatus(
+                documents.find((d) => d.id === openDropdownId)
+                  ?.processing_status,
+              ) === "completed" && (
+                <>
+                  <button
+                    className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
+                    onClick={() => {
+                      setOpenDropdownId(null);
+                      showSnackbar(t("documentList.downloadNotImplemented"), {
+                        type: "info",
+                      });
+                    }}
+                  >
+                    <Download className="h-4 w-4 text-neutral-400" />
+                    {t("documentList.download")}
+                  </button>
+                  <button
+                    className="w-full text-left px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center gap-3 transition-colors"
+                    onClick={() => {
+                      setOpenDropdownId(null);
+                      showSnackbar(t("documentList.shareNotImplemented"), {
+                        type: "info",
+                      });
+                    }}
+                  >
+                    <Share2 className="h-4 w-4 text-neutral-400" />
+                    {t("documentList.share")}
+                  </button>
+                  <hr className="my-1 border-neutral-100" />
+                </>
+              )}
+            <button
+              className="w-full text-left px-4 py-2.5 text-sm text-error hover:bg-error-light flex items-center gap-3 disabled:opacity-50 transition-colors"
+              onClick={(e) => handleDeleteDocument(openDropdownId, e)}
+              disabled={deletingId === openDropdownId}
+            >
+              <Trash2 className="h-4 w-4" />
+              {deletingId === openDropdownId
+                ? t("common.loading")
+                : t("common.delete")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Modal */}
+      {showFilterModal && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-border-light px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {t("common.filter")}
+              </h2>
+              <button
+                onClick={() => setShowFilterModal(false)}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  {t("documentList.table.status")}
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full ps-3 pe-10 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                >
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="processing">Processing</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+
+              {/* Classification Filter */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Classification
+                </label>
+                <input
+                  type="text"
+                  value={filterClassification}
+                  onChange={(e) => setFilterClassification(e.target.value)}
+                  placeholder="e.g., Contract, Invoice..."
+                  className="w-full ps-3 pe-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+
+              {/* Date Range Filter */}
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-slate-700">
+                  Date Range
+                </label>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">
+                    From
+                  </label>
+                  <input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                    className="w-full ps-3 pe-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">
+                    To
+                  </label>
+                  <input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                    className="w-full ps-3 pe-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-border-light px-6 py-4 flex gap-3">
+              <button
+                onClick={() => {
+                  setFilterStatus("");
+                  setFilterClassification("");
+                  setFilterDateFrom("");
+                  setFilterDateTo("");
+                }}
+                className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium transition-colors"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                onClick={() => setShowFilterModal(false)}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-800 font-medium transition-colors"
+              >
+                {t("common.filter")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import spacy
 import re
 import dateparser
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.db.models.deadline import DeadlineType
 
 class NERService:
@@ -44,6 +44,28 @@ class NERService:
         hebrew_chars = len(re.findall(r'[\u0590-\u05FF]', text))
         return hebrew_chars > len(text) * 0.2
 
+    def _is_valid_deadline_date(self, date_obj: datetime) -> bool:
+        """Check if date is within realistic legal deadline range."""
+        today = datetime.now()
+        three_years_ago = today - timedelta(days=3*365)
+        ten_years_future = today + timedelta(days=10*365)
+        return three_years_ago <= date_obj <= ten_years_future
+
+    def _calculate_deadline_confidence(self, context_before: str, context_after: str, deadline_type: DeadlineType) -> float:
+        """Calculate confidence based on deadline keywords and type."""
+        deadline_keywords = ["deadline", "must", "shall", "required by", "due", "before", "by", "expires", "סוף", "עד", "חייב", "צריך"]
+        context = (context_before + " " + context_after).lower()
+        keyword_matches = sum(1 for kw in deadline_keywords if kw in context)
+        base_confidence = {
+            DeadlineType.HEARING: 0.9,
+            DeadlineType.FILING: 0.85,
+            DeadlineType.RESPONSE: 0.85,
+            DeadlineType.APPEAL: 0.8,
+            DeadlineType.STATUTE_OF_LIMITATIONS: 0.75,
+            DeadlineType.OTHER: 0.5
+        }.get(deadline_type, 0.5)
+        return min(0.95, base_confidence + (keyword_matches * 0.05))
+
     def _extract_english_deadlines(self, text: str) -> List[Dict[str, Any]]:
         deadlines = []
         if not self.nlp_en:
@@ -56,7 +78,7 @@ class NERService:
             if ent.label_ == "DATE":
                 # Attempt to parse date
                 parsed_date = dateparser.parse(ent.text, settings={'PREFER_DATES_FROM': 'future'})
-                if parsed_date:
+                if parsed_date and self._is_valid_deadline_date(parsed_date):
                     # Get the sentence containing the date for description
                     sentence = ent.sent.text.strip()
                     
@@ -79,12 +101,16 @@ class NERService:
                         end_idx = min(len(text), ent.end_char + 50)
                         description = "..." + text[start_idx:end_idx].strip() + "..."
 
+                    confidence = self._calculate_deadline_confidence(
+                        context_before, context_after, deadline_type
+                    )
+
                     deadlines.append({
                         "date": parsed_date,
                         "text": ent.text,
                         "description": description,
                         "type": deadline_type,
-                        "confidence": 0.85 if deadline_type != DeadlineType.OTHER else 0.6
+                        "confidence": confidence
                     })
         
         return deadlines
@@ -102,7 +128,7 @@ class NERService:
                 date_str = match.group()
                 parsed_date = dateparser.parse(date_str, languages=['he'], settings={'PREFER_DATES_FROM': 'future'})
                 
-                if parsed_date:
+                if parsed_date and self._is_valid_deadline_date(parsed_date):
                     context_before = text[max(0, match.start() - 80):match.start()]
                     context_after = text[match.end():min(len(text), match.end() + 40)]
                     
@@ -116,12 +142,16 @@ class NERService:
                     
                     description = context_before[desc_start:].strip() + " " + date_str + " " + context_after.split('\n')[0].strip()
 
+                    confidence = self._calculate_deadline_confidence(
+                        context_before.lower(), context_after.lower(), deadline_type
+                    )
+
                     deadlines.append({
                         "date": parsed_date,
                         "text": date_str,
                         "description": description.strip(),
                         "type": deadline_type,
-                        "confidence": 0.8 if deadline_type != DeadlineType.OTHER else 0.5
+                        "confidence": confidence
                     })
                     
         return deadlines
@@ -133,18 +163,19 @@ class NERService:
         for match in re.finditer(pattern, text, re.IGNORECASE):
             date_str = match.group()
             parsed_date = dateparser.parse(date_str)
-            if parsed_date:
+            if parsed_date and self._is_valid_deadline_date(parsed_date):
                 context_before = text[max(0, match.start() - 60):match.start()]
                 context_after = text[match.end():min(len(text), match.end() + 30)]
                 
                 description = context_before.strip() + " " + date_str + " " + context_after.strip()
+                deadline_type = self._classify_deadline(context_before.lower(), context_after.lower())
 
                 deadlines.append({
                     "date": parsed_date,
                     "text": date_str,
                     "description": description.strip(),
-                    "type": self._classify_deadline(context_before.lower(), context_after.lower()),
-                    "confidence": 0.5
+                    "type": deadline_type,
+                    "confidence": self._calculate_deadline_confidence(context_before.lower(), context_after.lower(), deadline_type)
                 })
         return deadlines
 

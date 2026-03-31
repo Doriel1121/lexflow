@@ -307,15 +307,6 @@
         "SUPERADMIN": "Superadmin",
         "USER": "User"
     },
-    "status": {
-        "active": "Active",
-        "inactive": "Inactive",
-        "pending": "Pending",
-        "processed": "Processed",
-        "processing": "Processing",
-        "error": "Error",
-        "paused": "Paused"
-    },
     "adminOrgs": {
         "title": "Organizations",
         "subtitle": "Manage tenant workspaces and subscriptions.",
@@ -450,7 +441,11 @@
         "downloadNotImplemented": "Download functionality not yet implemented in backend.",
         "shareNotImplemented": "Share functionality not yet implemented.",
         "loadingMore": "Loading more documents...",
-        "endOfRecords": "End of records"
+        "endOfRecords": "End of records",
+        "appliedFilters": "Applied Filters",
+        "status": "Status",
+        "classification": "Classification",
+        "dateRange": "Date Range"
     },
     "adminDashboard": {
         "title": "System Overview",
@@ -597,5 +592,48 @@
     "login": {
         "title": "LegalOS",
         "subtitle": "Legal Document Intelligence System"
+    },
+    "forms": {
+        "emailAddress": "Email Address",
+        "password": "Password",
+        "fullName": "Full Name",
+        "companyName": "Company Name",
+        "phoneNumber": "Phone Number",
+        "address": "Address",
+        "contactEmail": "Contact Email",
+        "contactPerson": "Contact Person",
+        "forgotPassword": "Forgot password?",
+        "agree": "I agree to",
+        "termsAndConditions": "terms and conditions"
+    },
+    "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "pending": "Pending",
+        "processed": "Processed",
+        "processing": "Processing",
+        "error": "Error",
+        "paused": "Paused",
+        "completed": "Completed",
+        "failed": "Failed",
+        "archived": "Archived"
+    },
+    "documentViewer": {
+        "fullText": "Full Text",
+        "metadata": "Metadata",
+        "dates": "Dates",
+        "entities": "Entities",
+        "amounts": "Amounts",
+        "caseNumbers": "Case Numbers",
+        "noContentExtracted": "No content extracted yet",
+        "viewContentInstructions": "Go to the case page and click 'View Content' to extract text"
+    },
+    "modals": {
+        "confirm": "Confirm",
+        "confirmDelete": "Are you sure want to delete this?",
+        "deleteSuccessfully": "Deleted successfully",
+        "deleteFailed": "Failed to delete",
+        "saveChanges": "Save Changes",
+        "discardChanges": "Discard Changes"
     }
 }

@@ -109,7 +109,10 @@ async def read_cases(
     user_id = current_user.id
     user_role = current_user.role.value if current_user.role else None
     query = select(DBCase).options(
-        selectinload(DBCase.assigned_lawyer)
+        selectinload(DBCase.assigned_lawyer),
+        selectinload(DBCase.notes),
+        selectinload(DBCase.documents),
+        selectinload(DBCase.deadlines)
     ).offset(skip).limit(limit)
     query = apply_user_org_filter(query, DBCase, user_id, org_id, user_role)
     result = await db.execute(query)
@@ -126,9 +129,9 @@ async def read_cases(
         "assigned_lawyer_name": c.assigned_lawyer.full_name if c.assigned_lawyer else None,
         "created_at": c.created_at,
         "updated_at": c.updated_at,
-        "notes": [],
-        "documents": [],
-        "deadlines": []
+        "notes": [{"id": n.id, "case_id": n.case_id, "user_id": n.user_id, "content": n.content, "created_at": n.created_at, "updated_at": n.updated_at} for n in (c.notes or [])],
+        "documents": [{"id": d.id, "filename": d.filename, "s3_url": d.s3_url, "case_id": d.case_id, "uploaded_by_user_id": d.uploaded_by_user_id, "classification": d.classification, "language": d.language, "page_count": d.page_count, "processing_status": d.processing_status.value if hasattr(d.processing_status, 'value') else d.processing_status, "created_at": d.created_at, "updated_at": d.updated_at} for d in (c.documents or [])],
+        "deadlines": [{"id": dl.id, "case_id": dl.case_id, "document_id": dl.document_id, "deadline_date": dl.deadline_date, "deadline_type": dl.deadline_type.value if hasattr(dl.deadline_type, 'value') else dl.deadline_type, "title": dl.title, "description": dl.description, "confidence_score": dl.confidence_score, "is_completed": dl.is_completed, "assignee_id": dl.assignee_id, "created_at": dl.created_at, "updated_at": dl.updated_at} for dl in (c.deadlines or [])]
     } for c in cases]
 
 @router.get("/{case_id}", response_model=CaseSchema)
