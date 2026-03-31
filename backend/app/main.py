@@ -78,8 +78,45 @@ app.mount(
 
 @app.on_event("startup")
 async def startup_event():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Create tables if they don't exist (fallback for migration issues)
+    # This is a development safeguard - production should use alembic migrations
+    try:
+        # Get all table names from metadata
+        table_names = list(Base.metadata.tables.keys())
+        
+        # Use a direct connection and create tables synchronously
+        # This is more reliable than async run_sync() for table creation
+        import sqlalchemy as sa
+        from sqlalchemy import create_engine, text
+        
+        # Create a synchronous engine for table creation only
+        # Replace async driver with sync psycopg2
+        sync_db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        
+        sync_engine = create_engine(sync_db_url, echo=False, isolation_level="AUTOCOMMIT")
+        
+        # Check if tables already exist and create if needed
+        with sync_engine.connect() as conn:
+            result = conn.execute(text(
+                "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = 'public'"
+            ))
+            existing_table_count = result.scalar()
+            if existing_table_count is None:
+                existing_table_count = 0
+            
+            if existing_table_count == 0:
+                # Database is empty, create all tables
+                Base.metadata.create_all(sync_engine)
+            
+        sync_engine.dispose()
+        
+    except Exception as e:
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"ERROR creating tables: {type(e).__name__}: {e}")
+        traceback.print_exc()
+    
     print("🚀 LegalOS Backend initialized.")
 
     async def _reaper_loop():

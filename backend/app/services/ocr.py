@@ -1,26 +1,60 @@
 from typing import Optional
 import os
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 class OCRService:
     def __init__(self):
         pass
     
     async def extract_text_from_file(self, file_path: str) -> dict:
-        """Extract text from file with metadata"""
+        """Extract text from file with metadata.
+        
+        For B2/R2 storage: Automatically downloads file to temp location before processing.
+        """
+        from app.services.file_processor import FileProcessor
+        
+        logger.info(f"Starting OCR extraction for: {file_path}")
+        
+        # If using B2/R2, download file to temp location first
+        # Use async version since we're in an async context
+        actual_file_path = await FileProcessor.get_processing_file_path_async(file_path)
+        is_temp_cloud_file = (actual_file_path != file_path)
+        
+        logger.info(f"Processing file path: {actual_file_path} (temp={is_temp_cloud_file})")
+        
         try:
-            path = Path(file_path)
+            path = Path(actual_file_path)
             if not path.exists():
-                return {"text": f"File: {path.name} uploaded successfully.", "language": "en", "page_count": 0}
+                logger.error(f"FILE NOT FOUND: {actual_file_path} (original: {file_path})")
+                # Don't return placeholder - return explicit error for debugging
+                return {
+                    "text": "",
+                    "language": "en",
+                    "page_count": 0,
+                    "error": f"File not found: {actual_file_path}"
+                }
             
             # Text files
             if path.suffix.lower() in ['.txt', '.md', '.csv', '.log']:
                 try:
                     with open(path, 'r', encoding='utf-8') as f:
                         text = f.read()
+                        logger.info(f"Successfully extracted text from {path.suffix} file: {len(text)} characters")
                         return {"text": text, "language": "en", "page_count": 1}
-                except:
-                    pass
+                except UnicodeDecodeError as e:
+                    logger.warning(f"Text file encoding error for {path.name}: {e}. Trying latin-1 encoding...")
+                    try:
+                        with open(path, 'r', encoding='latin-1') as f:
+                            text = f.read()
+                            logger.info(f"Successfully extracted text with latin-1: {len(text)} characters")
+                            return {"text": text, "language": "en", "page_count": 1}
+                    except Exception as e2:
+                        logger.error(f"Failed to read text file with latin-1: {e2}", exc_info=True)
+                except Exception as e:
+                    logger.error(f"Failed to extract text from {path.name}: {type(e).__name__}: {e}", exc_info=True)
             
             # PDF files
             if path.suffix.lower() == '.pdf':
@@ -47,18 +81,22 @@ class OCRService:
                     
                     if text_length < threshold:
                         from app.services.ocr_engine import tesseract_ocr_service
-                        return await tesseract_ocr_service.extract_text_from_scanned_pdf(file_path)
+                        return await tesseract_ocr_service.extract_text_from_scanned_pdf(actual_file_path)
                     
                     return {"text": joined_text, "language": "en", "page_count": page_count}
                 except Exception as e:
                     # If PyPDF2 crashes entirely (corrupted metadata etc), fallback to OCR
                     from app.services.ocr_engine import tesseract_ocr_service
-                    return await tesseract_ocr_service.extract_text_from_scanned_pdf(file_path)
+                    return await tesseract_ocr_service.extract_text_from_scanned_pdf(actual_file_path)
             
             # Other files
             return {"text": f"Document: {path.name}\n\nFile Type: {path.suffix}\nSize: {path.stat().st_size} bytes", "language": "en", "page_count": 1}
         except Exception as e:
             return {"text": f"Document uploaded: {path.name if 'path' in locals() else 'file'}", "language": "en", "page_count": 0}
+        finally:
+            # Clean up B2/R2 temp file if downloaded
+            if is_temp_cloud_file:
+                FileProcessor.cleanup_temp_file(actual_file_path)
     
     async def extract_text(self, file_path: str, language: Optional[str] = None) -> dict:
         return await self.extract_text_from_file(file_path)

@@ -41,6 +41,8 @@ LABEL description="LexFlow backend — FastAPI + Celery"
 # poppler-utils        → pdf2image (pdfinfo / pdftoppm)
 # libpq5               → runtime PostgreSQL client library
 # curl                 → health-check probe
+# netcat-openbsd       → check if postgres is ready
+# postgresql-client    → psql command for creating extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-heb \
@@ -48,10 +50,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libpq5 \
     curl \
+    netcat-openbsd \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from builder stage
 COPY --from=builder /install /usr/local
+
+# Download spacy English NER model
+RUN python -m spacy download en_core_web_sm
 
 # ── App setup ────────────────────────────────────────────────
 WORKDIR /app/backend
@@ -62,10 +69,14 @@ RUN mkdir -p /app/backend/uploads
 # Copy application source
 COPY . .
 
+# Copy entrypoint script and make it executable
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # ── Security: non-root user ──────────────────────────────────
+# Make appuser own the app directory for the running process
 RUN useradd --no-create-home --shell /bin/false appuser && \
     chown -R appuser:appuser /app/backend
-USER appuser
 
 # ── Expose & health check ────────────────────────────────────
 EXPOSE 8000
@@ -75,11 +86,14 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
+# ── Entrypoint — runs migrations then starts app ──────────────
+ENTRYPOINT ["/entrypoint.sh"]
+
 # ── Default command (overridden in docker-compose for dev) ───
 # Production: no --reload, 2 workers per CPU core
 CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "2", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips", "*"]
+    "--host", "0.0.0.0", \
+    "--port", "8000", \
+    "--workers", "2", \
+    "--proxy-headers", \
+    "--forwarded-allow-ips", "*"]

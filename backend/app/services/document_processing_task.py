@@ -483,7 +483,7 @@ class DocumentProcessingService:
             organization_id=organization_id,
             content=str(summary_text) if summary_text else "No text summary could be generated.",
             key_dates=_dedup(all_dates),
-            parties=_dedup([p.get('name', str(p)) for p in ai_analysis.get("parties", []) if isinstance(p, dict) or isinstance(p, str)]),
+            parties=_dedup([p.get('name') if isinstance(p, dict) else p for p in ai_analysis.get("parties", []) if isinstance(p, (dict, str))]),
             missing_documents_suggestion="\n".join(_dedup(all_missing)) if all_missing else None
         )
         db.add(summary_obj)

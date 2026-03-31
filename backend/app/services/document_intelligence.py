@@ -96,6 +96,15 @@ Return ONLY the JSON, no other text."""
         if not result:
             # If it's literally empty, use fallback
             return self._fallback_analysis(text, filename)
+        
+        # Ensure result is a dict (json.loads can return a string if JSON is a plain string)
+        if not isinstance(result, dict):
+            logger.warning(
+                "AI analyze_legal_document returned non-dict type %s. Using fallback.",
+                type(result).__name__,
+            )
+            return self._fallback_analysis(text, filename)
+        
         return result
     
     def _fallback_analysis(self, text: str, filename: str) -> Dict[str, Any]:

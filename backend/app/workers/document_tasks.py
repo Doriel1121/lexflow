@@ -282,6 +282,24 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 logger.info(f"[Doc {document_id}] AI analysis returned successfully.")
             except Exception as e:
                 logger.warning(f"[Doc {document_id}] AI analysis failed: {e}")
+                # Log the error to database for debugging
+                try:
+                    async with CeleryAsyncSessionLocal() as error_db:
+                        error_log = DocumentProcessingLog(
+                            document_id=document_id,
+                            stage="ai_analysis_failed",
+                            error_message=str(e),
+                            stack_trace="".join(tb.format_exception(type(e), e, e.__traceback__)),
+                        )
+                        error_db.add(error_log)
+                        await error_db.commit()
+                except:
+                    pass  # Error logging failed, but don't stop pipeline
+            
+            # Ensure ai_analysis is always a dict (fix for string responses)
+            if not isinstance(ai_analysis, dict):
+                logger.warning(f"[Doc {document_id}] AI analysis returned non-dict: {type(ai_analysis)}. Using empty dict.")
+                ai_analysis = {}
 
             # Merge regex metadata fallbacks
             try:
@@ -294,13 +312,13 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 if not ai_analysis.get("parties"):
                     ai_analysis["parties"] = regex_meta.get("entities", [])
 
-                if not ai_analysis.get("dates"):
-                    ai_analysis["dates"] = ai_analysis.get("key_dates") or regex_meta.get("dates", [])
+                # Check both field names since AI returns "key_dates" but we normalize to "key_dates"
+                if not ai_analysis.get("key_dates") and not ai_analysis.get("dates"):
+                    ai_analysis["key_dates"] = regex_meta.get("dates", [])
 
-                if not ai_analysis.get("amounts"):
-                    ai_analysis["amounts"] = ai_analysis.get("financial_terms") or regex_meta.get(
-                        "amounts", []
-                    )
+                # Check both field names since AI returns "financial_terms" but we normalize to "financial_terms"
+                if not ai_analysis.get("financial_terms") and not ai_analysis.get("amounts"):
+                    ai_analysis["financial_terms"] = regex_meta.get("amounts", [])
 
                 if not ai_analysis.get("case_numbers"):
                     ai_analysis["case_numbers"] = regex_meta.get("case_numbers", [])
@@ -308,8 +326,8 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 if not ai_analysis.get("classification"):
                     ai_analysis["classification"] = ai_analysis.get("document_type") or "Unknown Document"
 
-                if not ai_analysis.get("missing_documents"):
-                    ai_analysis["missing_documents"] = ai_analysis.get("missing_items") or []
+                if not ai_analysis.get("missing_documents") and not ai_analysis.get("missing_items"):
+                    ai_analysis["missing_documents"] = regex_meta.get("missing_items") or []
 
                 # Update document record with classification from AI
                 doc = await document_crud.get(db, document_id)
@@ -351,10 +369,10 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                         out.append(item)
                 return out
 
-            dates = ai_analysis.get("dates", [])
-            amounts = ai_analysis.get("amounts", [])
+            dates = ai_analysis.get("key_dates") or ai_analysis.get("dates", [])
+            amounts = ai_analysis.get("financial_terms") or ai_analysis.get("amounts", [])
             case_numbers = ai_analysis.get("case_numbers", [])
-            missing_docs = ai_analysis.get("missing_documents", [])
+            missing_docs = ai_analysis.get("missing_documents") or ai_analysis.get("missing_items", [])
             parties = ai_analysis.get("parties", [])
 
             # Rich entities from parties / attorneys (mirror background service)
@@ -421,29 +439,62 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 ]
             )
 
-            db.add(
-                Summary(
-                    document_id=document_id,
-                    organization_id=organization_id,
-                    content=str(summary_text),
-                    key_dates=_dedup_local(dates),
-                    parties=party_names,
-                    missing_documents_suggestion="\n".join(_dedup_local(missing_docs))
-                    if missing_docs
-                    else None,
-                )
-            )
-            db.add(
-                DocumentMetadata(
-                    document_id=document_id,
-                    dates=_dedup_local(dates),
-                    entities=_dedup_local(entities),
-                    amounts=_dedup_local(amounts),
-                    case_numbers=_dedup_local(case_numbers),
-                )
-            )
-            await db.commit()
-            logger.info(f"[Doc {document_id}] Summary and metadata saved.")
+            # ── RETRY LOGIC FOR METADATA/SUMMARY SAVING ────────────────────
+            metadata_saved = False
+            for attempt in range(3):  # Retry 3 times
+                try:
+                    db.add(
+                        Summary(
+                            document_id=document_id,
+                            organization_id=organization_id,
+                            content=str(summary_text),
+                            key_dates=_dedup_local(dates),
+                            parties=party_names,
+                            missing_documents_suggestion="\n".join(_dedup_local(missing_docs))
+                            if missing_docs
+                            else None,
+                        )
+                    )
+                    db.add(
+                        DocumentMetadata(
+                            document_id=document_id,
+                            dates=_dedup_local(dates),
+                            entities=_dedup_local(entities),
+                            amounts=_dedup_local(amounts),
+                            case_numbers=_dedup_local(case_numbers),
+                        )
+                    )
+                    await db.commit()
+                    logger.info(f"[Doc {document_id}] Summary and metadata saved on attempt {attempt + 1}.")
+                    metadata_saved = True
+                    break
+                except Exception as meta_err:
+                    logger.warning(f"[Doc {document_id}] Metadata save attempt {attempt + 1} failed: {meta_err}")
+                    try:
+                        await db.rollback()
+                    except:
+                        pass  # Session might be broken
+                    
+                    if attempt < 2:
+                        await asyncio.sleep(1)  # Wait before retry
+                    else:
+                        # Last attempt failed - log and continue anyway
+                        logger.error(f"[Doc {document_id}] FAILED to save metadata after 3 attempts: {meta_err}")
+                        try:
+                            async with CeleryAsyncSessionLocal() as error_db:
+                                error_log = DocumentProcessingLog(
+                                    document_id=document_id,
+                                    stage="metadata_save_failed",
+                                    error_message=str(meta_err),
+                                    stack_trace="".join(tb.format_exception(type(meta_err), meta_err, meta_err.__traceback__)),
+                                )
+                                error_db.add(error_log)
+                                await error_db.commit()
+                        except:
+                            pass  # Even error logging failed, continue
+
+            if not metadata_saved:
+                logger.warning(f"[Doc {document_id}] Metadata save failed permanently. AI data will not be persisted for this document.")
 
             # AI-augmented deadlines from key_dates
             logger.info(f"[Doc {document_id}] Saving AI-augmented deadlines...")

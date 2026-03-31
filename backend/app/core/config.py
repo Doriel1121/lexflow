@@ -62,6 +62,23 @@ class Settings(BaseSettings):
     PASSWORD_MIN_LENGTH: int = 10
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 20
 
+    # Cloudflare R2 Storage
+    R2_ENABLED: bool = False  # Set to True to use R2; False to use local storage
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = ""
+    R2_ENDPOINT_URL: str = ""  # e.g., https://[account-id].r2.cloudflarestorage.com
+    R2_PUBLIC_URL: str = ""    # e.g., https://[bucket-name].yourdomain.com or use Render proxy URL
+
+    # Backblaze B2 Storage
+    B2_ENABLED: bool = False  # Set to True to use B2; False to use local storage
+    B2_BUCKET_NAME: str = ""
+    B2_APPLICATION_KEY_ID: str = ""  # Looks like: 00000xxxxxxxxxxxxxxx
+    B2_APPLICATION_KEY: str = ""     # Looks like: K00xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    B2_ENDPOINT_URL: str = ""  # e.g., https://s3.us-west-000.backblazeb2.com
+    B2_PUBLIC_URL: str = ""    # e.g., https://your-custom-domain or leave empty for default B2 URLs
+
     # Single source of truth: repo root .env
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parents[3] / ".env"),

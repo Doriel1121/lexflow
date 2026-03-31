@@ -25,38 +25,51 @@ class TesseractOCRService:
         Memory-safe approach to extract text from a scanned PDF.
         Processes pages one by one and appends the result to a temporary file
         before returning the full string.
+        
+        For R2 storage: Automatically downloads file to temp location before processing.
         """
-        path = Path(file_path)
-        if not path.exists():
-            return {"text": "", "language": "en", "page_count": 0}
-
-        logger.info(f"Starting Tesseract OCR engine for scanned file: {path.name}")
+        from app.services.file_processor import FileProcessor
         
-        pages = self._extract_pages_from_pdf(str(path))
-        page_count = len(pages)
+        # If using R2, download file to temp location first
+        actual_file_path = FileProcessor.get_processing_file_path(file_path)
+        is_temp_r2_file = (actual_file_path != file_path)
         
-        if page_count == 0:
-            return {"text": "Could not read pages from scanned document.", "language": "en", "page_count": 0}
+        try:
+            path = Path(actual_file_path)
+            if not path.exists():
+                return {"text": "", "language": "en", "page_count": 0}
 
-        aggregated_text = []
-
-        # Iterate page by page
-        for i, page_image in enumerate(pages):
-            logger.info(f"Running OCR on page {i+1}/{page_count}...")
-            # Run pytesseract with Hebrew + English support
-            page_text = pytesseract.image_to_string(page_image, lang='heb+eng')
-            aggregated_text.append(page_text)
+            logger.info(f"Starting Tesseract OCR engine for scanned file: {path.name}")
             
-            # Explicitly delete the image to free up RAM
-            del page_image 
+            pages = self._extract_pages_from_pdf(str(path))
+            page_count = len(pages)
+            
+            if page_count == 0:
+                return {"text": "Could not read pages from scanned document.", "language": "en", "page_count": 0}
 
-        full_text = "\n\n--- Page Break ---\n\n".join(aggregated_text)
-        
-        logger.info(f"OCR Complete for {path.name}. Extracted {len(full_text)} characters.")
-        return {
-            "text": full_text,
-            "language": "en",
-            "page_count": page_count
-        }
+            aggregated_text = []
+
+            # Iterate page by page
+            for i, page_image in enumerate(pages):
+                logger.info(f"Running OCR on page {i+1}/{page_count}...")
+                # Run pytesseract with Hebrew + English support
+                page_text = pytesseract.image_to_string(page_image, lang='heb+eng')
+                aggregated_text.append(page_text)
+                
+                # Explicitly delete the image to free up RAM
+                del page_image 
+
+            full_text = "\n\n--- Page Break ---\n\n".join(aggregated_text)
+            
+            logger.info(f"OCR Complete for {path.name}. Extracted {len(full_text)} characters.")
+            return {
+                "text": full_text,
+                "language": "en",
+                "page_count": page_count
+            }
+        finally:
+            # Clean up R2 temp file if downloaded
+            if is_temp_r2_file:
+                FileProcessor.cleanup_temp_file(actual_file_path)
 
 tesseract_ocr_service = TesseractOCRService()

@@ -99,16 +99,31 @@ async def upload_document(
             f"cases/{case_id}/documents" if case_id and case_id != 0
             else "inbox/unprocessed"
         )
-        # upload_file returns (url, absolute_path) — use both directly
-        s3_url, file_path = await storage_service.upload_file(file, upload_path)
+        # upload_file returns (url, file_path_or_key)
+        # - For local storage: (url, Path object)
+        # - For R2: (url, s3_key string)
+        s3_url, file_location = await storage_service.upload_file(file, upload_path)
+
+        # For R2, file_location is the S3 key; for local storage, it's a Path
+        # Store the S3 URL in the database (works for both)
+        # For file_path passed to processing: if local storage, convert Path to str
+        if isinstance(file_location, Path):
+            file_path_for_processing = str(file_location)
+        else:
+            # It's an S3 key from R2
+            file_path_for_processing = file_location
 
         # Decide which processing flow to use
-        def _select_processing_flow(file_path_value) -> str:
+        def _select_processing_flow(file_path_value: str) -> str:
             mode = (settings.DOCUMENT_PROCESSING_MODE or "auto").strip().lower()
             if mode in ("celery", "background"):
                 return mode
 
             # Auto mode: route by file size
+            # For R2, we can't easily get file size without downloading, so default to celery
+            if settings.R2_ENABLED:
+                return "celery"
+            
             try:
                 size_bytes = Path(file_path_value).stat().st_size
             except Exception:
@@ -120,7 +135,7 @@ async def upload_document(
             min_mb = settings.DOCUMENT_PROCESSING_CELERY_MIN_MB or 0
             return "celery" if size_bytes >= (min_mb * 1024 * 1024) else "background"
 
-        processing_flow = _select_processing_flow(file_path)
+        processing_flow = _select_processing_flow(file_path_for_processing)
 
         # ── Create DB placeholder ──────────────────────────────────────────
         document_in = DocumentCreate(
@@ -145,7 +160,7 @@ async def upload_document(
                 safe_task_delay(
                     process_document_pipeline,
                     document_id=document.id,
-                    file_path=str(file_path),
+                    file_path=file_path_for_processing,
                     user_id=current_user.id,
                     organization_id=target_org_id,
                 )
@@ -163,7 +178,7 @@ async def upload_document(
             background_tasks.add_task(
                 document_processing_service.process_document_background,
                 document_id=document.id,
-                file_path=str(file_path),
+                file_path=file_path_for_processing,
                 user_id=current_user.id,
                 organization_id=target_org_id,
             )

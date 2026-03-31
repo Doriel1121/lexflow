@@ -4,6 +4,7 @@ import os
 import aiofiles
 from pathlib import Path
 import shutil
+from contextlib import contextmanager
 
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.txt', '.jpg', '.jpeg', '.png'}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
@@ -127,6 +128,45 @@ class StorageService:
             print(f"Error deleting file by URL '{url}': {e}")
             return False
 
+    async def get_file_for_processing(self, file_path: str) -> str:
+        """
+        Get file path for processing (OCR, AI analysis, etc).
+        For local storage: returns the absolute path directly.
+        For R2: downloads file to temp location and returns temp path.
+        
+        Args:
+            file_path: Relative path (local) or S3 key (R2)
+        
+        Returns:
+            Absolute path to file ready for processing
+        """
+        # For local storage, just return the absolute path
+        abs_path = await self.get_file_path(file_path)
+        if not abs_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        return str(abs_path)
+
+    @contextmanager
+    def temp_file_context(self, file_path: str):
+        """
+        Context manager for safely accessing files during processing.
+        For local storage: no cleanup needed (file stays in place).
+        For R2: downloads to temp, cleans up after block exits.
+        
+        Usage:
+            with storage_service.temp_file_context(file_path) as temp_path:
+                process_file(temp_path)
+                # Auto-cleanup happens here
+        """
+        # For local storage, just yield the path
+        # No cleanup needed since files stay in place
+        try:
+            abs_path = self.upload_dir / file_path
+            yield str(abs_path)
+        except Exception as e:
+            print(f"Error in temp_file_context: {e}")
+            raise
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -135,4 +175,20 @@ class StorageService:
         return f"http://localhost:8000/uploads/{relative_path}"
 
 
-storage_service = StorageService()
+# Factory function: use B2 if enabled, R2 if enabled, otherwise local storage
+def get_storage_service():
+    """Get appropriate storage service based on configuration."""
+    from app.core.config import settings
+    
+    if settings.B2_ENABLED:
+        from app.services.b2_storage import B2StorageService
+        return B2StorageService()
+    elif settings.R2_ENABLED:
+        from app.services.r2_storage import R2StorageService
+        return R2StorageService()
+    else:
+        return StorageService()
+
+
+# Singleton instance - determined at startup
+storage_service = get_storage_service()

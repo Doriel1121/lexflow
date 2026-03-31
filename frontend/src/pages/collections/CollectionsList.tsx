@@ -1,4 +1,15 @@
 import { useState, useEffect } from "react";
+import {
+  useFloating,
+  autoUpdate,
+  offset,
+  flip,
+  shift,
+  useClick,
+  useDismiss,
+  useRole,
+  useInteractions,
+} from "@floating-ui/react";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { Tag } from "../../types";
@@ -38,6 +49,30 @@ export function CollectionsList() {
   const [activeCategory, setActiveCategory] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
+  const [dropdownButtonElement, setDropdownButtonElement] =
+    useState<HTMLElement | null>(null);
+
+  // Set up Floating UI for smart dropdown positioning
+  const { refs, floatingStyles, context } = useFloating({
+    open: openDropdownId !== null,
+    onOpenChange: (open) => {
+      if (!open) setOpenDropdownId(null);
+    },
+    elements: {
+      reference: dropdownButtonElement,
+    },
+    middleware: [
+      offset(8), // 8px gap between button and menu
+      flip({ padding: 8 }), // Flip to opposite side if goes off-screen
+      shift({ padding: 8 }), // Shift to stay within viewport
+    ],
+    whileElementsMounted: autoUpdate, // Auto-update on scroll/resize
+  });
+
+  const click = useClick(context);
+  const dismiss = useDismiss(context);
+  const role = useRole(context);
+  const { getFloatingProps } = useInteractions([click, dismiss, role]);
 
   useEffect(() => {
     fetchTags(activeCategory);
@@ -146,14 +181,14 @@ export function CollectionsList() {
                 placeholder={t("collections.searchPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg text-sm outline-none"
+                className="w-full ps-10 pe-4 py-2 bg-white border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg text-sm outline-none"
               />
             </div>
             <div className="relative">
               <select
                 value={activeCategory}
                 onChange={(e) => setActiveCategory(e.target.value)}
-                className="appearance-none pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="appearance-none ps-4 pe-10 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {CATEGORIES.map((cat) => (
                   <option key={cat.key} value={cat.key}>
@@ -249,6 +284,11 @@ export function CollectionsList() {
                         className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setDropdownButtonElement(
+                            openDropdownId === tag.id
+                              ? null
+                              : (e.currentTarget as HTMLElement),
+                          );
                           setOpenDropdownId(
                             openDropdownId === tag.id ? null : tag.id,
                           );
@@ -256,43 +296,6 @@ export function CollectionsList() {
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      {openDropdownId === tag.id && (
-                        <div
-                          className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="py-1">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                              onClick={() => navigate(`/collections/${tag.id}`)}
-                            >
-                              {t("collections.viewCollection")}
-                            </button>
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                showSnackbar("Edit coming soon", { type: "info" });
-                              }}
-                            >
-                              {t("collections.editCollection")}
-                            </button>
-                            <hr className="my-1 border-slate-100" />
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                if (
-                                  window.confirm(t("collections.deleteConfirm"))
-                                )
-                                  showSnackbar("Delete coming soon", { type: "info" });
-                              }}
-                            >
-                              {t("collections.deleteCollection")}
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -300,6 +303,50 @@ export function CollectionsList() {
             </table>
           )}
         </div>
+
+        {/* Dropdown Menu - Rendered at root level to avoid clipping */}
+        {openDropdownId !== null && (
+          <div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            className="w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50"
+            {...getFloatingProps({
+              onClick: (e) => e.stopPropagation(),
+            })}
+          >
+            <div className="py-1">
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  navigate(`/collections/${openDropdownId}`);
+                  setOpenDropdownId(null);
+                }}
+              >
+                {t("collections.viewCollection")}
+              </button>
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setOpenDropdownId(null);
+                  showSnackbar("Edit coming soon", { type: "info" });
+                }}
+              >
+                {t("collections.editCollection")}
+              </button>
+              <hr className="my-1 border-slate-100" />
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                onClick={() => {
+                  setOpenDropdownId(null);
+                  if (window.confirm(t("collections.deleteConfirm")))
+                    showSnackbar("Delete coming soon", { type: "info" });
+                }}
+              >
+                {t("collections.deleteCollection")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
