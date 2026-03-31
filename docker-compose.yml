@@ -10,10 +10,13 @@
 #
 # Usage:
 #   Development  →  docker-compose up --build
-#                   (runs all services: db, redis, backend, celery, frontend)
+#                   (runs: db, redis, backend, celery | no frontend by default)
+#
+#   With frontend  →  docker-compose --profile frontend up --build
+#                    (adds frontend nginx to dev)
 #
 #   Production   →  docker-compose up -d
-#                   (runs only: backend, celery | uses external db/redis/frontend)
+#                   (runs: backend, celery | uses external db/redis)
 # ============================================================
 
 services:
@@ -23,7 +26,7 @@ services:
     image: ankane/pgvector:latest
     container_name: lexflow_db
     restart: unless-stopped
-    profiles: ["dev"]  # Only run in development
+    # No profile = always runs (dev includes local db)
     ports:
       - "5432:5432"
     env_file:
@@ -46,7 +49,7 @@ services:
     image: redis:7-alpine
     container_name: lexflow_redis
     restart: unless-stopped
-    profiles: ["dev"]  # Only run in development
+    # No profile = always runs (dev includes local redis)
     ports:
       - "6379:6379"
     volumes:
@@ -133,7 +136,7 @@ services:
     image: lexflow-frontend:latest
     container_name: lexflow_frontend
     restart: unless-stopped
-    profiles: ["dev"]  # Only run in development
+    profiles: ["frontend"]  # Optional: docker-compose --profile frontend up
     depends_on:
       - backend
     ports:
