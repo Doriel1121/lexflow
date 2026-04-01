@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements first — Docker cache means this layer is only
 # rebuilt when requirements.txt actually changes.
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir --prefix=/install -r requirements.txt
@@ -67,7 +67,7 @@ WORKDIR /app/backend
 RUN mkdir -p /app/backend/uploads
 
 # Copy application source
-COPY . .
+COPY backend/ .
 
 # Copy entrypoint script and make it executable
 COPY backend/entrypoint.sh /entrypoint.sh
