@@ -70,7 +70,7 @@ RUN mkdir -p /app/backend/uploads
 COPY . .
 
 # Copy entrypoint script and make it executable
-COPY entrypoint.sh /entrypoint.sh
+COPY backend/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # ── Security: non-root user ──────────────────────────────────
