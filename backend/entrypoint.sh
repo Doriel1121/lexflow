@@ -1,31 +1,49 @@
 #!/bin/bash
 set -e
 
-# Wait for PostgreSQL to be ready
-echo "Waiting for PostgreSQL to be ready..."
-for i in {1..30}; do
-  if nc -z db 5432 2>/dev/null; then
-    echo "PostgreSQL is ready!"
-    break
-  fi
-  echo "Waiting for PostgreSQL... ($i/30)"
-  sleep 1
-done
-
-# Only run migrations on backend service (not on celery_worker)
-# Check if the first argument contains "celery" to detect celery worker
+# Determine if this is a Celery worker or FastAPI backend
+IS_CELERY=false
 if [[ "$@" == *"celery"* ]]; then
-  echo "Skipping database setup on celery worker (handled by backend service)"
+  IS_CELERY=true
+fi
+
+echo "======================================================"
+if [ "$IS_CELERY" = true ]; then
+  echo "🔄 Starting Celery Worker"
 else
-  # Create pgvector extension (needed for embeddings)
-  echo "Attempting to create pgvector extension..."
-  PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
+  echo "🚀 Starting FastAPI Backend"
+fi
+echo "======================================================"
+
+# Wait for database to be ready (only if in containerized environment)
+if [ ! -z "$DATABASE_URL" ] && [[ "$DATABASE_URL" == *"@"* ]]; then
+  echo "Waiting for PostgreSQL to be ready..."
+  for i in {1..30}; do
+    if nc -z db 5432 2>/dev/null || nc -z ${DATABASE_URL#*@} 5432 2>/dev/null; then
+      echo "✓ PostgreSQL is ready!"
+      break
+    fi
+    echo "  Retrying... ($i/30)"
+    sleep 1
+  done
+fi
+
+# Only run migrations on backend (NOT on celery worker)
+if [ "$IS_CELERY" = false ]; then
+  echo "Setting up database extensions..."
   
-  echo "Note: Database tables will be created by the FastAPI startup event (SQLAlchemy)"
-  echo "Skipping Alembic migrations due to complexity with multiple head revisions"
+  # Create pgvector extension for embeddings
+  PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB \
+    -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || \
+  echo "  (pgvector extension may already exist or db not ready)"
+  
+  echo "✓ Database initialization complete"
+  echo ""
+else
+  echo "Skipping database setup (handled by backend service)"
 fi
 
 # Start the application
-echo "Starting application..."
+echo "Starting service..."
 exec "$@"
 
