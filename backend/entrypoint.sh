@@ -7,11 +7,10 @@ echo "======================================================"
 
 # Extract DB host/port from DATABASE_URL for readiness check
 if [ -n "$DATABASE_URL" ]; then
-  # Strip driver prefix, extract host
-  # e.g. postgresql+asyncpg://user:pass@host:5432/db -> host
   PLAIN_URL=$(echo "$DATABASE_URL" | sed 's|postgresql+asyncpg://||' | sed 's|postgresql://||')
-  DB_HOST=$(echo "$PLAIN_URL" | sed -E 's|.*@([^:/]+).*|\1|')
-  DB_PORT=$(echo "$PLAIN_URL" | sed -E 's|.*@[^:]+:([0-9]+)/.*|\1|')
+  # Format: user:pass@host:port/db or user:pass@host/db
+  DB_HOST=$(echo "$PLAIN_URL" | sed -E 's|[^@]+@([^:/]+).*|\1|')
+  DB_PORT=$(echo "$PLAIN_URL" | grep -oE ':[0-9]+/' | tr -d ':/')
   DB_PORT="${DB_PORT:-5432}"
 
   echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT ..."
