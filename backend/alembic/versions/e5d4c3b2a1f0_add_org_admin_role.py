@@ -19,8 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add ORG_ADMIN to userrole enum."""
-    # PostgreSQL enum alteration: add new value
-    op.execute("ALTER TYPE userrole ADD VALUE 'org_admin' BEFORE 'admin'")
+    # Create the enum if it doesn't exist, then add the value
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
+                CREATE TYPE userrole AS ENUM ('viewer', 'assistant', 'lawyer', 'org_admin', 'admin');
+            ELSE
+                ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'org_admin' BEFORE 'admin';
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
