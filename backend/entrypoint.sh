@@ -35,7 +35,7 @@ echo "Running Alembic migrations..."
 alembic upgrade head
 
 echo "Running seed..."
-python scripts/seed.py
+PYTHONPATH=/app/backend python scripts/seed.py
 
 echo "Launching supervisord (uvicorn + celery)..."
 exec supervisord -c /app/backend/supervisord.conf
