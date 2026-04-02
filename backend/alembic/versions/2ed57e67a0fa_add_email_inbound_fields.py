@@ -35,7 +35,7 @@ def upgrade() -> None:
                existing_type=sa.VARCHAR(),
                nullable=True)
     op.create_index(op.f('ix_email_configs_inbound_slug'), 'email_configs', ['inbound_slug'], unique=True)
-    op.create_foreign_key(None, 'email_configs', 'organizations', ['organization_id'], ['id'])
+    op.create_foreign_key(None, 'email_configs', 'organisations', ['organization_id'], ['id'])
     # ### end Alembic commands ###
 
 

@@ -24,6 +24,21 @@ def upgrade() -> None:
     op.drop_index(op.f('ix_organisations_id'), table_name='organisations')
     op.drop_index(op.f('ix_organisations_name'), table_name='organisations')
     op.drop_table('organisations')
+    # Create organizations table (renamed from organisations, with extra fields)
+    op.create_table(
+        'organizations',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('name', sa.String(), nullable=False),
+        sa.Column('slug', sa.String(), nullable=True),
+        sa.Column('plan', sa.String(), nullable=False, server_default='free'),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('name', name='uq_organizations_name'),
+    )
+    op.create_index(op.f('ix_organizations_id'), 'organizations', ['id'], unique=False)
+    op.create_index(op.f('ix_organizations_name'), 'organizations', ['name'], unique=True)
     op.add_column('audit_logs', sa.Column('event_type', sa.String(length=100), nullable=False))
     op.add_column('audit_logs', sa.Column('resource_type', sa.String(length=100), nullable=True))
     op.add_column('audit_logs', sa.Column('resource_id', sa.String(length=100), nullable=True))

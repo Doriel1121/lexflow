@@ -24,27 +24,27 @@ def upgrade() -> None:
     with op.batch_alter_table('clients', schema=None) as batch_op:
         batch_op.add_column(sa.Column('organization_id', sa.Integer(), nullable=True))
         batch_op.create_index(batch_op.f('ix_clients_organization_id'), ['organization_id'], unique=False)
-        batch_op.create_foreign_key('fk_clients_organization_id', 'organizations', ['organization_id'], ['id'])
+        batch_op.create_foreign_key('fk_clients_organization_id', 'organisations', ['organization_id'], ['id'])
     
     with op.batch_alter_table('tags', schema=None) as batch_op:
         batch_op.add_column(sa.Column('organization_id', sa.Integer(), nullable=True))
         batch_op.create_index(batch_op.f('ix_tags_organization_id'), ['organization_id'], unique=False)
-        batch_op.create_foreign_key('fk_tags_organization_id', 'organizations', ['organization_id'], ['id'])
+        batch_op.create_foreign_key('fk_tags_organization_id', 'organisations', ['organization_id'], ['id'])
     
     with op.batch_alter_table('summaries', schema=None) as batch_op:
         batch_op.add_column(sa.Column('organization_id', sa.Integer(), nullable=True))
         batch_op.create_index(batch_op.f('ix_summaries_organization_id'), ['organization_id'], unique=False)
-        batch_op.create_foreign_key('fk_summaries_organization_id', 'organizations', ['organization_id'], ['id'])
+        batch_op.create_foreign_key('fk_summaries_organization_id', 'organisations', ['organization_id'], ['id'])
     
     with op.batch_alter_table('audit_logs', schema=None) as batch_op:
         batch_op.add_column(sa.Column('organization_id', sa.Integer(), nullable=True))
         batch_op.create_index(batch_op.f('ix_audit_logs_organization_id'), ['organization_id'], unique=False)
-        batch_op.create_foreign_key('fk_audit_logs_organization_id', 'organizations', ['organization_id'], ['id'])
+        batch_op.create_foreign_key('fk_audit_logs_organization_id', 'organisations', ['organization_id'], ['id'])
     
     with op.batch_alter_table('case_notes', schema=None) as batch_op:
         batch_op.add_column(sa.Column('organization_id', sa.Integer(), nullable=True))
         batch_op.create_index(batch_op.f('ix_case_notes_organization_id'), ['organization_id'], unique=False)
-        batch_op.create_foreign_key('fk_case_notes_organization_id', 'organizations', ['organization_id'], ['id'])
+        batch_op.create_foreign_key('fk_case_notes_organization_id', 'organisations', ['organization_id'], ['id'])
 
 
 def downgrade() -> None:
