@@ -25,6 +25,22 @@ def upgrade() -> None:
     op.add_column('documents', sa.Column('email_from', sa.String(length=255), nullable=True))
     op.add_column('documents', sa.Column('email_subject', sa.String(length=512), nullable=True))
     op.add_column('documents', sa.Column('email_received_at', sa.DateTime(), nullable=True))
+    # Create email_configs if it doesn't exist
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS email_configs (
+            id SERIAL NOT NULL,
+            user_id INTEGER,
+            provider VARCHAR NOT NULL,
+            access_token VARCHAR,
+            refresh_token VARCHAR,
+            token_expiry TIMESTAMP WITHOUT TIME ZONE,
+            email_address VARCHAR,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP WITHOUT TIME ZONE,
+            updated_at TIMESTAMP WITHOUT TIME ZONE,
+            PRIMARY KEY (id)
+        )
+    """)
     op.add_column('email_configs', sa.Column('organization_id', sa.Integer(), nullable=True))
     op.add_column('email_configs', sa.Column('inbound_slug', sa.String(length=60), nullable=True))
     op.add_column('email_configs', sa.Column('webhook_secret', sa.String(length=64), nullable=True))
@@ -35,7 +51,7 @@ def upgrade() -> None:
                existing_type=sa.VARCHAR(),
                nullable=True)
     op.create_index(op.f('ix_email_configs_inbound_slug'), 'email_configs', ['inbound_slug'], unique=True)
-    op.create_foreign_key(None, 'email_configs', 'organisations', ['organization_id'], ['id'])
+    op.create_foreign_key(None, 'email_configs', 'organizations', ['organization_id'], ['id'])
     # ### end Alembic commands ###
 
 

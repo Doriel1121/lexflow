@@ -51,28 +51,29 @@ def upgrade() -> None:
     op.alter_column('audit_logs', 'user_id',
                existing_type=sa.INTEGER(),
                nullable=True)
-    op.create_index(op.f('ix_audit_logs_event_type'), 'audit_logs', ['event_type'], unique=False)
-    op.create_index(op.f('ix_audit_logs_hash'), 'audit_logs', ['hash'], unique=False)
-    op.create_index(op.f('ix_audit_logs_previous_hash'), 'audit_logs', ['previous_hash'], unique=False)
-    op.create_index(op.f('ix_audit_logs_timestamp'), 'audit_logs', ['timestamp'], unique=False)
-    op.create_index(op.f('ix_audit_logs_user_id'), 'audit_logs', ['user_id'], unique=False)
-    op.drop_constraint(op.f('audit_logs_user_id_fkey'), 'audit_logs', type_='foreignkey')
-    op.drop_constraint(op.f('audit_logs_organization_id_fkey'), 'audit_logs', type_='foreignkey')
+    op.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_event_type ON audit_logs (event_type)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_hash ON audit_logs (hash)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_previous_hash ON audit_logs (previous_hash)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_timestamp ON audit_logs (timestamp)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id)")
+    op.execute("ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_user_id_fkey")
+    op.execute("ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_organization_id_fkey")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS organization_id INTEGER")
     op.create_foreign_key(None, 'audit_logs', 'users', ['user_id'], ['id'], ondelete='SET NULL')
     op.create_foreign_key(None, 'audit_logs', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
-    op.drop_column('audit_logs', 'details')
-    op.drop_column('audit_logs', 'action')
+    op.execute("ALTER TABLE audit_logs DROP COLUMN IF EXISTS details")
+    op.execute("ALTER TABLE audit_logs DROP COLUMN IF EXISTS action")
+    op.execute("ALTER TABLE cases DROP CONSTRAINT IF EXISTS cases_client_id_fkey")
     op.create_foreign_key(None, 'cases', 'clients', ['client_id'], ['id'])
-    op.create_index(op.f('ix_document_chunks_id'), 'document_chunks', ['id'], unique=False)
-    op.drop_constraint(op.f('document_tag_association_tag_id_fkey'), 'document_tag_association', type_='foreignkey')
-    op.drop_constraint(op.f('document_tag_association_document_id_fkey'), 'document_tag_association', type_='foreignkey')
+    op.execute("ALTER TABLE document_tag_association DROP CONSTRAINT IF EXISTS document_tag_association_tag_id_fkey")
+    op.execute("ALTER TABLE document_tag_association DROP CONSTRAINT IF EXISTS document_tag_association_document_id_fkey")
     op.create_foreign_key(None, 'document_tag_association', 'documents', ['document_id'], ['id'], ondelete='CASCADE')
     op.create_foreign_key(None, 'document_tag_association', 'tags', ['tag_id'], ['id'], ondelete='CASCADE')
     op.alter_column('documents', 'processing_status',
                existing_type=postgresql.ENUM('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', name='documentprocessingstatus'),
                nullable=True,
                existing_server_default=sa.text("'COMPLETED'::documentprocessingstatus"))
-    op.drop_column('documents', 'embeddings')
+    op.execute("ALTER TABLE documents DROP COLUMN IF EXISTS embeddings")
     # ### end Alembic commands ###
 
 
