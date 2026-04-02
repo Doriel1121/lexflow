@@ -20,6 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # Drop old audit_logs (created by init with different schema) and recreate with correct schema
+    op.execute("DROP TABLE IF EXISTS audit_logs CASCADE")
     op.create_table(
         'audit_logs',
         sa.Column('id', sa.Integer(), nullable=False),
