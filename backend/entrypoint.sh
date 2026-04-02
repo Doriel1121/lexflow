@@ -7,9 +7,11 @@ echo "======================================================"
 
 # Extract DB host/port from DATABASE_URL for readiness check
 if [ -n "$DATABASE_URL" ]; then
-  PLAIN_URL="${DATABASE_URL/+asyncpg/}"
+  # Strip driver prefix, extract host
+  # e.g. postgresql+asyncpg://user:pass@host:5432/db -> host
+  PLAIN_URL=$(echo "$DATABASE_URL" | sed 's|postgresql+asyncpg://||' | sed 's|postgresql://||')
   DB_HOST=$(echo "$PLAIN_URL" | sed -E 's|.*@([^:/]+).*|\1|')
-  DB_PORT=$(echo "$PLAIN_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+  DB_PORT=$(echo "$PLAIN_URL" | sed -E 's|.*@[^:]+:([0-9]+)/.*|\1|')
   DB_PORT="${DB_PORT:-5432}"
 
   echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT ..."
@@ -22,6 +24,12 @@ if [ -n "$DATABASE_URL" ]; then
     sleep 2
   done
 fi
+
+echo "Creating pgvector extension..."
+# Use psql with the DATABASE_URL (convert asyncpg URL to standard psql URL)
+PSQL_URL=$(echo "$DATABASE_URL" | sed 's|postgresql+asyncpg://|postgresql://|')
+psql "$PSQL_URL" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null && \
+  echo "✓ pgvector ready" || echo "⚠ pgvector setup skipped (may already exist)"
 
 echo "Running Alembic migrations..."
 alembic upgrade head
