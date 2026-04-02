@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     PASSWORD_MIN_LENGTH: int = 10
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 20
 
+    # Storage backend selector: "b2" | "r2" | "s3" | "local"
+    # On AWS: set STORAGE_BACKEND=s3 and fill S3_* vars below.
+    STORAGE_BACKEND: str = ""
+
+    # AWS S3 Storage (used when STORAGE_BACKEND=s3)
+    S3_BUCKET_NAME: str = ""
+    S3_REGION: str = "eu-central-1"
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+
     # Cloudflare R2 Storage
     R2_ENABLED: bool = False  # Set to True to use R2; False to use local storage
     R2_ACCOUNT_ID: str = ""

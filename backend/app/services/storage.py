@@ -175,19 +175,23 @@ class StorageService:
         return f"http://localhost:8000/uploads/{relative_path}"
 
 
-# Factory function: use B2 if enabled, R2 if enabled, otherwise local storage
+# Factory function — priority: s3 > b2 > r2 > local
+# To migrate to AWS: set STORAGE_BACKEND=s3 and S3_* env vars.
 def get_storage_service():
-    """Get appropriate storage service based on configuration."""
     from app.core.config import settings
-    
+
+    backend = (settings.STORAGE_BACKEND or "").lower()
+
+    if backend == "s3":
+        from app.services.s3_storage import S3StorageService
+        return S3StorageService()
     if settings.B2_ENABLED:
         from app.services.b2_storage import B2StorageService
         return B2StorageService()
-    elif settings.R2_ENABLED:
+    if settings.R2_ENABLED:
         from app.services.r2_storage import R2StorageService
         return R2StorageService()
-    else:
-        return StorageService()
+    return StorageService()
 
 
 # Singleton instance - determined at startup

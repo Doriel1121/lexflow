@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements first — Docker cache means this layer is only
 # rebuilt when requirements.txt actually changes.
-COPY backend/requirements.txt .
+COPY requirements.txt .
 
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir --prefix=/install -r requirements.txt
@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     netcat-openbsd \
     postgresql-client \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from builder stage
@@ -63,20 +64,16 @@ RUN python -m spacy download en_core_web_sm
 # ── App setup ────────────────────────────────────────────────
 WORKDIR /app/backend
 
-# Create uploads directory (persisted via Docker volume in compose)
-RUN mkdir -p /app/backend/uploads
+# Create temp dir for cloud file downloads during OCR processing
+RUN mkdir -p /tmp/lexflow_processing
 
 # Copy application source
-COPY backend/ .
+COPY . .
 
-# Copy entrypoint script and make it executable
-COPY backend/entrypoint.sh /entrypoint.sh
+# Copy entrypoint and supervisord config
+COPY entrypoint.sh /entrypoint.sh
+COPY supervisord.conf /app/backend/supervisord.conf
 RUN chmod +x /entrypoint.sh
-
-# ── Security: non-root user ──────────────────────────────────
-# Make appuser own the app directory for the running process
-RUN useradd --no-create-home --shell /bin/false appuser && \
-    chown -R appuser:appuser /app/backend
 
 # ── Expose & health check ────────────────────────────────────
 EXPOSE 8000
@@ -89,11 +86,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # ── Entrypoint — runs migrations then starts app ──────────────
 ENTRYPOINT ["/entrypoint.sh"]
 
-# ── Default command (overridden in docker-compose for dev) ───
-# Production: no --reload, 2 workers per CPU core
-CMD ["uvicorn", "app.main:app", \
-    "--host", "0.0.0.0", \
-    "--port", "8000", \
-    "--workers", "2", \
-    "--proxy-headers", \
-    "--forwarded-allow-ips", "*"]
+# Entrypoint handles migrations + supervisord (uvicorn + celery)
+CMD []

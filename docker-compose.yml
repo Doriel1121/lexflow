@@ -80,8 +80,6 @@ services:
     volumes:
       # Live-reload: mount source so --reload picks up changes
       - ./backend:/app/backend
-      # Persist uploaded files outside the container
-      - uploads_data:/app/backend/uploads
     working_dir: /app/backend
     # Development command (hot-reload). Override in docker-compose.prod.yml
     command: >
@@ -114,7 +112,6 @@ services:
       APP_ENV: development
     volumes:
       - ./backend:/app/backend
-      - uploads_data:/app/backend/uploads
     working_dir: /app/backend
     command: >
       celery -A app.core.celery worker
@@ -153,6 +150,4 @@ volumes:
   pgdata:
     driver: local
   redis_data:
-    driver: local
-  uploads_data:
     driver: local

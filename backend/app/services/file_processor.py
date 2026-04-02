@@ -53,17 +53,20 @@ class FileProcessor:
     
     @staticmethod
     def cleanup_temp_file(file_path: str) -> None:
-        """Clean up temp file if it was downloaded from R2."""
-        if not settings.R2_ENABLED:
+        """Clean up temp file if it was downloaded from cloud storage."""
+        if not (settings.B2_ENABLED or settings.R2_ENABLED):
             return
-        
-        temp_dir = Path(tempfile.gettempdir()) / "ai_lawyer_r2"
+
         file_path_obj = Path(file_path)
-        
-        # Only delete if it's in our temp directory
+        tmp = Path(tempfile.gettempdir())
+
+        # Only delete files that live inside the system temp directory
         try:
-            if file_path_obj.parent == temp_dir and file_path_obj.exists():
+            file_path_obj.relative_to(tmp)  # raises ValueError if not under tmp
+            if file_path_obj.exists():
                 file_path_obj.unlink()
                 logger.info(f"Cleaned up temp file: {file_path}")
+        except ValueError:
+            pass  # Not a temp file — leave it alone
         except Exception as e:
             logger.warning(f"Failed to cleanup temp file {file_path}: {e}")

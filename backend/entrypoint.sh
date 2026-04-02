@@ -2,33 +2,29 @@
 set -e
 
 echo "======================================================"
-echo "Starting LexFlow Backend + Celery"
+echo "Starting LexFlow Backend + Celery (supervisord)"
 echo "======================================================"
 
-# Wait for PostgreSQL
-echo "Waiting for PostgreSQL..."
-for i in {1..30}; do
-  if nc -z db 5432 2>/dev/null || (echo > /dev/tcp/localhost/5432) 2>/dev/null; then
-    echo "✓ PostgreSQL is ready!"
-    break
-  fi
-  echo "Attempt $i/30..."
-  sleep 1
-done
+# Extract DB host/port from DATABASE_URL for readiness check
+if [ -n "$DATABASE_URL" ]; then
+  PLAIN_URL="${DATABASE_URL/+asyncpg/}"
+  DB_HOST=$(echo "$PLAIN_URL" | sed -E 's|.*@([^:/]+).*|\1|')
+  DB_PORT=$(echo "$PLAIN_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+  DB_PORT="${DB_PORT:-5432}"
 
-# Create pgvector extension
-echo "Creating pgvector extension..."
-PGPASSWORD=$POSTGRES_PASSWORD psql -h db -U $POSTGRES_USER -d $POSTGRES_DB \
-  -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || \
-echo "  (Extension setup skipped)"
+  echo "Waiting for PostgreSQL at $DB_HOST:$DB_PORT ..."
+  for i in $(seq 1 30); do
+    if nc -z "$DB_HOST" "$DB_PORT" 2>/dev/null; then
+      echo "✓ PostgreSQL is ready!"
+      break
+    fi
+    echo "Attempt $i/30..."
+    sleep 2
+  done
+fi
 
-echo ""
-echo "Starting services..."
+echo "Running Alembic migrations..."
+alembic upgrade head
 
-# Start both in parallel
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 &
-celery -A app.core.celery worker --loglevel=info --concurrency=2 &
-
-# Keep both running
-wait
-
+echo "Launching supervisord (uvicorn + celery)..."
+exec supervisord -c /app/backend/supervisord.conf
