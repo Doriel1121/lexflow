@@ -21,21 +21,28 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create document_metadata table."""
-    op.create_table(
-        'document_metadata',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('document_id', sa.Integer(), nullable=False),
-        sa.Column('dates', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('entities', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('amounts', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('case_numbers', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('document_id')
+    # Use IF NOT EXISTS to make the migration idempotent for environments where the table
+    # may have been created manually or by a previous run.
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS document_metadata (
+            id SERIAL NOT NULL,
+            document_id INTEGER NOT NULL,
+            dates JSONB,
+            entities JSONB,
+            amounts JSONB,
+            case_numbers JSONB,
+            created_at TIMESTAMP WITHOUT TIME ZONE,
+            updated_at TIMESTAMP WITHOUT TIME ZONE,
+            PRIMARY KEY (id),
+            UNIQUE (document_id),
+            FOREIGN KEY(document_id) REFERENCES documents (id)
+        )
+        """
     )
-    op.create_index(op.f('ix_document_metadata_id'), 'document_metadata', ['id'], unique=False)
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_document_metadata_id ON document_metadata (id)"
+    )
 
 
 def downgrade() -> None:

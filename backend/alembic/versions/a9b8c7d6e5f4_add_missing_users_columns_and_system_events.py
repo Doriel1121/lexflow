@@ -40,6 +40,8 @@ def upgrade() -> None:
             PRIMARY KEY (id)
         )
     """)
+    op.execute("ALTER TABLE system_events ADD COLUMN IF NOT EXISTS organization_id INTEGER")
+    op.execute("ALTER TABLE system_events ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()")
     op.execute("CREATE INDEX IF NOT EXISTS ix_system_events_occurred_at ON system_events (occurred_at)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_system_events_organization_id ON system_events (organization_id)")
 

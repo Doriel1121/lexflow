@@ -19,13 +19,34 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add ORG_ADMIN to userrole enum."""
-    # Create the enum if it doesn't exist, then add the value
+    # Create the enum if it doesn't exist, then add missing values safely.
     op.execute("""
         DO $$ BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
                 CREATE TYPE userrole AS ENUM ('viewer', 'assistant', 'lawyer', 'org_admin', 'admin');
             ELSE
-                ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'org_admin' BEFORE 'admin';
+                -- Ensure 'admin' exists before trying to place 'org_admin' BEFORE it.
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_enum e
+                    JOIN pg_type t ON t.oid = e.enumtypid
+                    WHERE t.typname = 'userrole' AND e.enumlabel = 'admin'
+                ) THEN
+                    ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'admin';
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_enum e
+                    JOIN pg_type t ON t.oid = e.enumtypid
+                    WHERE t.typname = 'userrole' AND e.enumlabel = 'org_admin'
+                ) THEN
+                    BEGIN
+                        ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'org_admin' BEFORE 'admin';
+                    EXCEPTION WHEN OTHERS THEN
+                        ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'org_admin';
+                    END;
+                END IF;
             END IF;
         END $$;
     """)

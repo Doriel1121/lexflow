@@ -25,29 +25,32 @@ def upgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ix_organisations_name")
     op.execute("DROP TABLE IF EXISTS organisations CASCADE")
     # Create organizations table (renamed from organisations, with extra fields)
-    op.create_table(
-        'organizations',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(), nullable=False),
-        sa.Column('slug', sa.String(), nullable=True),
-        sa.Column('plan', sa.String(), nullable=False, server_default='free'),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('name', name='uq_organizations_name'),
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organizations (
+            id SERIAL NOT NULL,
+            name VARCHAR NOT NULL,
+            slug VARCHAR,
+            plan VARCHAR DEFAULT 'free' NOT NULL,
+            is_active BOOLEAN DEFAULT true NOT NULL,
+            created_at TIMESTAMP WITHOUT TIME ZONE,
+            updated_at TIMESTAMP WITHOUT TIME ZONE,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_organizations_name UNIQUE (name)
+        )
+        """
     )
-    op.create_index(op.f('ix_organizations_id'), 'organizations', ['id'], unique=False)
-    op.create_index(op.f('ix_organizations_name'), 'organizations', ['name'], unique=True)
-    op.add_column('audit_logs', sa.Column('event_type', sa.String(length=100), nullable=False))
-    op.add_column('audit_logs', sa.Column('resource_type', sa.String(length=100), nullable=True))
-    op.add_column('audit_logs', sa.Column('resource_id', sa.String(length=100), nullable=True))
-    op.add_column('audit_logs', sa.Column('http_method', sa.String(length=10), nullable=True))
-    op.add_column('audit_logs', sa.Column('path', sa.String(length=255), nullable=True))
-    op.add_column('audit_logs', sa.Column('status_code', sa.Integer(), nullable=True))
-    op.add_column('audit_logs', sa.Column('metadata_json', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
-    op.add_column('audit_logs', sa.Column('previous_hash', sa.String(length=64), nullable=True))
-    op.add_column('audit_logs', sa.Column('hash', sa.String(length=64), nullable=True))
+    op.execute("CREATE INDEX IF NOT EXISTS ix_organizations_id ON organizations (id)")
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_organizations_name ON organizations (name)")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS event_type VARCHAR(100) NOT NULL")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS resource_type VARCHAR(100)")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS resource_id VARCHAR(100)")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS path VARCHAR(255)")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status_code INTEGER")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS metadata_json JSONB")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS previous_hash VARCHAR(64)")
+    op.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS hash VARCHAR(64)")
     op.alter_column('audit_logs', 'user_id',
                existing_type=sa.INTEGER(),
                nullable=True)

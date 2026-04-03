@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Add page_number column to document_chunks table
-    op.add_column('document_chunks', sa.Column('page_number', sa.Integer(), nullable=True))
+    op.execute("ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS page_number INTEGER")
 
 
 def downgrade() -> None:
