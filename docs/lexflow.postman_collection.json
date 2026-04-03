@@ -1,0 +1,228 @@
+{
+  "info": {
+    "name": "LexFlow — AI Intake Center",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "token",    "value": "" },
+    { "key": "slug",     "value": "" },
+    { "key": "doc_id",   "value": "1" },
+    { "key": "case_id",  "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "1. AUTH",
+      "item": [
+        {
+          "name": "Login — Get Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('token', json.access_token);",
+                  "  console.log('Token saved:', json.access_token.slice(0,40) + '...');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/token",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "admin@lexflow.ai" },
+                { "key": "password", "value": "Dor1704" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. EMAIL CONFIG",
+      "item": [
+        {
+          "name": "Get Email Configs (get your slug here)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (Array.isArray(json) && json.length > 0) {",
+                  "  pm.collectionVariables.set('slug', json[0].inbound_slug);",
+                  "  console.log('Slug saved:', json[0].inbound_slug);",
+                  "  console.log('Client email:', json[0].inbound_slug + '@inbound.lexflow.app');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/email/",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ]
+          }
+        },
+        {
+          "name": "Create Email Config (if none exists)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/email/",
+            "header": [
+              { "key": "Authorization",  "value": "Bearer {{token}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": \"intake@myorganization.com\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. INBOUND WEBHOOK (simulate incoming email)",
+      "item": [
+        {
+          "name": "Send Email + PDF Attachment",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Make sure you set the 'slug' variable first by running 'Get Email Configs'",
+                  "console.log('Sending to slug:', pm.collectionVariables.get('slug'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/email/inbound/{{slug}}",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "from",        "value": "client@lawfirm.com",                      "type": "text" },
+                { "key": "subject",     "value": "Case #5 - Urgent Hearing Notice",          "type": "text" },
+                { "key": "attachment1", "value": "",  "type": "file",
+                  "description": "⬅ Select your PDF file here (change type to File)" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Send Email — No Attachment (should return no_attachments)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/email/inbound/{{slug}}",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "from",    "value": "client@lawfirm.com",        "type": "text" },
+                { "key": "subject", "value": "Hello — no attachment",     "type": "text" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. INTAKE CENTER",
+      "item": [
+        {
+          "name": "List All Intake Items",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/intake",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "intake"]
+            },
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ]
+          }
+        },
+        {
+          "name": "List — Needs Review only",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/intake?status=needs_review",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "intake"],
+              "query": [{ "key": "status", "value": "needs_review" }]
+            },
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ]
+          }
+        },
+        {
+          "name": "List — Requires Action only",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/intake?status=requires_action",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "intake"],
+              "query": [{ "key": "status", "value": "requires_action" }]
+            },
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ]
+          }
+        },
+        {
+          "name": "Get Intake Item Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/intake/{{doc_id}}",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ]
+          }
+        },
+        {
+          "name": "Confirm Intake — Link to Case",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/intake/{{doc_id}}/confirm",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"case_id\": {{case_id}},\n  \"lawyer_id\": null,\n  \"confirm_deadlines\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Dismiss Intake Item",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/intake/{{doc_id}}/dismiss",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

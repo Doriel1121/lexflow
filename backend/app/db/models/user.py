@@ -34,7 +34,15 @@ class User(Base):
     google_refresh_token = Column(String, nullable=True)
     
     # RBAC
-    role = Column(Enum(UserRole), default=UserRole.LAWYER, nullable=False)
+    role = Column(
+        Enum(
+            UserRole,
+            name="userrole",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        default=UserRole.LAWYER,
+        nullable=False,
+    )
 
     # Audit Logs
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
