@@ -4,18 +4,34 @@ from typing import Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
+try:
+    import bcrypt as _bcrypt
+except Exception:
+    _bcrypt = None
+
 from app.core.config import settings
 
 # Password hashing
-# Support bcrypt (used by seed script) and pbkdf2_sha256 (legacy).
-pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
+# Use passlib for pbkdf2; handle bcrypt directly to avoid backend/version issues.
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if hashed_password.startswith(("$2a$", "$2b$", "$2y$")):
+        if _bcrypt is None:
+            return False
+        try:
+            return _bcrypt.checkpw(
+                plain_password.encode("utf-8"),
+                hashed_password.encode("utf-8"),
+            )
+        except Exception:
+            return False
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
+    # Use pbkdf2_sha256 for new hashes to avoid bcrypt backend issues.
     return pwd_context.hash(password)
 
 
