@@ -118,7 +118,7 @@ services:
         --loglevel=info
         --pool=threads
         --concurrency=4
-        --queues=default,documents,ai
+        --queues=default,documents,ai,celery
 
   # ── React frontend (nginx) ────────────────────────────────
   frontend:

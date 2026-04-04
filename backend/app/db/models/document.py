@@ -41,7 +41,14 @@ class Document(Base):
     email_received_at = Column(DateTime, nullable=True)
     
     # NEW: Processing Status & Embeddings
-    processing_status = Column(Enum(DocumentProcessingStatus), default=DocumentProcessingStatus.PENDING)
+    processing_status = Column(
+        Enum(
+            DocumentProcessingStatus,
+            name="documentprocessingstatus",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        default=DocumentProcessingStatus.PENDING,
+    )
     processing_stage = Column(String(50), default="uploaded")
     processing_progress = Column(Float, default=0.0)
     processed_chunks = Column(Integer, default=0)

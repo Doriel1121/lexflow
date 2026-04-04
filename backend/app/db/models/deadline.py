@@ -34,7 +34,15 @@ class Deadline(Base):
     
     title = Column(String, nullable=True) # For manual deadlines
     deadline_date = Column(DateTime, nullable=False)
-    deadline_type = Column(Enum(DeadlineType), default=DeadlineType.OTHER, nullable=False)
+    deadline_type = Column(
+        Enum(
+            DeadlineType,
+            name="deadlinetype",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        default=DeadlineType.OTHER,
+        nullable=False,
+    )
     description = Column(String, nullable=True)
     confidence_score = Column(Float, default=1.0) # 1.0 for manual
     

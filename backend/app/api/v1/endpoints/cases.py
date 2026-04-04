@@ -234,7 +234,34 @@ async def update_case(
         metadata_json={"changes": case_in.model_dump(exclude_unset=True)}
     )
     
-    return case
+    # Re-load with relationships to avoid async lazy-load during response serialization
+    result = await db.execute(
+        select(DBCase)
+        .options(
+            selectinload(DBCase.assigned_lawyer),
+            selectinload(DBCase.notes),
+            selectinload(DBCase.documents),
+            selectinload(DBCase.deadlines),
+        )
+        .where(DBCase.id == case_id)
+    )
+    case = result.scalars().first()
+
+    return {
+        "id": case.id,
+        "title": case.title,
+        "description": case.description,
+        "status": case.status.value if hasattr(case.status, 'value') else case.status,
+        "client_id": case.client_id,
+        "created_by_user_id": case.created_by_user_id,
+        "assigned_lawyer_id": case.assigned_lawyer_id,
+        "assigned_lawyer_name": case.assigned_lawyer.full_name if case.assigned_lawyer else None,
+        "created_at": case.created_at,
+        "updated_at": case.updated_at,
+        "notes": [{"id": n.id, "case_id": n.case_id, "user_id": n.user_id, "content": n.content, "created_at": n.created_at, "updated_at": n.updated_at} for n in (case.notes or [])],
+        "documents": [{"id": d.id, "filename": d.filename, "s3_url": d.s3_url, "case_id": d.case_id, "uploaded_by_user_id": d.uploaded_by_user_id, "classification": d.classification, "language": d.language, "page_count": d.page_count, "processing_status": d.processing_status.value if hasattr(d.processing_status, 'value') else d.processing_status, "created_at": d.created_at, "updated_at": d.updated_at} for d in (case.documents or [])],
+        "deadlines": [{"id": dl.id, "case_id": dl.case_id, "document_id": dl.document_id, "deadline_date": dl.deadline_date, "deadline_type": dl.deadline_type.value if hasattr(dl.deadline_type, 'value') else dl.deadline_type, "title": dl.title, "description": dl.description, "confidence_score": dl.confidence_score, "is_completed": dl.is_completed, "assignee_id": dl.assignee_id, "created_at": dl.created_at, "updated_at": dl.updated_at} for dl in (case.deadlines or [])]
+    }
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_case(
