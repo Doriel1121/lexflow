@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select, desc
 
+from app.db.session import AsyncSessionLocal
+
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user, apply_user_org_filter, RoleChecker, verify_resource_access
 from app.db.models.user import User as DBUser, UserRole
@@ -150,6 +152,9 @@ async def upload_document(
         document = await document_crud.create(
             db, document_in, current_user.id, target_org_id
         )
+        document_id = document.id
+        await db.commit()  # ✅ Explicit commit after creation
+        logger.info(f"[Doc {document_id}] Created placeholder document.")
 
         # ── Queue processing ───────────────────────────────────────────────
         celery_queued = False
@@ -159,17 +164,16 @@ async def upload_document(
                 from app.core.celery import safe_task_delay
                 safe_task_delay(
                     process_document_pipeline,
-                    document_id=document.id,
+                    document_id=document_id,
                     file_path=file_path_for_processing,
                     user_id=current_user.id,
                     organization_id=target_org_id,
                 )
                 celery_queued = True
-                logger.info("[Doc %d] Queued via Celery.", document.id)
+                logger.info(f"[Doc {document_id}] Queued via Celery.")
             except Exception as celery_err:
                 logger.warning(
-                    "[Doc %d] Celery unavailable (%s) — falling back to BackgroundTask.",
-                    document.id, celery_err,
+                    f"[Doc {document_id}] Celery unavailable ({celery_err}) — falling back to BackgroundTask.",
                 )
 
         if not celery_queued:
@@ -177,38 +181,55 @@ async def upload_document(
             # Db session is created within the background task itself
             background_tasks.add_task(
                 document_processing_service.process_document_background,
-                document_id=document.id,
+                document_id=document_id,
                 file_path=file_path_for_processing,
                 user_id=current_user.id,
                 organization_id=target_org_id,
             )
-            logger.info("[Doc %d] Queued via BackgroundTask.", document.id)
+            logger.info(f"[Doc {document_id}] Queued via BackgroundTask.")
 
-        # ── Audit log (non-fatal) ──────────────────────────────────────────
+        # ── Audit log (non-fatal, separate session) ────────────────────────
         try:
-            await log_audit(
-                db=db,
-                event_type="document_upload",
-                organization_id=target_org_id,
-                user_id=current_user.id,
-                resource_type="document",
-                resource_id=str(document.id),
-                metadata_json={"filename": document.filename},
-            )
+            # Use new session for audit to avoid corrupting main session
+            async with AsyncSessionLocal() as audit_db:
+                await log_audit(
+                    db=audit_db,
+                    event_type="document_upload",
+                    organization_id=target_org_id,
+                    user_id=current_user.id,
+                    resource_type="document",
+                    resource_id=str(document_id),
+                    metadata_json={"filename": document.filename},
+                )
+                await audit_db.commit()
+                logger.info(f"[Doc {document_id}] Audit logged.")
         except Exception as audit_err:
-            logger.warning("Audit log failed (non-fatal): %s", audit_err)
+            logger.warning(f"[Doc {document_id}] Audit log failed (non-fatal): {audit_err}")
+            # Don't fail the upload if audit fails
 
-        # ── Return immediately ─────────────────────────────────────────────
-        result = await db.execute(
-            select(DBDocument)
-            .options(
-                selectinload(DBDocument.tags),
-                selectinload(DBDocument.summary),
-                selectinload(DBDocument.document_metadata)
-            )
-            .filter(DBDocument.id == document.id)
-        )
-        return result.scalars().first()
+        # ── Return document (fresh query, fresh session) ───────────────────
+        # Create a brand new session to avoid "transaction aborted" issues
+        try:
+            async with AsyncSessionLocal() as fresh_db:
+                result = await fresh_db.execute(
+                    select(DBDocument)
+                    .options(
+                        selectinload(DBDocument.tags),
+                        selectinload(DBDocument.summary),
+                        selectinload(DBDocument.document_metadata)
+                    )
+                    .filter(DBDocument.id == document_id)
+                )
+                fetched_doc = result.scalars().first()
+                if fetched_doc:
+                    logger.info(f"[Doc {document_id}] Returning fetched document.")
+                    return fetched_doc
+        except Exception as fetch_err:
+            logger.warning(f"[Doc {document_id}] Fresh fetch failed: {fetch_err}")
+            # Fallback: return the object we already have
+            # It has the correct data even if we can't refetch
+            logger.info(f"[Doc {document_id}] Returning cached document object.")
+            return document
 
     except HTTPException:
         raise

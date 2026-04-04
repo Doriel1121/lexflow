@@ -118,6 +118,26 @@ async def _set_status(
     await db.commit()
 
 
+async def _set_status_fresh(
+    document_id: int,
+    status: DocumentProcessingStatus,
+    stage: str,
+    progress: float,
+):
+    """Update document status using a fresh session. Safe for use after corrupted sessions."""
+    try:
+        async with AsyncSessionLocal() as fresh_db:
+            document = await document_crud.get(fresh_db, document_id)
+            if document:
+                document.processing_status = status
+                document.processing_stage = stage
+                document.processing_progress = round(progress, 1)
+                await fresh_db.commit()
+                logger.info(f"[Doc {document_id}] Status updated (fresh session): {stage}")
+    except Exception as e:
+        logger.warning(f"[Doc {document_id}] Failed to update status in fresh session: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Main processing service
 # ---------------------------------------------------------------------------
@@ -419,21 +439,26 @@ class DocumentProcessingService:
 
             except Exception as exc:
                 logger.exception("[Doc %d] Unexpected pipeline failure: %s", document_id, exc)
+                
+                # Try to mark as failed using fresh session to avoid corrupted transaction
+                await _set_status_fresh(
+                    document_id,
+                    DocumentProcessingStatus.FAILED,
+                    "pipeline_error",
+                    0.0
+                )
+                
+                # Also try to log the error
                 try:
-                    await db.rollback()
-                    document_fail = await document_crud.get(db, document_id)
-                    if document_fail:
-                        await _set_status(db, document_fail, DocumentProcessingStatus.FAILED,
-                                         "pipeline_error", document_fail.processing_progress or 0.0)
-                        # Persist structured error log for observability and retries
+                    async with AsyncSessionLocal() as error_db:
                         log_entry = DocumentProcessingLog(
                             document_id=document_id,
-                            stage=document_fail.processing_stage or "pipeline_error",
+                            stage="pipeline_error",
                             error_message=str(exc),
                             stack_trace="".join(tb.format_exception(type(exc), exc, exc.__traceback__)),
                         )
-                        db.add(log_entry)
-                        await db.commit()
+                        error_db.add(log_entry)
+                        await error_db.commit()
                 except Exception:
                     pass
                 # Broadcast failure
