@@ -22,6 +22,24 @@ def get_sync_url(async_url: str) -> str:
     return async_url.replace("postgresql+asyncpg://", "postgresql://")
 
 
+def drop_all_tables(sync_url: str) -> bool:
+    """Drop all tables from the database."""
+    try:
+        engine = create_engine(sync_url)
+        with engine.begin() as conn:
+            # Drop all tables
+            inspector = inspect(engine)
+            for table_name in reversed(inspector.get_table_names()):
+                print(f"  Dropping table: {table_name}...")
+                conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE"))
+            conn.commit()
+        engine.dispose()
+        return True
+    except Exception as e:
+        print(f"ERROR dropping tables: {e}")
+        return False
+
+
 def check_migration_state():
     """Check current database state and determine action needed."""
     db_url = os.getenv("DATABASE_URL")
@@ -39,26 +57,17 @@ def check_migration_state():
             
             # Check if alembic_version table exists
             if "alembic_version" not in table_names:
-                # No migration table
                 if table_names:
-                    # Schema exists but no migration tracking - this means tables were created
-                    # by old migrations. Stamp with baseline to avoid re-creating.
-                    print("✓ Detected existing schema without alembic_version table")
-                    print("  Stamping database with baseline migration...")
-                    result = subprocess.run(
-                        ["alembic", "stamp", "317988fe2f1f"],
-                        cwd=Path(__file__).parent.parent,
-                        capture_output=True,
-                        text=True
-                    )
-                    if result.returncode != 0:
-                        print(f"ERROR: Failed to stamp migration: {result.stderr}")
+                    # Schema exists but no migration tracking - tables from old migrations
+                    print("✓ Detected existing schema from old migrations")
+                    print("  Dropping all tables for clean rebuild...")
+                    if not drop_all_tables(sync_url):
                         return False
-                    print("✓ Database stamped with baseline")
+                    print("✓ Tables dropped, baseline migration will create fresh schema")
                     return True
                 else:
-                    # Fresh database, proceed with upgrade
-                    print("✓ Fresh database detected, applying baseline migration...")
+                    # Fresh database
+                    print("✓ Fresh database detected")
                     return True
             
             # Alembic table exists, check version
@@ -69,23 +78,13 @@ def check_migration_state():
                 # Already at baseline only
                 print("✓ Database already at baseline migration")
                 return True
-            elif versions and "317988fe2f1f" not in versions:
-                # Old migrations present, need to clear and stamp
-                print(f"⚠ Detected old migration history: {versions}")
-                print("  Clearing old entries and stamping with baseline...")
-                conn.execute(text("DELETE FROM alembic_version"))
-                conn.commit()
-                
-                result = subprocess.run(
-                    ["alembic", "stamp", "317988fe2f1f"],
-                    cwd=Path(__file__).parent.parent,
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode != 0:
-                    print(f"ERROR: Failed to stamp migration: {result.stderr}")
+            elif versions:
+                # Old migrations or mixed state detected
+                print(f"⚠ Detected migration entries: {versions}")
+                print("  Dropping all tables for clean rebuild with baseline...")
+                if not drop_all_tables(sync_url):
                     return False
-                print("✓ Database stamped with baseline")
+                print("✓ Tables dropped, baseline migration will create fresh schema")
                 return True
             
             return True
