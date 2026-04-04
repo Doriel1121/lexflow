@@ -31,7 +31,11 @@ psql "$PSQL_URL" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null && \
   echo "✓ pgvector ready" || echo "⚠ pgvector setup skipped (may already exist)"
 
 echo "Running Alembic migrations..."
-alembic upgrade head
+PYTHONPATH=/app/backend python scripts/migrate.py
+if [ $? -ne 0 ]; then
+  echo "ERROR: Migration failed"
+  exit 1
+fi
 
 echo "Running seed..."
 PYTHONPATH=/app/backend python scripts/seed.py
