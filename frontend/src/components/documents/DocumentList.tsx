@@ -25,6 +25,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { useSnackbar } from "../../context/SnackbarContext";
+import { useDocumentWebSocket } from "../../hooks/useDocumentWebSocket";
 
 interface Document {
   id: number;
@@ -96,6 +97,33 @@ export function DocumentList() {
     documentsRef.current = documents;
   }, [documents]);
 
+  // WebSocket for real-time document updates (replaces polling)
+  const { isConnected: wsConnected } = useDocumentWebSocket();
+
+  // Listen for WebSocket events
+  useEffect(() => {
+    const handleDocumentProcessed = () => {
+      console.log('[DocumentList] Document processing complete via WebSocket');
+      fetchDocuments(); // Refresh full list when any document is done
+      setUploading(false);
+    };
+
+    const handleStatusUpdate = () => {
+      console.log('[DocumentList] Status update via WebSocket');
+      if (uploading) {
+        fetchDocuments(); // Refresh if we're actively uploading
+      }
+    };
+
+    window.addEventListener('document_processed', handleDocumentProcessed);
+    window.addEventListener('document_status_update', handleStatusUpdate);
+
+    return () => {
+      window.removeEventListener('document_processed', handleDocumentProcessed);
+      window.removeEventListener('document_status_update', handleStatusUpdate);
+    };
+  }, [uploading, t]);
+
   // Close dropdown when clicking outside or scrolling
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdownId(null);
@@ -111,9 +139,14 @@ export function DocumentList() {
   useEffect(() => {
     fetchDocuments();
 
-    // Smart polling: Only poll when there are documents being processed
+    // Smart polling: Only poll when there are documents being processed AND WebSocket is disconnected
     const pollInterval = setInterval(async () => {
       try {
+        // Skip polling if WebSocket is connected (real-time updates)
+        if (wsConnected) {
+          return;
+        }
+
         const currentDocs = documentsRef.current;
         const pendingDocs = currentDocs.filter(
           (d) =>
@@ -217,7 +250,7 @@ export function DocumentList() {
       clearInterval(pollInterval);
       window.removeEventListener("document_processed", handleDocumentProcessed);
     };
-  }, []);
+  }, [wsConnected]);
 
   const fetchDocuments = async (query?: string, targetPage: number = 0) => {
     try {

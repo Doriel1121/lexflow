@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # Reaper: mark stuck docs as completed_without_ai after this many minutes
     DOCUMENT_STUCK_MINUTES: int = 30
 
+    # Redis URL (used for Celery broker AND pub/sub notifications)
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    # WebSocket: max concurrent connections per user
+    WS_MAX_CONNECTIONS_PER_USER: int = 5
+
+    # Embedding: chunks per Celery task when using fan-out
+    EMBEDDING_BATCH_SIZE: int = 10
+
     # Auth hardening
     PASSWORD_MIN_LENGTH: int = 10
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 20

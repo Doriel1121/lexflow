@@ -67,8 +67,7 @@ import AdminUsers from './pages/admin/users/AdminUsers';
 import AdminAuditLogs from './pages/admin/audit/AdminAuditLogs';
 
 // ── Providers ────────────────────────────────────────────────────────────
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { NotificationProvider } from './context/NotificationContext';
+import { AuthProvider, useAuth } from './context/AuthContext';import { WebSocketProvider } from './context/WebSocketProvider';import { NotificationProvider } from './context/NotificationContext';
 import { SnackbarProvider } from './context/SnackbarContext';
 
 import { normalizeRole } from './lib/rbac';
@@ -218,13 +217,15 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <NotificationProvider>
-        <SnackbarProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </SnackbarProvider>
-      </NotificationProvider>
+      <WebSocketProvider>
+        <NotificationProvider>
+          <SnackbarProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </SnackbarProvider>
+        </NotificationProvider>
+      </WebSocketProvider>
     </AuthProvider>
   );
 }

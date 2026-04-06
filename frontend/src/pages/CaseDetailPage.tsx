@@ -26,6 +26,7 @@ import api from "../services/api";
 import { Case } from "../types";
 import AskAI from "../components/ai/AskAI";
 import { useSnackbar } from "../context/SnackbarContext";
+import { useDocumentWebSocket } from "../hooks/useDocumentWebSocket";
 
 interface Deadline {
   id: number;
@@ -76,35 +77,39 @@ const CaseDetailPage: React.FC = () => {
     fetchTeamMembers();
   }, [id]);
 
+  // Use WebSocket for real-time document updates (replaces polling)
+  const { isConnected } = useDocumentWebSocket((data) => {
+    // Handle document updates via WebSocket
+    if (data.type === 'DOCUMENT_STATUS_UPDATE') {
+      console.log('[Document Status]', data);
+      // Fetch case data to get latest document status
+      if (uploading) {
+        fetchCaseSilent();
+      }
+    } else if (data.type === 'DOCUMENT_PROCESSED') {
+      console.log('[Document Processed]', data);
+      // Fetch case data when document processing completes
+      fetchCaseSilent();
+      setUploading(false);
+    }
+  });
+
+  // Fallback: Keep light polling as backup (every 5 seconds) if WebSocket fails
   useEffect(() => {
-    let interval: any;
-    if (uploading && id) {
-      interval = setInterval(() => {
+    let fallbackInterval: NodeJS.Timeout | null = null;
+    
+    // Only poll if uploading AND WebSocket is not connected
+    if (uploading && id && !isConnected) {
+      console.log('[CaseDetail] WebSocket not connected, using fallback polling');
+      fallbackInterval = setInterval(() => {
         fetchCaseSilent();
       }, 5000);
     }
+    
     return () => {
-      if (interval) clearInterval(interval);
+      if (fallbackInterval) clearInterval(fallbackInterval);
     };
-  }, [uploading, id]);
-
-  // Listen for document processing completion
-  useEffect(() => {
-    const handleDocumentProcessed = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { document_id } = customEvent.detail || {};
-
-      if (!document_id) return;
-
-      // Immediately fetch the updated case data when document completes
-      fetchCaseSilent();
-    };
-
-    window.addEventListener("document_processed", handleDocumentProcessed);
-    return () => {
-      window.removeEventListener("document_processed", handleDocumentProcessed);
-    };
-  }, [id]);
+  }, [uploading, id, isConnected]);
 
   const fetchCase = async () => {
     setLoading(true);

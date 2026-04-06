@@ -56,51 +56,10 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // WebSocket Connection
-  useEffect(() => {
-    if (!isAuthenticated || !token) return;
-
-    // Connect to WebSocket using the appropriate protocol
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use the explicit API_BASE_URL (http://localhost:8000) and convert to ws://
-    let wsUrlStr = API_BASE_URL.replace(/^http(s)?:\/\//, `${protocol}//`);
-    
-    // Ensure there is no trailing slash on the base URL
-    if (wsUrlStr.endsWith('/')) {
-        wsUrlStr = wsUrlStr.slice(0, -1);
-    }
-    
-    // Build the final WebSocket URL
-    const finalWsUrl = `${wsUrlStr}/api/v1/ws/notifications/${token}`;
-    console.log("Attempting WebSocket Connection to:", finalWsUrl);
-
-    const wsManager = new WebSocket(finalWsUrl);
-
-    wsManager.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === 'new_notification') {
-          const newNotif = message.data as Notification;
-          setNotifications(prev => [newNotif, ...prev]);
-          setUnreadCount(prev => prev + 1);
-        } else if (message.type === 'DOCUMENT_PROCESSED') {
-          // Dispatch a custom window event so DocumentViewer or DocumentList can refresh instantly
-          const customEvent = new CustomEvent('document_processed', { detail: { document_id: message.document_id } });
-          window.dispatchEvent(customEvent);
-        }
-      } catch (err) {
-        console.error("Error parsing WebSocket message", err);
-      }
-    };
-
-    wsManager.onerror = (error) => {
-      console.warn("WebSocket notification error", error);
-    };
-
-    return () => {
-      wsManager.close();
-    };
-  }, [isAuthenticated, token]);
+  // WebSocket Connection via WebSocketProvider
+  // (now handled by WebSocketProvider instead of creating duplicate connection)
+  // WebSocketProvider broadcasts DOCUMENT_PROCESSED events which trigger document refresh
+  // We no longer need our own WebSocket connection
 
   const markAsRead = async (id: number) => {
     try {

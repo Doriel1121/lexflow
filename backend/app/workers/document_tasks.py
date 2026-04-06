@@ -14,6 +14,12 @@ all phases sequentially with inline retry loops. This is:
 - Reliable: no chord deadlocks
 - Observable: progress updates at every step
 - Recoverable: each chunk retries independently up to 15 times
+
+Changes from previous version:
+- Redis pub/sub for real-time WebSocket notifications (no DB polling)
+- Batched embedding tasks (EMBEDDING_BATCH_SIZE chunks per task)
+- Atomic completion detection to prevent race conditions
+- asyncio.sleep instead of time.sleep to avoid blocking workers
 """
 
 import asyncio
@@ -32,9 +38,10 @@ from app.db.models.deadline import Deadline, DeadlineType
 import dateparser
 from app.services.document_intelligence import document_intelligence_service
 from app.services.llm import llm_service
-from app.api.ws.notifications import notification_manager
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete, update, text
 from app.db.models.document_processing_log import DocumentProcessingLog
+from app.db.models.notification import Notification
+from app.db.models.user import User
 import traceback as tb
 
 logger = logging.getLogger(__name__)
@@ -45,56 +52,155 @@ def run_async(coro):
     return asyncio.run(coro)
 
 
+# ── Redis pub/sub helpers ─────────────────────────────────────────────────
+
+def _publish_notification_for_users(org_user_ids: list[int], message: dict):
+    """Publish notification to Redis channels for all given user IDs.
+    Uses synchronous Redis since this runs inside Celery workers.
+    """
+    from app.api.ws.notifications import publish_notification_sync
+
+    for user_id in org_user_ids:
+        publish_notification_sync(user_id, message)
+
+
+async def _create_org_notification(
+    db,
+    *,
+    organization_id: int,
+    event_type: str,
+    title: str,
+    message: str,
+    source_type: str = None,
+    source_id: int = None,
+) -> int:
+    """Persist notifications for all org users AND publish to Redis for instant WebSocket delivery."""
+    result = await db.execute(select(User.id).where(User.organization_id == organization_id))
+    org_user_ids = list(result.scalars().all())
+
+    for org_user_id in org_user_ids:
+        db.add(
+            Notification(
+                user_id=org_user_id,
+                organization_id=organization_id,
+                type=event_type,
+                title=title,
+                message=message,
+                source_type=source_type,
+                source_id=source_id,
+                read=False,
+            )
+        )
+
+    await db.commit()
+
+    # Publish to Redis for instant WebSocket delivery
+    ws_payload = {
+        "type": event_type,
+        "title": title,
+        "message": message,
+        "source_type": source_type,
+    }
+    if source_type == "document" and source_id is not None:
+        ws_payload["document_id"] = source_id
+
+    _publish_notification_for_users(org_user_ids, ws_payload)
+
+    logger.info(
+        "[Doc %s] Persisted %s '%s' notifications for org %s (+ Redis pub/sub)",
+        source_id, len(org_user_ids), event_type, organization_id,
+    )
+    return len(org_user_ids)
+
+
+# ── Batched embedding task ────────────────────────────────────────────────
+
 @shared_task(bind=True, max_retries=5, retry_backoff=True)
-def embed_chunk_task(self, document_id: int, chunk_id: int):
-    """Generate embedding for a single chunk and update document progress."""
+def embed_chunk_batch_task(self, document_id: int, chunk_ids: list[int]):
+    """Generate embeddings for a BATCH of chunks and update document progress.
+    Instead of 1 task per chunk, we process multiple chunks per task to reduce
+    Celery overhead and Redis queue pressure.
+    """
     async def _run():
+        for chunk_id in chunk_ids:
+            async with CeleryAsyncSessionLocal() as db:
+                res = await db.execute(select(DocumentChunk).filter(DocumentChunk.id == chunk_id))
+                chunk = res.scalars().first()
+                if not chunk:
+                    continue
+
+                try:
+                    vector = await llm_service.generate_embedding(chunk.text_content)
+                    chunk.embedding = vector
+                    await db.commit()
+                except Exception as e:
+                    logger.warning(f"[Doc {document_id}] Embedding chunk {chunk_id} failed: {e}")
+                    await db.rollback()
+                    continue
+
+                # Increment processed_chunks atomically
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == document_id)
+                    .values(processed_chunks=Document.processed_chunks + 1)
+                )
+                await db.commit()
+
+                # Update progress
+                doc = await document_crud.get(db, document_id)
+                if doc:
+                    total = max(doc.total_chunks or 0, 1)
+                    processed = doc.processed_chunks or 0
+                    doc.processing_stage = "embedding"
+                    doc.processing_progress = round(57.0 + (processed / total) * 38.0, 1)
+                    await db.commit()
+
+        # ── Atomic completion check ───────────────────────────────────
+        # Only ONE batch task will successfully flip the status to COMPLETED
+        # because we use a WHERE clause that checks the current state.
         async with CeleryAsyncSessionLocal() as db:
-            res = await db.execute(select(DocumentChunk).filter(DocumentChunk.id == chunk_id))
-            chunk = res.scalars().first()
-            if not chunk:
-                return
-
-            vector = await llm_service.generate_embedding(chunk.text_content)
-            chunk.embedding = vector
-            await db.commit()
-
-            # Increment processed_chunks atomically
-            await db.execute(
+            result = await db.execute(
                 update(Document)
-                .where(Document.id == document_id)
-                .values(processed_chunks=Document.processed_chunks + 1)
+                .where(
+                    Document.id == document_id,
+                    Document.processed_chunks >= Document.total_chunks,
+                    Document.processing_stage != "completed",
+                    Document.total_chunks > 0,
+                )
+                .values(
+                    processing_status=DocumentProcessingStatus.COMPLETED,
+                    processing_stage="completed",
+                    processing_progress=100.0,
+                )
             )
             await db.commit()
 
-            doc = await document_crud.get(db, document_id)
-            if not doc:
-                return
-
-            total = max(doc.total_chunks or 0, 1)
-            processed = doc.processed_chunks or 0
-            doc.processing_stage = "embedding"
-            doc.processing_progress = round(57.0 + (processed / total) * 38.0, 1)
-            await db.commit()
-
-            if processed >= total and doc.processing_stage != "completed":
-                doc.processing_status = DocumentProcessingStatus.COMPLETED
-                doc.processing_stage = "completed"
-                doc.processing_progress = 100.0
-                await db.commit()
-                try:
-                    await notification_manager.broadcast_to_organization(
-                        doc.organization_id,
-                        {
-                            "type": "DOCUMENT_PROCESSED",
-                            "document_id": document_id,
-                            "message": f"Document '{doc.filename}' is ready."
-                        }
-                    )
-                except Exception:
-                    pass
+            # Only the winning task sends the completion notification
+            if result.rowcount > 0:
+                logger.info(f"[Doc {document_id}] ✅ All embeddings done (this batch won the race).")
+                doc = await document_crud.get(db, document_id)
+                if doc:
+                    try:
+                        await _create_org_notification(
+                            db,
+                            organization_id=doc.organization_id,
+                            event_type="DOCUMENT_PROCESSED",
+                            title="Document Processed",
+                            message=f"Document '{doc.filename}' is ready.",
+                            source_type="document",
+                            source_id=document_id,
+                        )
+                    except Exception as broadcast_err:
+                        logger.error(f"[Doc {document_id}] Completion notification failed: {broadcast_err}", exc_info=True)
 
     run_async(_run())
+
+
+# Keep backward-compatible single-chunk task (delegates to batch)
+@shared_task(bind=True, max_retries=5, retry_backoff=True)
+def embed_chunk_task(self, document_id: int, chunk_id: int):
+    """Legacy single-chunk task — delegates to batch task."""
+    embed_chunk_batch_task.delay(document_id, [chunk_id])
 
 
 @shared_task(bind=True, max_retries=3, retry_backoff=True)
@@ -124,6 +230,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                     await db.commit()
             logger.warning("[Doc %d] Processing timed out at stage=%s. Marked completed_without_ai.", document_id, stage)
             return True
+
         # ── STEP 1: Update status to PROCESSING ─────────────────────────
         async with CeleryAsyncSessionLocal() as db:
             doc = await document_crud.get(db, document_id)
@@ -142,8 +249,6 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
             logger.info(f"[Doc {document_id}] Running OCR on {file_path}...")
             ocr_result = await ocr_service.extract_text_from_file(file_path)
             extracted_text = ocr_result.get("text", "") or ""
-            # Normalize text while preserving page boundaries so downstream
-            # chunking and metadata extraction work with cleaner input.
             normalized_text = text_normalization_service.normalize(
                 extracted_text, language=ocr_result.get("language", "en")
             )
@@ -170,19 +275,17 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
                 # Notify UI that OCR text is ready for viewing
                 try:
-                    await notification_manager.broadcast_to_organization(
-                        organization_id,
-                        {
-                            "type": "DOCUMENT_STATUS_UPDATE",
-                            "document_id": document_id,
-                            "status": "processing",
-                            "stage": "ocr_completed",
-                            "progress": 8.0,
-                            "message": "Text extraction complete. Document is now viewable."
-                        }
+                    await _create_org_notification(
+                        db,
+                        organization_id=organization_id,
+                        event_type="DOCUMENT_STATUS_UPDATE",
+                        title="Document Processing Update",
+                        message="Text extraction complete. Document is now viewable.",
+                        source_type="document",
+                        source_id=document_id,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[Doc {document_id}] Failed to persist OCR status notification: {e}")
 
         if await _abort_if_timed_out("ocr_completed"):
             return
@@ -190,7 +293,6 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
         # ── STEP 2.5: Deadline Extraction ─────────────────────────────
         logger.info(f"[Doc {document_id}] Extracting deadlines...")
         try:
-            # We take all NER results here as initial candidates
             extracted_deadlines = ner_service.extract_deadlines(
                 normalized_text, language=ocr_result.get("language", "en")
             )
@@ -312,11 +414,9 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 if not ai_analysis.get("parties"):
                     ai_analysis["parties"] = regex_meta.get("entities", [])
 
-                # Check both field names since AI returns "key_dates" but we normalize to "key_dates"
                 if not ai_analysis.get("key_dates") and not ai_analysis.get("dates"):
                     ai_analysis["key_dates"] = regex_meta.get("dates", [])
 
-                # Check both field names since AI returns "financial_terms" but we normalize to "financial_terms"
                 if not ai_analysis.get("financial_terms") and not ai_analysis.get("amounts"):
                     ai_analysis["financial_terms"] = regex_meta.get("amounts", [])
 
@@ -335,7 +435,6 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                     doc.classification = ai_analysis.get("classification") or "Unknown Document"
                     await db.commit()
 
-                # Avoid regex-based routing identifiers here; we want AI-driven routing
                 ai_analysis["routing_ids"] = []
                 ai_analysis["routing_projects"] = []
                 ai_analysis["routing_organizations"] = []
@@ -375,7 +474,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
             missing_docs = ai_analysis.get("missing_documents") or ai_analysis.get("missing_items", [])
             parties = ai_analysis.get("parties", [])
 
-            # Rich entities from parties / attorneys (mirror background service)
+            # Rich entities from parties / attorneys
             entities = []
             for party in ai_analysis.get("parties", []):
                 if isinstance(party, dict):
@@ -441,7 +540,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
             # ── RETRY LOGIC FOR METADATA/SUMMARY SAVING ────────────────────
             metadata_saved = False
-            for attempt in range(3):  # Retry 3 times
+            for attempt in range(3):
                 try:
                     db.add(
                         Summary(
@@ -473,12 +572,11 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                     try:
                         await db.rollback()
                     except:
-                        pass  # Session might be broken
+                        pass
                     
                     if attempt < 2:
-                        await asyncio.sleep(1)  # Wait before retry
+                        await asyncio.sleep(1)
                     else:
-                        # Last attempt failed - log and continue anyway
                         logger.error(f"[Doc {document_id}] FAILED to save metadata after 3 attempts: {meta_err}")
                         try:
                             async with CeleryAsyncSessionLocal() as error_db:
@@ -491,7 +589,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                                 error_db.add(error_log)
                                 await error_db.commit()
                         except:
-                            pass  # Even error logging failed, continue
+                            pass
 
             if not metadata_saved:
                 logger.warning(f"[Doc {document_id}] Metadata save failed permanently. AI data will not be persisted for this document.")
@@ -566,19 +664,24 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
             try:
                 from app.core.celery import safe_task_delay
-                for chunk_id in chunk_ids:
+
+                # Batch chunks instead of 1-per-task
+                batch_size = settings.EMBEDDING_BATCH_SIZE
+                for i in range(0, len(chunk_ids), batch_size):
+                    batch = chunk_ids[i : i + batch_size]
                     safe_task_delay(
-                        embed_chunk_task,
+                        embed_chunk_batch_task,
                         document_id=document_id,
-                        chunk_id=chunk_id,
+                        chunk_ids=batch,
                     )
-                logger.info(f"[Doc {document_id}] Embedding fan-out queued ({len(chunk_ids)} tasks).")
+                num_batches = (len(chunk_ids) + batch_size - 1) // batch_size
+                logger.info(f"[Doc {document_id}] Embedding fan-out queued ({num_batches} batched tasks for {len(chunk_ids)} chunks).")
             except Exception as e:
                 logger.error(f"[Doc {document_id}] Failed to queue embedding fan-out: {e}. Falling back to inline embedding.")
-                # If queuing fails, fall back to inline embedding loop below
             else:
                 return
 
+        # Inline fallback: process embeddings sequentially
         for i, chunk_id in enumerate(chunk_ids):
             success = False
             retries = 0
@@ -596,7 +699,6 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
                         doc = await document_crud.get(db, document_id)
                         if doc:
-                            # Embedding = 57% to 95%
                             doc.processing_progress = 57.0 + round(((i + 1) / len(chunk_ids)) * 38.0, 1)
                             doc.processing_stage = "embedding"
                         await db.commit()
@@ -606,7 +708,8 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                     retries += 1
                     wait = min(20 * retries, 90)
                     logger.warning(f"[Doc {document_id}] Embedding chunk {i} error (attempt {retries}/10): {e}. Retrying in {wait}s.")
-                    time.sleep(wait)
+                    # Use asyncio.sleep instead of time.sleep to avoid blocking the worker
+                    await asyncio.sleep(wait)
 
         # ── STEP 7: Finalize ────────────────────────────────────────────
         async with CeleryAsyncSessionLocal() as db:
@@ -619,21 +722,21 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 logger.info(f"[Doc {document_id}] ✅ FULLY COMPLETED.")
 
                 try:
-                    await notification_manager.broadcast_to_organization(
-                        organization_id,
-                        {
-                            "type": "DOCUMENT_PROCESSED",
-                            "document_id": document_id,
-                            "message": f"Document '{doc.filename}' is ready."
-                        }
+                    await _create_org_notification(
+                        db,
+                        organization_id=organization_id,
+                        event_type="DOCUMENT_PROCESSED",
+                        title="Document Processed",
+                        message=f"Document '{doc.filename}' is ready.",
+                        source_type="document",
+                        source_id=document_id,
                     )
-                except Exception:
-                    pass  # Don't fail on notification error
+                except Exception as broadcast_err:
+                    logger.error(f"[Doc {document_id}] Persisting completion notification failed: {broadcast_err}", exc_info=True)
 
     try:
         run_async(_run())
     except Exception as exc:
-        # Best-effort top-level logging if something leaks out of _run
         try:
             asyncio.run(_log_top_level_failure(document_id, exc))
         except Exception:

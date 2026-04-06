@@ -29,7 +29,12 @@ class StorageService:
 
     async def upload_file(self, file: UploadFile, destination_path: str) -> Tuple[str, Path]:
         """
-        Save an uploaded file to storage.
+        Save an uploaded file to storage using chunked streaming.
+
+        Reads the file in 64 KB chunks to avoid loading the entire file into
+        memory.  Rejects files that exceed MAX_FILE_SIZE *before* the full
+        content has been read — preventing memory spikes from concurrent
+        large uploads or malicious oversized payloads.
 
         Returns:
             (url, absolute_path)  — url is the HTTP URL for the stored file;
@@ -49,12 +54,35 @@ class StorageService:
         dest_dir.mkdir(parents=True, exist_ok=True)
         file_path = dest_dir / file.filename
 
-        content = await file.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=400, detail="File too large (max 20 MB)")
+        # Stream file to disk in chunks — reject early if too large
+        CHUNK_SIZE = 64 * 1024  # 64 KB
+        bytes_written = 0
 
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
+        try:
+            async with aiofiles.open(file_path, "wb") as f:
+                while True:
+                    chunk = await file.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    bytes_written += len(chunk)
+                    if bytes_written > MAX_FILE_SIZE:
+                        # Stop reading immediately — don't consume the rest
+                        break
+                    await f.write(chunk)
+        except Exception:
+            # Clean up partial file on any I/O error
+            if file_path.exists():
+                file_path.unlink(missing_ok=True)
+            raise
+
+        if bytes_written > MAX_FILE_SIZE:
+            # Remove the partially-written file
+            if file_path.exists():
+                file_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large (max {MAX_FILE_SIZE // (1024 * 1024)} MB)"
+            )
 
         url = self._path_to_url(f"{destination_path}/{file.filename}")
         return url, file_path

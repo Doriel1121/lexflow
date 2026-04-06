@@ -1,17 +1,18 @@
 """
-Document Processing Service — FastAPI BackgroundTask implementation.
+Document Processing Service — Per-Stage Session Architecture
+============================================================
 
-This is the primary processing path. It runs within the FastAPI worker
-process as an async background task (no Celery/Redis required).
+Proper transaction handling by using fresh DB sessions for each major 
+processing stage. This prevents "aborted transaction" errors and ensures 
+status updates complete even if individual stages fail.
 
-Pipeline stages and progress %:
-  0% — uploaded / queued
-  5% — processing started
-  20% — OCR complete
-  35% — AI analysis complete
-  50% — metadata + summary saved
-  65%–95% — embeddings (per chunk)
-  100% — completed
+Pipeline stages:
+  1. OCR (fresh session) → extract text
+  2. AI Analysis (fresh session) → legal intelligence  
+  3. Metadata (fresh session) → save extracted data
+  4. Smart Collections (fresh session) → route document
+  5. Chunking & Embeddings (fresh session) → vector DB
+  6. Final Status (fresh session) → mark COMPLETED
 """
 
 import logging
@@ -104,18 +105,48 @@ def _extract_rich_entities(ai_analysis: Dict[str, Any]) -> List[Any]:
     return _dedup(entities)
 
 
-async def _set_status(
-    db: AsyncSession,
-    document: Document,
+async def _update_status(
+    document_id: int,
     status: DocumentProcessingStatus,
     stage: str,
     progress: float,
+    *,
+    organization_id: int | None = None,
 ):
-    """Update and commit processing status on a document."""
-    document.processing_status = status
-    document.processing_stage = stage
-    document.processing_progress = round(progress, 1)
-    await db.commit()
+    """Update document status using fresh session and publish via Redis pub/sub."""
+    try:
+        async with AsyncSessionLocal() as db:
+            document = await document_crud.get(db, document_id)
+            if document:
+                document.processing_status = status
+                document.processing_stage = stage
+                document.processing_progress = round(progress, 1)
+                await db.commit()
+                logger.debug(f"[Doc {document_id}] Status: {stage} ({progress}%)")
+
+                # Publish status update via Redis for instant WebSocket delivery
+                org_id = organization_id or document.organization_id
+                if org_id:
+                    try:
+                        from app.api.ws.notifications import publish_notification
+                        from app.db.models.user import User
+
+                        result = await db.execute(
+                            select(User.id).where(User.organization_id == org_id)
+                        )
+                        user_ids = result.scalars().all()
+                        ws_payload = {
+                            "type": "DOCUMENT_STATUS_UPDATE",
+                            "document_id": document_id,
+                            "stage": stage,
+                            "progress": round(progress, 1),
+                        }
+                        for uid in user_ids:
+                            await publish_notification(uid, ws_payload)
+                    except Exception as pub_err:
+                        logger.debug(f"[Doc {document_id}] Redis pub failed (non-fatal): {pub_err}")
+    except Exception as e:
+        logger.warning(f"[Doc {document_id}] Failed to update status: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -132,446 +163,406 @@ class DocumentProcessingService:
         organization_id: Optional[int],
     ):
         """
-        Full async document processing pipeline executed as a FastAPI BackgroundTask.
-        Creates its own AsyncSession locally to avoid cross-thread attached exceptions.
+        Document processing with per-stage fresh sessions.
+        Each major stage gets its own database session to prevent
+        transaction corruption from propagating through the pipeline.
         """
-        logger.info("[Doc %d] Background processing started. file=%s", document_id, file_path)
+        logger.info(f"[Doc {document_id}] Pipeline started. file={file_path}")
+        start_time = time.time()
 
-        async with AsyncSessionLocal() as db:
-            # ── Load document ────────────────────────────────────────────────────
-            document = await document_crud.get(db, document_id)
-            if not document:
-                logger.error("[Doc %d] Not found — aborting.", document_id)
+        # ── INIT: Mark as processing ──────────────────────────────────────
+        await _update_status(document_id, DocumentProcessingStatus.PROCESSING, "ocr_started", 5.0)
+
+        try:
+            # ── STAGE 1: OCR ──────────────────────────────────────────────
+            logger.info(f"[Doc {document_id}] Stage 1: Running OCR...")
+            ocr_result = await self._stage_ocr(document_id, file_path)
+            if not ocr_result:
+                await _update_status(document_id, DocumentProcessingStatus.FAILED, "ocr_failed", 5.0)
                 return
 
+            extracted_text, normalized_text, language, page_count = ocr_result
+            logger.info(f"[Doc {document_id}] OCR done: {len(extracted_text)} chars, {page_count} pages")
+            await _update_status(document_id, DocumentProcessingStatus.PROCESSING, "ocr_completed", 20.0)
+
+            if not extracted_text.strip():
+                await _update_status(document_id, DocumentProcessingStatus.FAILED, "ocr_empty_text", 20.0)
+                return
+
+            # ── STAGE 2: AI Analysis ──────────────────────────────────────
+            logger.info(f"[Doc {document_id}] Stage 2: Running AI analysis...")
+            ai_analysis = await self._stage_ai_analysis(
+                document_id, normalized_text, language, organization_id
+            )
+            logger.info(f"[Doc {document_id}] AI analysis done")
+            await _update_status(document_id, DocumentProcessingStatus.PROCESSING, "ai_completed", 35.0)
+
+            # ── STAGE 3: Save metadata & classification ───────────────────
+            logger.info(f"[Doc {document_id}] Stage 3: Saving metadata...")
+            await self._stage_save_metadata(
+                document_id, organization_id, normalized_text, language, ai_analysis
+            )
+            logger.info(f"[Doc {document_id}] Metadata saved")
+            await _update_status(document_id, DocumentProcessingStatus.PROCESSING, "metadata_saved", 50.0)
+
+            # ── STAGE 4: Smart Collections routing ─────────────────────────
+            logger.info(f"[Doc {document_id}] Stage 4: Smart Collections routing...")
+            await self._stage_smart_routing(document_id)
+            logger.info(f"[Doc {document_id}] Smart routing done")
+
+            # ── STAGE 5: Chunk & Embed ────────────────────────────────────
+            logger.info(f"[Doc {document_id}] Stage 5: Chunking and embedding...")
+            await self._stage_chunk_and_embed(document_id, normalized_text)
+            logger.info(f"[Doc {document_id}] Chunking done")
+            await _update_status(document_id, DocumentProcessingStatus.PROCESSING, "embedding_completed", 95.0)
+
+            # ── FINAL: Mark complete ──────────────────────────────────────
+            logger.info(f"[Doc {document_id}] ✅ Marking complete...")
+            await _update_status(
+                document_id, DocumentProcessingStatus.COMPLETED, "completed", 100.0,
+                organization_id=organization_id,
+            )
+
+            # Send completion notification via Redis pub/sub
             try:
-                start_time = time.time()
+                from app.api.ws.notifications import publish_notification
+                from app.db.models.user import User
+                from app.db.models.notification import Notification
 
-                async def _abort_if_timed_out(stage: str) -> bool:
-                    max_seconds = settings.DOCUMENT_MAX_PROCESSING_SECONDS or 0
-                    if max_seconds <= 0:
-                        return False
-                    if (time.time() - start_time) <= max_seconds:
-                        return False
+                async with AsyncSessionLocal() as db:
                     doc = await document_crud.get(db, document_id)
-                    if doc:
-                        doc.processing_status = DocumentProcessingStatus.COMPLETED
-                        doc.processing_stage = "completed_without_ai"
-                        doc.processing_progress = 100.0
-                        doc.classification = "Text Extracted (AI Pending)"
-                        await db.commit()
-                    logger.warning("[Doc %d] Processing timed out at stage=%s. Marked completed_without_ai.", document_id, stage)
-                    return True
-
-                await _set_status(db, document, DocumentProcessingStatus.PROCESSING,
-                                  "processing_started", 5.0)
-
-                # ── STEP 1: OCR ──────────────────────────────────────────────────
-                logger.info("[Doc %d] Running OCR on %s", document_id, file_path)
-                try:
-                    ocr_result = await ocr_service.extract_text_from_file(file_path)
-                    extracted_text = ocr_result.get("text", "") or ""
-                    normalized_text = text_normalization_service.normalize(
-                        extracted_text, language=ocr_result.get("language", "en")
+                    result = await db.execute(
+                        select(User.id).where(User.organization_id == organization_id)
                     )
-                    language = ocr_result.get("language", "en")
-                    page_count = ocr_result.get("page_count", 0)
-                except Exception as ocr_err:
-                    logger.error("[Doc %d] OCR failed: %s", document_id, ocr_err)
-                    extracted_text, normalized_text, language, page_count = "", "", "en", 0
+                    org_user_ids = result.scalars().all()
 
+                    # Persist notifications
+                    for uid in org_user_ids:
+                        db.add(Notification(
+                            user_id=uid,
+                            organization_id=organization_id,
+                            type="DOCUMENT_PROCESSED",
+                            title="Document Processed",
+                            message=f"Document '{doc.filename}' is ready." if doc else "Document processed.",
+                            source_type="document",
+                            source_id=document_id,
+                            read=False,
+                        ))
+                    await db.commit()
+
+                    # Publish via Redis for instant delivery
+                    ws_payload = {
+                        "type": "DOCUMENT_PROCESSED",
+                        "title": "Document Processed",
+                        "message": f"Document '{doc.filename}' is ready." if doc else "Document processed.",
+                        "document_id": document_id,
+                    }
+                    for uid in org_user_ids:
+                        await publish_notification(uid, ws_payload)
+            except Exception as notif_err:
+                logger.warning(f"[Doc {document_id}] Completion notification failed: {notif_err}")
+
+            elapsed = time.time() - start_time
+            logger.info(f"[Doc {document_id}] ✅ COMPLETED in {elapsed:.1f}s")
+
+        except Exception as e:
+            logger.error(f"[Doc {document_id}] PIPELINE FAILED: {e}\n{tb.format_exc()}")
+            await _update_status(document_id, DocumentProcessingStatus.FAILED, "pipeline_error", 0.0)
+
+            # Log error for debugging
+            try:
+                async with AsyncSessionLocal() as db:
+                    error_log = DocumentProcessingLog(
+                        document_id=document_id,
+                        stage="pipeline_error",
+                        error_message=str(e),
+                        stack_trace=tb.format_exc(),
+                    )
+                    db.add(error_log)
+                    await db.commit()
+            except:
+                pass
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Stage handlers (each gets fresh session)
+    # ─────────────────────────────────────────────────────────────────────
+
+    async def _stage_ocr(self, document_id: int, file_path: str) -> Optional[tuple]:
+        """OCR stage with fresh session."""
+        try:
+            ocr_result = await ocr_service.extract_text_from_file(file_path)
+            extracted_text = ocr_result.get("text", "") or ""
+            normalized_text = text_normalization_service.normalize(
+                extracted_text, language=ocr_result.get("language", "en")
+            )
+            language = ocr_result.get("language", "en")
+            page_count = ocr_result.get("page_count", 0)
+
+            # Save OCR results
+            async with AsyncSessionLocal() as db:
                 document = await document_crud.get(db, document_id)
-                if not document:
-                    return
-                document.content = normalized_text
-                document.language = language
-                document.page_count = page_count
-                document.processing_stage = "ocr_completed"
-                document.processing_progress = 20.0
-                await db.commit()
-                logger.info("[Doc %d] OCR done: %d chars, %d pages. Marking as viewable.", document_id,
-                            len(extracted_text), page_count)
+                if document:
+                    document.content = normalized_text
+                    document.language = language
+                    document.page_count = page_count
+                    await db.commit()
 
-                # Broadcast that text is ready
-                try:
-                    from app.api.ws.notifications import notification_manager
-                    await notification_manager.broadcast_to_organization(
-                        organization_id,
-                        {
-                            "type": "DOCUMENT_STATUS_UPDATE",
-                            "document_id": document_id,
-                            "status": "processing",
-                            "stage": "ocr_completed",
-                            "progress": 20.0
-                        },
-                    )
-                except Exception:
-                    pass
+            return extracted_text, normalized_text, language, page_count
+        except Exception as e:
+            logger.error(f"[Doc {document_id}] OCR failed: {e}")
+            return None
 
-                if not extracted_text.strip():
-                    await _set_status(db, document, DocumentProcessingStatus.FAILED,
-                                      "ocr_empty_text", 20.0)
-                    return
-
-                if await _abort_if_timed_out("ocr_completed"):
-                    return
-
-                # Fetch Battery Save setting
+    async def _stage_ai_analysis(
+        self,
+        document_id: int,
+        normalized_text: str,
+        language: str,
+        organization_id: Optional[int],
+    ) -> Dict[str, Any]:
+        """AI analysis stage with fresh session."""
+        ai_analysis = {}
+        try:
+            # Get battery save setting
+            async with AsyncSessionLocal() as db:
                 from app.db.models.organization import Organization
                 org = await db.get(Organization, organization_id)
                 battery_save = org.ai_battery_save_mode if org else False
-                
-                # ── STEP 2: AI parsing ───────────────────────────────────────────
-                logger.info("[Doc %d] Submitting to AI for analysis. Battery Save: %s", document_id, battery_save)
-                await _set_status(db, document, DocumentProcessingStatus.PROCESSING,
-                                  "ai_analysis", 35.0)
 
-                # If battery save is ON, optimize the input text to save tokens
-                input_text = normalized_text
-                if battery_save and len(normalized_text) > 25000:
-                    logger.info("[Doc %d] Battery Save ON: Truncating text from %d to ~25k chars.", document_id, len(normalized_text))
-                    # Keep first 15k and last 10k
-                    input_text = normalized_text[:15000] + "\n\n[... TEXT TRUNCATED BY BATTERY SAVE MODE ...]\n\n" + normalized_text[-10000:]
+            input_text = normalized_text
+            if battery_save and len(normalized_text) > 25000:
+                logger.info(f"[Doc {document_id}] Battery save: truncating to ~25k chars")
+                input_text = normalized_text[:15000] + "\n\n[... TEXT TRUNCATED ...]\n\n" + normalized_text[-10000:]
 
-                ai_analysis: Dict[str, Any] = {}
-                try:
-                    ai_analysis = await document_intelligence_service.analyze_legal_document(
-                        input_text,
-                        filename=document.filename,
-                        language=language,
-                    )
-                    logger.info("[Doc %d] AI analysis returned successfully.", document_id)
-                except Exception as ai_err:
-                    logger.warning("[Doc %d] AI analysis failed: %s", document_id, ai_err)
+            ai_analysis = await document_intelligence_service.analyze_legal_document(
+                input_text,
+                filename=f"doc_{document_id}",
+                language=language,
+            )
+        except Exception as e:
+            logger.warning(f"[Doc {document_id}] AI analysis failed: {e}")
 
-                # Fallback: if AI failed or missed key sections, run regex
-                try:
-                    from app.services.metadata_extraction import metadata_extraction_service
-                    regex_meta = await metadata_extraction_service.extract_metadata(normalized_text, language)
-                    
-                    # Merge regex fallbacks and align keys
-                    # DocumentIntelligence uses "key_dates", "financial_terms", "missing_items"
-                    # But the rest of this service expects "dates", "amounts", "missing_documents"
-                    
-                    if not ai_analysis.get("parties"):
-                        ai_analysis["parties"] = regex_meta.get("entities", [])
-                    
-                    if not ai_analysis.get("dates"):
-                        # Use key_dates from AI if available, else regex dates
-                        ai_analysis["dates"] = ai_analysis.get("key_dates") or regex_meta.get("dates", [])
-                    
-                    if not ai_analysis.get("amounts"):
-                        # Use financial_terms from AI if available, else regex amounts
-                        ai_analysis["amounts"] = ai_analysis.get("financial_terms") or regex_meta.get("amounts", [])
-                    
-                    if not ai_analysis.get("case_numbers"):
-                        ai_analysis["case_numbers"] = regex_meta.get("case_numbers", [])
-                    
-                    if not ai_analysis.get("classification"):
-                        ai_analysis["classification"] = ai_analysis.get("document_type") or "Unknown Document"
+        # Fallback: regex extraction
+        try:
+            from app.services.metadata_extraction import metadata_extraction_service
+            regex_meta = await metadata_extraction_service.extract_metadata(normalized_text, language)
 
-                    if not ai_analysis.get("missing_documents"):
-                        ai_analysis["missing_documents"] = ai_analysis.get("missing_items") or []
+            if not ai_analysis.get("parties"):
+                ai_analysis["parties"] = regex_meta.get("entities", [])
+            if not ai_analysis.get("dates"):
+                ai_analysis["dates"] = regex_meta.get("dates", [])
+            if not ai_analysis.get("amounts"):
+                ai_analysis["amounts"] = regex_meta.get("amounts", [])
+            if not ai_analysis.get("case_numbers"):
+                ai_analysis["case_numbers"] = regex_meta.get("case_numbers", [])
+            if not ai_analysis.get("classification"):
+                ai_analysis["classification"] = "Unknown Document"
+            if not ai_analysis.get("missing_documents"):
+                ai_analysis["missing_documents"] = []
 
-                    # Update document record with classification from AI
-                    document = await document_crud.get(db, document_id)
-                    if document:
-                        document.classification = ai_analysis.get("classification") or "Unknown Document"
-                        await db.commit()
+            ai_analysis["routing_ids"] = []
+            ai_analysis["routing_projects"] = []
+            ai_analysis["routing_organizations"] = []
+        except Exception as e:
+            logger.warning(f"[Doc {document_id}] Regex extraction failed: {e}")
+            # Ensure analysis has required fields
+            for key in ["classification", "parties", "dates", "amounts", "case_numbers", "missing_documents"]:
+                if key not in ai_analysis:
+                    ai_analysis[key] = [] if key != "classification" else "Unknown Document"
 
-                    # We explicitly empty routing fields to avoid OCR-based tags
-                    ai_analysis["routing_ids"] = []
-                    ai_analysis["routing_projects"] = []
-                    ai_analysis["routing_organizations"] = []
-                except Exception as meta_err:
-                    logger.warning("[Doc %d] Regex metadata extraction failed: %s", document_id, meta_err)
-                    ai_analysis["routing_ids"] = []
-                    ai_analysis["routing_projects"] = []
-                    ai_analysis["routing_organizations"] = []
+        return ai_analysis
 
-                # Build simple confidence votes for AI tags (single-pass analysis)
-                try:
-                    tag_votes = []
-                    for t in ai_analysis.get("tags", []) or []:
-                        tag_votes.append({"name": t, "confidence": 0.5})
-                    ai_analysis["tag_votes"] = tag_votes
-                except Exception:
-                    pass
-
-                # ── STEP 4: Store metadata + summary ─────────────────────────────
-                await self._store_metadata_and_summary(db, document_id, organization_id, ai_analysis)
-
-                if await _abort_if_timed_out("metadata_saved"):
+    async def _stage_save_metadata(
+        self,
+        document_id: int,
+        organization_id: Optional[int],
+        normalized_text: str,
+        language: str,
+        ai_analysis: Dict[str, Any],
+    ):
+        """Save metadata, summary, and extraction deadlines."""
+        try:
+            async with AsyncSessionLocal() as db:
+                document = await document_crud.get(db, document_id)
+                if not document:
                     return
 
-                # ── STEP 4.5: Deadline Extraction ───────────────────────────────
-                logger.info("[Doc %d] Extracting deadlines...", document_id)
-                try:
-                    # 1. First, check if LLM already extracted high-quality deadlines
-                    llm_dates = ai_analysis.get("key_dates", [])
-                    extracted_deadlines = []
-                    
-                    # Map LLM types to our Enum
-                    type_map = {
-                        "hearing": DeadlineType.HEARING,
-                        "filing": DeadlineType.FILING,
-                        "response": DeadlineType.RESPONSE,
-                        "appeal": DeadlineType.APPEAL,
-                        "statute_of_limitations": DeadlineType.STATUTE_OF_LIMITATIONS
-                    }
+                # Update classification
+                classification = ai_analysis.get("classification", "Unknown Document")
+                document.classification = classification
+                await db.commit()
 
-                    for d in llm_dates:
-                        # Map LLM type string to enum
+                # Save metadata
+                await db.execute(delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id))
+                metadata = DocumentMetadata(
+                    document_id=document_id,
+                    dates=_dedup(ai_analysis.get("dates", [])),
+                    entities=_extract_rich_entities(ai_analysis),
+                    amounts=_dedup(ai_analysis.get("amounts", [])),
+                    case_numbers=_dedup(ai_analysis.get("case_numbers", []))
+                )
+                db.add(metadata)
+                await db.commit()
+
+                # Save summary
+                await db.execute(delete(Summary).where(Summary.document_id == document_id))
+                summary_obj = Summary(
+                    document_id=document_id,
+                    organization_id=organization_id,
+                    content=ai_analysis.get("summary", "No summary available"),
+                    key_dates=_dedup(ai_analysis.get("dates", [])),
+                    parties=_dedup([p.get("name") if isinstance(p, dict) else p 
+                                    for p in ai_analysis.get("parties", []) 
+                                    if isinstance(p, (dict, str))]),
+                    missing_documents_suggestion="\n".join(ai_analysis.get("missing_documents", []))
+                )
+                db.add(summary_obj)
+                await db.commit()
+
+                # Save deadlines
+                extracted_deadlines = []
+                llm_dates = ai_analysis.get("key_dates", [])
+                type_map = {
+                    "hearing": DeadlineType.HEARING,
+                    "filing": DeadlineType.FILING,
+                    "response": DeadlineType.RESPONSE,
+                    "appeal": DeadlineType.APPEAL,
+                    "statute_of_limitations": DeadlineType.STATUTE_OF_LIMITATIONS
+                }
+
+                for d in llm_dates:
+                    try:
                         llm_type_str = str(d.get("type", "other")).lower()
                         mapped_type = type_map.get(llm_type_str, DeadlineType.OTHER)
-                        
-                        # Include if it's marked critical OR has a legal type OR just has a good description
-                        is_critical = d.get("is_critical_deadline")
-                        if isinstance(is_critical, str):
-                            is_critical = is_critical.lower() == 'true'
-                            
-                        if is_critical or mapped_type != DeadlineType.OTHER or d.get("description"):
-                            try:
-                                d_date_str = d.get("date")
-                                # Try a few formats if strptime fails
-                                d_date = dateparser.parse(d_date_str)
-                                if d_date:
-                                    extracted_deadlines.append({
-                                        "date": d_date,
-                                        "type": mapped_type,
-                                        "description": d.get("description", "Legal Deadline"),
-                                        "confidence": 0.95
-                                    })
-                            except:
-                                continue
+                        d_date = dateparser.parse(d.get("date"))
+                        if d_date:
+                            extracted_deadlines.append({
+                                "date": d_date,
+                                "type": mapped_type,
+                                "description": d.get("description", "Legal Deadline"),
+                                "confidence": 0.95
+                            })
+                    except:
+                        continue
 
-                    # 2. Fallback/Augment with NER
+                # NER fallback
+                try:
                     ner_results = ner_service.extract_deadlines(normalized_text, language=language)
-                    # Deduplicate: if we already have a date on this day, skip NER
-                    existing_days = {n["date"].date() for n in extracted_deadlines}
+                    existing_days = {d["date"].date() for d in extracted_deadlines}
                     for n in ner_results:
                         if n["date"].date() not in existing_days:
                             extracted_deadlines.append(n)
+                except:
+                    pass
 
-                    # 3. Save to DB
-                    for d_info in extracted_deadlines:
-                        new_deadline = Deadline(
-                            document_id=document_id,
-                            case_id=document.case_id,
-                            organization_id=organization_id,
-                            deadline_date=d_info["date"],
-                            deadline_type=d_info["type"],
-                            description=d_info["description"],
-                            confidence_score=d_info["confidence"]
-                        )
-                        db.add(new_deadline)
-                    await db.commit()
-                    logger.info("[Doc %d] Processed %d legal deadlines.", document_id, len(extracted_deadlines))
-                except Exception as deadline_err:
-                    logger.warning("[Doc %d] Deadline extraction failed: %s", document_id, deadline_err)
+                # Save all deadlines
+                for d_info in extracted_deadlines:
+                    deadline = Deadline(
+                        document_id=document_id,
+                        case_id=document.case_id,
+                        organization_id=organization_id,
+                        deadline_date=d_info["date"],
+                        deadline_type=d_info["type"],
+                        description=d_info["description"],
+                        confidence_score=d_info["confidence"]
+                    )
+                    db.add(deadline)
+                await db.commit()
+                logger.info(f"[Doc {document_id}] Saved {len(extracted_deadlines)} deadlines")
 
+        except Exception as e:
+            logger.warning(f"[Doc {document_id}] Metadata save failed: {e}")
+
+    async def _stage_smart_routing(self, document_id: int):
+        """Smart Collections routing stage."""
+        try:
+            async with AsyncSessionLocal() as db:
                 document = await document_crud.get(db, document_id)
-                if not document:
-                    return
-                await _set_status(db, document, DocumentProcessingStatus.PROCESSING,
-                                  "metadata_saved", 50.0)
-
-                # ── STEP 5: Smart Collections routing ────────────────────────────
-                try:
+                if document:
+                    # Re-fetch AI analysis from metadata
+                    result = await db.execute(
+                        select(DocumentMetadata).filter(DocumentMetadata.document_id == document_id)
+                    )
+                    metadata = result.scalars().first()
+                    ai_analysis = {
+                        "dates": metadata.dates if metadata else [],
+                        "case_numbers": metadata.case_numbers if metadata else [],
+                    }
                     await smart_collections_service.route_document_to_collections(
                         db, document, ai_analysis
                     )
-                    logger.info("[Doc %d] Smart Collections routing complete.", document_id)
-                except Exception as sc_err:
-                    logger.warning("[Doc %d] Smart Collections routing failed (non-fatal): %s",
-                                   document_id, sc_err)
+                    await db.commit()
+        except Exception as e:
+            logger.warning(f"[Doc {document_id}] Smart routing failed (non-fatal): {e}")
 
-                # ── STEP 6: Chunk & embed ────────────────────────────────────────
-                document = await document_crud.get(db, document_id)
-                if not document:
-                    return
-                if await _abort_if_timed_out("embedding"):
-                    return
-                await self._chunk_and_embed(db, document, normalized_text,
-                                            progress_start=50.0, progress_end=95.0)
-
-                # ── STEP 7: Finalise ─────────────────────────────────────────────
-                document = await document_crud.get(db, document_id)
-                if not document:
-                    return
-                await _set_status(db, document, DocumentProcessingStatus.COMPLETED,
-                                  "completed", 100.0)
-                logger.info("[Doc %d] ✅ Processing complete.", document_id)
-
-                # Broadcast WebSocket event (non-fatal)
-                try:
-                    from app.api.ws.notifications import notification_manager
-                    await notification_manager.broadcast_to_organization(
-                        organization_id,
-                        {
-                            "type": "DOCUMENT_PROCESSED",
-                            "document_id": document_id,
-                            "message": f"Document '{document.filename}' is ready.",
-                        },
-                    )
-                except Exception:
-                    pass
-
-            except Exception as exc:
-                logger.exception("[Doc %d] Unexpected pipeline failure: %s", document_id, exc)
-                try:
-                    await db.rollback()
-                    document_fail = await document_crud.get(db, document_id)
-                    if document_fail:
-                        await _set_status(db, document_fail, DocumentProcessingStatus.FAILED,
-                                         "pipeline_error", document_fail.processing_progress or 0.0)
-                        # Persist structured error log for observability and retries
-                        log_entry = DocumentProcessingLog(
-                            document_id=document_id,
-                            stage=document_fail.processing_stage or "pipeline_error",
-                            error_message=str(exc),
-                            stack_trace="".join(tb.format_exception(type(exc), exc, exc.__traceback__)),
-                        )
-                        db.add(log_entry)
-                        await db.commit()
-                except Exception:
-                    pass
-                # Broadcast failure
-                try:
-                    from app.api.ws.notifications import notification_manager
-                    await notification_manager.broadcast_to_organization(
-                        organization_id,
-                        {"type": "DOCUMENT_PROCESSED", "document_id": document_id,
-                         "message": "Processing failed."},
-                    )
-                except Exception:
-                    pass
-
-    # -----------------------------------------------------------------------
-    # Private helpers
-    # -----------------------------------------------------------------------
-
-    async def _store_metadata_and_summary(
-        self,
-        db: AsyncSession,
-        document_id: int,
-        organization_id: Optional[int],
-        ai_analysis: Dict[str, Any],
-    ):
-        """Idempotent helper to store extracted metadata arrays and summary text."""
-        all_dates = ai_analysis.get("dates", [])
-        all_amounts = ai_analysis.get("amounts", [])
-        all_case_numbers = ai_analysis.get("case_numbers", [])
-        all_missing = ai_analysis.get("missing_documents", [])
-        summary_text = ai_analysis.get("summary")
-
-        # Overwrite existing Metadata
-        await db.execute(delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id))
-        metadata = DocumentMetadata(
-            document_id=document_id,
-            dates=_dedup(all_dates),
-            entities=_extract_rich_entities(ai_analysis),
-            amounts=_dedup(all_amounts),
-            case_numbers=_dedup(all_case_numbers)
-        )
-        db.add(metadata)
-
-        # Overwrite existing Summary
-        await db.execute(delete(Summary).where(Summary.document_id == document_id))
-        summary_obj = Summary(
-            document_id=document_id,
-            organization_id=organization_id,
-            content=str(summary_text) if summary_text else "No text summary could be generated.",
-            key_dates=_dedup(all_dates),
-            parties=_dedup([p.get('name') if isinstance(p, dict) else p for p in ai_analysis.get("parties", []) if isinstance(p, (dict, str))]),
-            missing_documents_suggestion="\n".join(_dedup(all_missing)) if all_missing else None
-        )
-        db.add(summary_obj)
-        await db.commit()
-
-
-    async def _chunk_and_embed(
-        self,
-        db: AsyncSession,
-        document: Document,
-        text: str,
-        progress_start: float,
-        progress_end: float,
-        chunk_size: int = 2000,
-        chunk_overlap: int = 200,
-    ):
-        """
-        Splits text, generates vector embeddings, and stores them in DB.
-        Updates processing progress continuously.
-        Is completely idempotent.
-        """
+    async def _stage_chunk_and_embed(self, document_id: int, text: str, chunk_size: int = 2000, chunk_overlap: int = 200):
+        """Chunk text and generate embeddings."""
         if not text.strip():
-            logger.info("[Doc %d] No text to chunk.", document.id)
             return
 
-        # Simple overlap chunking
         chunks = []
         i = 0
         while i < len(text):
             chunks.append(text[i : i + chunk_size])
             i += chunk_size - chunk_overlap
 
-        total_chunks = len(chunks)
-        document.total_chunks = total_chunks
-        document.processing_stage = "generating_embeddings"
-        await db.commit()
+        try:
+            async with AsyncSessionLocal() as db:
+                document = await document_crud.get(db, document_id)
+                if not document:
+                    return
 
-        progress_range = progress_end - progress_start
-        progress_per_chunk = progress_range / total_chunks if total_chunks > 0 else 0
+                # Clear old chunks
+                await db.execute(delete(DocumentChunk).filter(DocumentChunk.document_id == document_id))
+                await db.commit()
 
-        # Idempotent cleanup of old chunks
-        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
-        await db.commit()
+                # Split by page if available
+                page_marker = "--- Page Break ---"
+                if page_marker in text:
+                    pages = text.split(f"\n\n{page_marker}\n\n")
+                else:
+                    pages = [text]
 
-        # Split by page marker if present to get approximate page numbers
-        page_marker = "--- Page Break ---"
-        if page_marker in text:
-            pages = text.split(f"\n\n{page_marker}\n\n")
-        else:
-            pages = [text]
+                chunk_idx = 0
+                total_chunks = len(chunks)
 
-        chunk_idx = 0
-        for p_idx, p_text in enumerate(pages, start=1):
-            # Simple overlap chunking per page
-            p_chunks = []
-            i = 0
-            while i < len(p_text):
-                p_chunks.append(p_text[i : i + chunk_size])
-                i += chunk_size - chunk_overlap
-            
-            for chunk_text in p_chunks:
-                vector = None
-                try:
-                    vector = await llm_service.generate_embedding(chunk_text)
-                except Exception as e:
-                    logger.warning("[Doc %d/Chunk %d] Embedding failed: %s", document.id, chunk_idx + 1, e)
+                for p_idx, p_text in enumerate(pages, start=1):
+                    p_chunks = []
+                    i = 0
+                    while i < len(p_text):
+                        p_chunks.append(p_text[i : i + chunk_size])
+                        i += chunk_size - chunk_overlap
 
-                db_chunk = DocumentChunk(
-                    document_id=document.id,
-                    chunk_index=chunk_idx,
-                    text_content=chunk_text,
-                    embedding=vector,
-                    page_number=p_idx
-                )
-                db.add(db_chunk)
-                
-                # Commit every 5 chunks to balance I/O vs memory
-                if chunk_idx % 5 == 0:
-                    document.processed_chunks = chunk_idx + 1
-                    document.processing_progress = round(progress_start + (progress_per_chunk * (chunk_idx + 1)), 1)
-                    await db.commit()
-                
-                chunk_idx += 1
+                    for chunk_text in p_chunks:
+                        vector = None
+                        try:
+                            vector = await llm_service.generate_embedding(chunk_text)
+                        except Exception:
+                            pass
 
-        document.processed_chunks = chunk_idx
-        document.processing_progress = progress_end
-        await db.commit()
-        logger.info("[Doc %d] Chunks/embeddings stored: %d", document.id, chunk_idx)
+                        db_chunk = DocumentChunk(
+                            document_id=document_id,
+                            chunk_index=chunk_idx,
+                            text_content=chunk_text,
+                            embedding=vector,
+                            page_number=p_idx
+                        )
+                        db.add(db_chunk)
+
+                        # Commit every 5 chunks
+                        if chunk_idx % 5 == 0:
+                            document.processed_chunks = chunk_idx + 1
+                            document.total_chunks = total_chunks
+                            await db.commit()
+
+                        chunk_idx += 1
+
+                document.processed_chunks = chunk_idx
+                document.total_chunks = total_chunks
+                await db.commit()
+                logger.info(f"[Doc {document_id}] Generated {chunk_idx} chunks with embeddings")
+
+        except Exception as e:
+            logger.error(f"[Doc {document_id}] Chunking failed: {e}")
 
 
 document_processing_service = DocumentProcessingService()

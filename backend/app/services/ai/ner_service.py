@@ -8,16 +8,6 @@ from app.db.models.deadline import DeadlineType
 class NERService:
     def __init__(self):
         self._nlp_en = None  # Lazy-loaded on first use
-
-    @property
-    def nlp_en(self):
-        if self._nlp_en is None:
-            try:
-                self._nlp_en = spacy.load("en_core_web_sm")
-            except Exception:
-                print("Warning: en_core_web_sm not found. English NER will be limited.")
-        return self._nlp_en
-
         # Keywords for classification
         self.classification_keywords = {
             DeadlineType.HEARING: ["hearing", "court", "trial", "appearance", "דיון", "משפט", "ישיבה", "קדם משפט"],
@@ -31,8 +21,17 @@ class NERService:
         self.hebrew_months = [
             "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
             "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
-            "במרץ", "בינואר", "בפברואר" # Common prefix
+            "במרץ", "בינואר", "בפברואר"  # Common prefix
         ]
+
+    @property
+    def nlp_en(self):
+        if self._nlp_en is None:
+            try:
+                self._nlp_en = spacy.load("en_core_web_sm")
+            except Exception:
+                print("Warning: en_core_web_sm not found. English NER will be limited.")
+        return self._nlp_en
 
     def extract_deadlines(self, text: str, language: str = "en") -> List[Dict[str, Any]]:
         """
