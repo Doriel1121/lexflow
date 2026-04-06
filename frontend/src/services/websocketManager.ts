@@ -11,7 +11,8 @@ class WebSocketManager {
   private reconnectTimeoutRef: NodeJS.Timeout | null = null;
   private isConnectingRef = false;
   private messageListeners: Set<MessageListener> = new Set();
-  private connectionStateListeners: Set<(connected: boolean) => void> = new Set();
+  private connectionStateListeners: Set<(connected: boolean) => void> =
+    new Set();
 
   private constructor() {}
 
@@ -26,43 +27,47 @@ class WebSocketManager {
    * Establish WebSocket connection (only if not already connected)
    */
   connect(): void {
-    console.log('[WebSocket Manager] connect() called');
-    console.log('[WebSocket Manager] Current state:', {
+    console.log("[WebSocket Manager] connect() called");
+    console.log("[WebSocket Manager] Current state:", {
       isConnecting: this.isConnectingRef,
       wsState: this.ws?.readyState,
-      wsStates: { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 }
+      wsStates: { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 },
     });
 
     if (this.isConnectingRef || this.ws?.readyState === WebSocket.OPEN) {
-      console.log('[WebSocket] Already connected or connecting');
+      console.log("[WebSocket] Already connected or connecting");
       return;
     }
 
     try {
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem("access_token");
       if (!token) {
-        console.warn('[WebSocket] No auth token found in localStorage');
+        console.warn("[WebSocket] No auth token found in localStorage");
         return;
       }
 
-      console.log('[WebSocket Manager] Token found, attempting connection...');
+      console.log("[WebSocket Manager] Token found, attempting connection...");
       this.isConnectingRef = true;
 
       // Determine WebSocket URL
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-      console.log('[WebSocket Manager] API Base URL:', apiBaseUrl);
-      
+      const apiBaseUrl =
+        import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      console.log("[WebSocket Manager] API Base URL:", apiBaseUrl);
+
       const wsUrl = apiBaseUrl
-        .replace('http://', 'ws://')
-        .replace('https://', 'wss://');
+        .replace("http://", "ws://")
+        .replace("https://", "wss://");
 
       const fullUrl = `${wsUrl}/api/v1/ws/notifications/${token}`;
-      console.log('[WebSocket Manager] Connecting to:', fullUrl.replace(token, '***'));
+      console.log(
+        "[WebSocket Manager] Connecting to:",
+        fullUrl.replace(token, "***"),
+      );
 
       this.ws = new WebSocket(fullUrl);
 
       this.ws.onopen = () => {
-        console.log('[WebSocket Manager] Connected ✅');
+        console.log("[WebSocket Manager] Connected ✅");
         this.isConnectingRef = false;
 
         // Clear any pending reconnect timeout
@@ -72,7 +77,7 @@ class WebSocketManager {
         }
 
         // Notify all listeners
-        window.dispatchEvent(new CustomEvent('websocket_connected'));
+        window.dispatchEvent(new CustomEvent("websocket_connected"));
         this.notifyConnectionStateListeners(true);
       };
 
@@ -81,26 +86,26 @@ class WebSocketManager {
           const data = JSON.parse(event.data);
 
           // Silently handle server heartbeat / pong frames
-          if (data.type === 'heartbeat' || data.type === 'pong') {
+          if (data.type === "heartbeat" || data.type === "pong") {
             return;
           }
 
-          console.log('[WebSocket Manager] Message received:', data);
+          console.log("[WebSocket Manager] Message received:", data);
 
           // Trigger custom events for backward compatibility
-          if (data.type === 'DOCUMENT_PROCESSED') {
+          if (data.type === "DOCUMENT_PROCESSED") {
             window.dispatchEvent(
-              new CustomEvent('document_processed', {
+              new CustomEvent("document_processed", {
                 detail: { document_id: data.document_id },
-              })
+              }),
             );
           }
 
-          if (data.type === 'DOCUMENT_STATUS_UPDATE') {
+          if (data.type === "DOCUMENT_STATUS_UPDATE") {
             window.dispatchEvent(
-              new CustomEvent('document_status_update', {
+              new CustomEvent("document_status_update", {
                 detail: data,
-              })
+              }),
             );
           }
 
@@ -109,38 +114,40 @@ class WebSocketManager {
             try {
               listener(data);
             } catch (err) {
-              console.error('[WebSocket Manager] Error in listener:', err);
+              console.error("[WebSocket Manager] Error in listener:", err);
             }
           });
         } catch (err) {
-          console.error('[WebSocket Manager] Failed to parse message:', err);
+          console.error("[WebSocket Manager] Failed to parse message:", err);
         }
       };
 
       this.ws.onerror = (error) => {
-        console.error('[WebSocket Manager] Error:', error);
+        console.error("[WebSocket Manager] Error:", error);
         this.isConnectingRef = false;
       };
 
       this.ws.onclose = () => {
-        console.log('[WebSocket Manager] Disconnected, will reconnect in 5s...');
+        console.log(
+          "[WebSocket Manager] Disconnected, will reconnect in 5s...",
+        );
         this.isConnectingRef = false;
         this.ws = null;
         this.notifyConnectionStateListeners(false);
 
         // Auto-reconnect after 5 seconds
         this.reconnectTimeoutRef = setTimeout(() => {
-          console.log('[WebSocket Manager] Attempting auto-reconnect...');
+          console.log("[WebSocket Manager] Attempting auto-reconnect...");
           this.connect();
         }, 5000);
       };
     } catch (err) {
-      console.error('[WebSocket Manager] Connection failed:', err);
+      console.error("[WebSocket Manager] Connection failed:", err);
       this.isConnectingRef = false;
 
       // Retry connection after 5 seconds
       this.reconnectTimeoutRef = setTimeout(() => {
-        console.log('[WebSocket Manager] Retrying connection after error...');
+        console.log("[WebSocket Manager] Retrying connection after error...");
         this.connect();
       }, 5000);
     }
@@ -199,7 +206,10 @@ class WebSocketManager {
       try {
         listener(connected);
       } catch (err) {
-        console.error('[WebSocket Manager] Error in connection state listener:', err);
+        console.error(
+          "[WebSocket Manager] Error in connection state listener:",
+          err,
+        );
       }
     });
   }

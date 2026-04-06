@@ -149,6 +149,26 @@ async def _update_status(
         logger.warning(f"[Doc {document_id}] Failed to update status: {e}")
 
 
+async def _set_status_fresh(
+    document_id: int,
+    status: DocumentProcessingStatus,
+    stage: str,
+    progress: float,
+):
+    """Update document status using a fresh session. Safe for use after corrupted sessions."""
+    try:
+        async with AsyncSessionLocal() as fresh_db:
+            document = await document_crud.get(fresh_db, document_id)
+            if document:
+                document.processing_status = status
+                document.processing_stage = stage
+                document.processing_progress = round(progress, 1)
+                await fresh_db.commit()
+                logger.info(f"[Doc {document_id}] Status updated (fresh session): {stage}")
+    except Exception as e:
+        logger.warning(f"[Doc {document_id}] Failed to update status in fresh session: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Main processing service
 # ---------------------------------------------------------------------------

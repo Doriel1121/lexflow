@@ -80,14 +80,14 @@ const CaseDetailPage: React.FC = () => {
   // Use WebSocket for real-time document updates (replaces polling)
   const { isConnected } = useDocumentWebSocket((data) => {
     // Handle document updates via WebSocket
-    if (data.type === 'DOCUMENT_STATUS_UPDATE') {
-      console.log('[Document Status]', data);
+    if (data.type === "DOCUMENT_STATUS_UPDATE") {
+      console.log("[Document Status]", data);
       // Fetch case data to get latest document status
       if (uploading) {
         fetchCaseSilent();
       }
-    } else if (data.type === 'DOCUMENT_PROCESSED') {
-      console.log('[Document Processed]', data);
+    } else if (data.type === "DOCUMENT_PROCESSED") {
+      console.log("[Document Processed]", data);
       // Fetch case data when document processing completes
       fetchCaseSilent();
       setUploading(false);
@@ -97,15 +97,17 @@ const CaseDetailPage: React.FC = () => {
   // Fallback: Keep light polling as backup (every 5 seconds) if WebSocket fails
   useEffect(() => {
     let fallbackInterval: NodeJS.Timeout | null = null;
-    
+
     // Only poll if uploading AND WebSocket is not connected
     if (uploading && id && !isConnected) {
-      console.log('[CaseDetail] WebSocket not connected, using fallback polling');
+      console.log(
+        "[CaseDetail] WebSocket not connected, using fallback polling",
+      );
       fallbackInterval = setInterval(() => {
         fetchCaseSilent();
       }, 5000);
     }
-    
+
     return () => {
       if (fallbackInterval) clearInterval(fallbackInterval);
     };

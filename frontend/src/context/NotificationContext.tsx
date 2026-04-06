@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { notificationsService } from '../services/notifications';
-import { API_BASE_URL } from '../services/api';
-import { useAuth } from './AuthContext';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+  useCallback,
+} from "react";
+import { notificationsService } from "../services/notifications";
+import { API_BASE_URL } from "../services/api";
+import { useAuth } from "./AuthContext";
 
 export interface Notification {
   id: number;
@@ -26,14 +33,18 @@ interface NotificationContextProps {
   markAllAsRead: () => Promise<void>;
 }
 
-const NotificationContext = createContext<NotificationContextProps | undefined>(undefined);
+const NotificationContext = createContext<NotificationContextProps | undefined>(
+  undefined,
+);
 
-export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const NotificationProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const { isAuthenticated } = useAuth();
-  const token = localStorage.getItem('access_token');
+  const token = localStorage.getItem("access_token");
 
   const fetchNotifications = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -41,7 +52,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       setLoading(true);
       const [notifs, count] = await Promise.all([
         notificationsService.getNotifications(),
-        notificationsService.getUnreadCount()
+        notificationsService.getUnreadCount(),
       ]);
       setNotifications(notifs);
       setUnreadCount(count);
@@ -64,8 +75,10 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   const markAsRead = async (id: number) => {
     try {
       await notificationsService.markAsRead(id);
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (error) {
       console.error(`Failed to mark notification ${id} as read`, error);
     }
@@ -74,7 +87,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   const markAllAsRead = async () => {
     try {
       await notificationsService.markAllAsRead();
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch (error) {
       console.error("Failed to mark all notifications as read", error);
@@ -82,9 +95,16 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   };
 
   return (
-    <NotificationContext.Provider value={{
-      notifications, unreadCount, loading, fetchNotifications, markAsRead, markAllAsRead
-    }}>
+    <NotificationContext.Provider
+      value={{
+        notifications,
+        unreadCount,
+        loading,
+        fetchNotifications,
+        markAsRead,
+        markAllAsRead,
+      }}
+    >
       {children}
     </NotificationContext.Provider>
   );
@@ -93,7 +113,9 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 export const useNotifications = () => {
   const context = useContext(NotificationContext);
   if (context === undefined) {
-    throw new Error('useNotifications must be used within a NotificationProvider');
+    throw new Error(
+      "useNotifications must be used within a NotificationProvider",
+    );
   }
   return context;
 };

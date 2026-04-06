@@ -103,24 +103,24 @@ export function DocumentList() {
   // Listen for WebSocket events
   useEffect(() => {
     const handleDocumentProcessed = () => {
-      console.log('[DocumentList] Document processing complete via WebSocket');
+      console.log("[DocumentList] Document processing complete via WebSocket");
       fetchDocuments(); // Refresh full list when any document is done
       setUploading(false);
     };
 
     const handleStatusUpdate = () => {
-      console.log('[DocumentList] Status update via WebSocket');
+      console.log("[DocumentList] Status update via WebSocket");
       if (uploading) {
         fetchDocuments(); // Refresh if we're actively uploading
       }
     };
 
-    window.addEventListener('document_processed', handleDocumentProcessed);
-    window.addEventListener('document_status_update', handleStatusUpdate);
+    window.addEventListener("document_processed", handleDocumentProcessed);
+    window.addEventListener("document_status_update", handleStatusUpdate);
 
     return () => {
-      window.removeEventListener('document_processed', handleDocumentProcessed);
-      window.removeEventListener('document_status_update', handleStatusUpdate);
+      window.removeEventListener("document_processed", handleDocumentProcessed);
+      window.removeEventListener("document_status_update", handleStatusUpdate);
     };
   }, [uploading, t]);
 

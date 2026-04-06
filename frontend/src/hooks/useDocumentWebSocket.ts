@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import websocketManager from '../services/websocketManager';
+import { useEffect, useState } from "react";
+import websocketManager from "../services/websocketManager";
 
 /**
  * Hook for using the global WebSocket connection.
@@ -7,13 +7,17 @@ import websocketManager from '../services/websocketManager';
  * Simply registers listeners for events.
  */
 export const useDocumentWebSocket = (onStatusUpdate?: (data: any) => void) => {
-  const [isConnected, setIsConnected] = useState(websocketManager.isConnected());
+  const [isConnected, setIsConnected] = useState(
+    websocketManager.isConnected(),
+  );
 
   useEffect(() => {
     // Subscribe to connection state changes
-    const unsubscribeConnectionState = websocketManager.onConnectionStateChange((connected) => {
-      setIsConnected(connected);
-    });
+    const unsubscribeConnectionState = websocketManager.onConnectionStateChange(
+      (connected) => {
+        setIsConnected(connected);
+      },
+    );
 
     return () => {
       unsubscribeConnectionState();

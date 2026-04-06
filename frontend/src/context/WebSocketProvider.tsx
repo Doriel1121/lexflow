@@ -1,24 +1,30 @@
-import React, { useEffect } from 'react';
-import { useAuth } from './AuthContext';
-import websocketManager from '../services/websocketManager';
+import React, { useEffect } from "react";
+import { useAuth } from "./AuthContext";
+import websocketManager from "../services/websocketManager";
 
 /**
  * WebSocket Provider - Initializes and manages the global WebSocket connection
  * Wraps the app so the connection persists across page navigation
  */
-export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { isAuthenticated } = useAuth();
 
   useEffect(() => {
-    console.log('[WebSocketProvider] Auth state changed:', { isAuthenticated });
-    
+    console.log("[WebSocketProvider] Auth state changed:", { isAuthenticated });
+
     if (isAuthenticated) {
-      console.log('[WebSocketProvider] User authenticated, initializing WebSocket...');
-      const token = localStorage.getItem('access_token');
-      console.log('[WebSocketProvider] Token exists:', !!token);
+      console.log(
+        "[WebSocketProvider] User authenticated, initializing WebSocket...",
+      );
+      const token = localStorage.getItem("access_token");
+      console.log("[WebSocketProvider] Token exists:", !!token);
       websocketManager.connect();
     } else {
-      console.log('[WebSocketProvider] User not authenticated, disconnecting WebSocket...');
+      console.log(
+        "[WebSocketProvider] User not authenticated, disconnecting WebSocket...",
+      );
       websocketManager.disconnect();
     }
 

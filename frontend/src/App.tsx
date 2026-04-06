@@ -26,51 +26,57 @@
  *   - The tenant Layout is never rendered for them
  */
 
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import './lib/i18n';
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import "./lib/i18n";
 
 // ── Layout shells ────────────────────────────────────────────────────────
-import { Layout } from './components/layout/Layout';
-import { AdminLayout } from './components/layout/AdminLayout';
+import { Layout } from "./components/layout/Layout";
+import { AdminLayout } from "./components/layout/AdminLayout";
 
 // ── Guards ───────────────────────────────────────────────────────────────
-import { RoleGuard, TenantOnlyGuard, AdminOnlyGuard } from './components/guards/RoleGuard';
+import {
+  RoleGuard,
+  TenantOnlyGuard,
+  AdminOnlyGuard,
+} from "./components/guards/RoleGuard";
 
 // ── Auth pages ───────────────────────────────────────────────────────────
-import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
-import OAuthCallback from './pages/auth/OAuthCallback';
-import AcceptInvite from './pages/auth/AcceptInvite';
+import Login from "./pages/auth/Login";
+import Register from "./pages/auth/Register";
+import OAuthCallback from "./pages/auth/OAuthCallback";
+import AcceptInvite from "./pages/auth/AcceptInvite";
 
 // ── Tenant pages ─────────────────────────────────────────────────────────
-import Dashboard from './pages/dashboard/Dashboard';
-import EmailIntake from './pages/email/EmailIntake';
-import Documents from './pages/documents/Documents';
-import Cases from './pages/cases/Cases';
-import CaseDetailPage from './pages/CaseDetailPage';
-import { DocumentViewer } from './components/documents/DocumentViewer';
-import Settings from './pages/settings/Settings';
-import OrgAuditLogs from './pages/settings/OrgAuditLogs';
-import TeamSettings from './pages/settings/TeamSettings';
-import SearchPage from './pages/SearchPage';
-import { CollectionsList } from './pages/collections/CollectionsList';
-import { CollectionView } from './pages/collections/CollectionView';
-import { ClientsPage } from './pages/clients/ClientsPage';
-import { CreateClientPage } from './pages/clients/CreateClientPage';
-import CreateCasePage from './pages/CreateCasePage';
+import Dashboard from "./pages/dashboard/Dashboard";
+import EmailIntake from "./pages/email/EmailIntake";
+import Documents from "./pages/documents/Documents";
+import Cases from "./pages/cases/Cases";
+import CaseDetailPage from "./pages/CaseDetailPage";
+import { DocumentViewer } from "./components/documents/DocumentViewer";
+import Settings from "./pages/settings/Settings";
+import OrgAuditLogs from "./pages/settings/OrgAuditLogs";
+import TeamSettings from "./pages/settings/TeamSettings";
+import SearchPage from "./pages/SearchPage";
+import { CollectionsList } from "./pages/collections/CollectionsList";
+import { CollectionView } from "./pages/collections/CollectionView";
+import { ClientsPage } from "./pages/clients/ClientsPage";
+import { CreateClientPage } from "./pages/clients/CreateClientPage";
+import CreateCasePage from "./pages/CreateCasePage";
 
 // ── Admin pages ───────────────────────────────────────────────────────────
-import AdminDashboard from './pages/admin/dashboard/AdminDashboard';
-import AdminOrganizations from './pages/admin/organizations/AdminOrganizations';
-import AdminUsers from './pages/admin/users/AdminUsers';
-import AdminAuditLogs from './pages/admin/audit/AdminAuditLogs';
+import AdminDashboard from "./pages/admin/dashboard/AdminDashboard";
+import AdminOrganizations from "./pages/admin/organizations/AdminOrganizations";
+import AdminUsers from "./pages/admin/users/AdminUsers";
+import AdminAuditLogs from "./pages/admin/audit/AdminAuditLogs";
 
 // ── Providers ────────────────────────────────────────────────────────────
-import { AuthProvider, useAuth } from './context/AuthContext';import { WebSocketProvider } from './context/WebSocketProvider';import { NotificationProvider } from './context/NotificationContext';
-import { SnackbarProvider } from './context/SnackbarContext';
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { WebSocketProvider } from "./context/WebSocketProvider";
+import { NotificationProvider } from "./context/NotificationContext";
+import { SnackbarProvider } from "./context/SnackbarContext";
 
-import { normalizeRole } from './lib/rbac';
+import { normalizeRole } from "./lib/rbac";
 
 // ─── Loading screen ───────────────────────────────────────────────────────
 
@@ -101,9 +107,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   // System Admin trying to access the root → send to /admin
-  if (normalizeRole(user?.role) === 'admin') {
+  if (normalizeRole(user?.role) === "admin") {
     // Only redirect if not already on an /admin path
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin')) {
+    if (
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/admin")
+    ) {
       return <Navigate to="/admin" replace />;
     }
   }
@@ -117,9 +126,9 @@ function AppRoutes() {
   return (
     <Routes>
       {/* ── Public routes ─────────────────────────────────────────────── */}
-      <Route path="/login"              element={<Login />} />
-      <Route path="/register"           element={<Register />} />
-      <Route path="/auth/callback"      element={<OAuthCallback />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/auth/callback" element={<OAuthCallback />} />
       <Route path="/auth/accept-invite" element={<AcceptInvite />} />
 
       {/* ── System Admin routes ───────────────────────────────────────── */}
@@ -140,10 +149,10 @@ function AppRoutes() {
           </AuthGate>
         }
       >
-        <Route index            element={<AdminDashboard />} />
+        <Route index element={<AdminDashboard />} />
         <Route path="organizations" element={<AdminOrganizations />} />
-        <Route path="users"         element={<AdminUsers />} />
-        <Route path="audit-logs"    element={<AdminAuditLogs />} />
+        <Route path="users" element={<AdminUsers />} />
+        <Route path="audit-logs" element={<AdminAuditLogs />} />
       </Route>
 
       {/* ── Tenant routes ─────────────────────────────────────────────── */}
@@ -173,25 +182,95 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
 
         {/* ── Tenant-only pages (admin blocked, redirected to /admin) ─── */}
-        <Route path="cases"     element={<TenantOnlyGuard><Cases /></TenantOnlyGuard>} />
-        <Route path="cases/new" element={<TenantOnlyGuard><CreateCasePage /></TenantOnlyGuard>} />
-        <Route path="cases/:id" element={<TenantOnlyGuard><CaseDetailPage /></TenantOnlyGuard>} />
+        <Route
+          path="cases"
+          element={
+            <TenantOnlyGuard>
+              <Cases />
+            </TenantOnlyGuard>
+          }
+        />
+        <Route
+          path="cases/new"
+          element={
+            <TenantOnlyGuard>
+              <CreateCasePage />
+            </TenantOnlyGuard>
+          }
+        />
+        <Route
+          path="cases/:id"
+          element={
+            <TenantOnlyGuard>
+              <CaseDetailPage />
+            </TenantOnlyGuard>
+          }
+        />
 
-        <Route path="clients"   element={<TenantOnlyGuard><ClientsPage /></TenantOnlyGuard>} />
-        <Route path="clients/new" element={<TenantOnlyGuard><CreateClientPage /></TenantOnlyGuard>} />
+        <Route
+          path="clients"
+          element={
+            <TenantOnlyGuard>
+              <ClientsPage />
+            </TenantOnlyGuard>
+          }
+        />
+        <Route
+          path="clients/new"
+          element={
+            <TenantOnlyGuard>
+              <CreateClientPage />
+            </TenantOnlyGuard>
+          }
+        />
 
-        <Route path="documents"    element={<TenantOnlyGuard><Documents /></TenantOnlyGuard>} />
-        <Route path="documents/:id" element={<TenantOnlyGuard><DocumentViewer /></TenantOnlyGuard>} />
+        <Route
+          path="documents"
+          element={
+            <TenantOnlyGuard>
+              <Documents />
+            </TenantOnlyGuard>
+          }
+        />
+        <Route
+          path="documents/:id"
+          element={
+            <TenantOnlyGuard>
+              <DocumentViewer />
+            </TenantOnlyGuard>
+          }
+        />
 
-        <Route path="email"       element={<TenantOnlyGuard><EmailIntake /></TenantOnlyGuard>} />
-        <Route path="collections" element={<TenantOnlyGuard><CollectionsList /></TenantOnlyGuard>} />
-        <Route path="collections/:id" element={<TenantOnlyGuard><CollectionView /></TenantOnlyGuard>} />
+        <Route
+          path="email"
+          element={
+            <TenantOnlyGuard>
+              <EmailIntake />
+            </TenantOnlyGuard>
+          }
+        />
+        <Route
+          path="collections"
+          element={
+            <TenantOnlyGuard>
+              <CollectionsList />
+            </TenantOnlyGuard>
+          }
+        />
+        <Route
+          path="collections/:id"
+          element={
+            <TenantOnlyGuard>
+              <CollectionView />
+            </TenantOnlyGuard>
+          }
+        />
 
         {/* ── Org Admin only ──────────────────────────────────────────── */}
         <Route
           path="team"
           element={
-            <RoleGuard allowed={['org_admin']} fallback="/">
+            <RoleGuard allowed={["org_admin"]} fallback="/">
               <TeamSettings />
             </RoleGuard>
           }
@@ -199,7 +278,7 @@ function AppRoutes() {
         <Route
           path="settings/audit-logs"
           element={
-            <RoleGuard allowed={['org_admin']} fallback="/settings">
+            <RoleGuard allowed={["org_admin"]} fallback="/settings">
               <OrgAuditLogs />
             </RoleGuard>
           }

@@ -180,15 +180,14 @@ async def upload_document(
         if not celery_queued:
             # Always-available fallback: Use asyncio.create_task() for async function
             # Db session is created within the background task itself
-            asyncio.create_task(
-                document_processing_service.process_document_background(
-                    document_id=document_id,
-                    file_path=file_path_for_processing,
-                    user_id=current_user.id,
-                    organization_id=target_org_id,
-                )
+            background_tasks.add_task(
+                document_processing_service.process_document_background,
+                document_id=document_id,
+                file_path=file_path_for_processing,
+                user_id=current_user.id,
+                organization_id=target_org_id,
             )
-            logger.info(f"[Doc {document_id}] Queued via asyncio.create_task().")
+            logger.info(f"[Doc {document_id}] Queued via BackgroundTask.")
 
         # ── Audit log (non-fatal, separate session) ────────────────────────
         try:
