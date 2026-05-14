@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { Tag } from "../../types";
 import { useSnackbar } from "../../context/SnackbarContext";
+import { useConfirm } from "../../context/ConfirmContext";
 import {
   FolderGit2,
   Hash,
@@ -43,6 +44,7 @@ export function CollectionsList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -336,10 +338,13 @@ export function CollectionsList() {
               <hr className="my-1 border-slate-100" />
               <button
                 className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                onClick={() => {
+                onClick={async () => {
                   setOpenDropdownId(null);
-                  if (window.confirm(t("collections.deleteConfirm")))
-                    showSnackbar("Delete coming soon", { type: "info" });
+                  const ok = await confirm(t("collections.deleteConfirm"), {
+                    variant: "danger",
+                    confirmLabel: t("common.delete"),
+                  });
+                  if (ok) showSnackbar("Delete coming soon", { type: "info" });
                 }}
               >
                 {t("collections.deleteCollection")}

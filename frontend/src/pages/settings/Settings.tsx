@@ -3,6 +3,7 @@ import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from '../../context/SnackbarContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { User, Mail, Shield, LogOut, Plus, Copy, CheckCheck, Trash2, ToggleLeft, ToggleRight, Inbox, Clock, FileCheck, Zap, ZapOff } from 'lucide-react';
 
 interface EmailConfig {
@@ -22,6 +23,7 @@ const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [emailConfigs, setEmailConfigs] = useState<EmailConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -91,7 +93,11 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Remove this email intake address?')) return;
+    const ok = await confirm(t('settingsPage.deleteEmailConfirm', { defaultValue: 'Remove this email intake address?' }), {
+      variant: 'danger',
+      confirmLabel: t('common.delete'),
+    });
+    if (!ok) return;
     try {
       await api.delete(`/v1/email/${id}`);
       setEmailConfigs(c => c.filter(cfg => cfg.id !== id));

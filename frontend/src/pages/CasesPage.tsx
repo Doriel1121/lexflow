@@ -22,11 +22,13 @@ import {
 import api from "../services/api";
 import { Case } from "../types";
 import { useSnackbar } from "../context/SnackbarContext";
+import { useConfirm } from "../context/ConfirmContext";
 import { useTranslation } from "react-i18next";
 
 const CasesPage: React.FC = () => {
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const { t } = useTranslation();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -389,12 +391,13 @@ const CasesPage: React.FC = () => {
               <hr className="my-1 border-neutral-100" />
               <button
                 className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error-light"
-                onClick={() => {
+                onClick={async () => {
                   setOpenDropdownId(null);
-                  if (window.confirm(t("casesPage.deleteConfirm")))
-                    showSnackbar(t("casesPage.deleteComingSoon"), {
-                      type: "info",
-                    });
+                  const ok = await confirm(t("casesPage.deleteConfirm"), {
+                    variant: "danger",
+                    confirmLabel: t("common.delete"),
+                  });
+                  if (ok) showSnackbar(t("casesPage.deleteComingSoon"), { type: "info" });
                 }}
               >
                 {t("casesPage.deleteCase")}

@@ -26,6 +26,7 @@ import api from "../services/api";
 import { Case } from "../types";
 import AskAI from "../components/ai/AskAI";
 import { useSnackbar } from "../context/SnackbarContext";
+import { useConfirm } from "../context/ConfirmContext";
 import { useDocumentWebSocket } from "../hooks/useDocumentWebSocket";
 
 interface Deadline {
@@ -45,6 +46,7 @@ const CaseDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -272,8 +274,11 @@ const CaseDetailPage: React.FC = () => {
   };
 
   const handleDeleteDeadline = async (deadlineId: number) => {
-    if (!window.confirm("Are you sure you want to delete this deadline?"))
-      return;
+    const ok = await confirm(t("confirm.deleteDeadline", { defaultValue: "Are you sure you want to delete this deadline?" }), {
+      variant: "danger",
+      confirmLabel: t("common.delete"),
+    });
+    if (!ok) return;
     try {
       await api.delete(`/v1/deadlines/${deadlineId}`);
       fetchCase();

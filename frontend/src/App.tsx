@@ -75,6 +75,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { WebSocketProvider } from "./context/WebSocketProvider";
 import { NotificationProvider } from "./context/NotificationContext";
 import { SnackbarProvider } from "./context/SnackbarContext";
+import { ConfirmProvider } from "./context/ConfirmContext";
 
 import { normalizeRole } from "./lib/rbac";
 
@@ -299,9 +300,11 @@ function App() {
       <WebSocketProvider>
         <NotificationProvider>
           <SnackbarProvider>
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
+            <ConfirmProvider>
+              <BrowserRouter>
+                <AppRoutes />
+              </BrowserRouter>
+            </ConfirmProvider>
           </SnackbarProvider>
         </NotificationProvider>
       </WebSocketProvider>

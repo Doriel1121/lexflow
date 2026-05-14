@@ -628,6 +628,11 @@
         "noContentExtracted": "No content extracted yet",
         "viewContentInstructions": "Go to the case page and click 'View Content' to extract text"
     },
+    "confirm": {
+        "title": "Are you sure?",
+        "confirmBtn": "Confirm",
+        "deleteBtn": "Delete"
+    },
     "modals": {
         "confirm": "Confirm",
         "confirmDelete": "Are you sure want to delete this?",

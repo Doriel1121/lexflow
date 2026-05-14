@@ -25,6 +25,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { useSnackbar } from "../../context/SnackbarContext";
+import { useConfirm } from "../../context/ConfirmContext";
 import { useDocumentWebSocket } from "../../hooks/useDocumentWebSocket";
 
 interface Document {
@@ -45,6 +46,7 @@ export function DocumentList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [searchTerm, setSearchTerm] = useState("");
   const [semanticSearchActive, setSemanticSearchActive] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -363,8 +365,11 @@ export function DocumentList() {
   const handleDeleteDocument = async (docId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setOpenDropdownId(null);
-    if (!window.confirm("Are you sure you want to delete this document?"))
-      return;
+    const ok = await confirm(t("documentList.deleteConfirm"), {
+      variant: "danger",
+      confirmLabel: t("common.delete"),
+    });
+    if (!ok) return;
 
     // 🎯 OPTIMISTIC UPDATE: Remove immediately for instant feedback
     const previousDocs = documents;
@@ -466,7 +471,11 @@ export function DocumentList() {
 
   const handleRetryAI = async (docId: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("Retry AI analysis for this document?")) return;
+    const ok = await confirm(t("documentList.retryAIConfirm"), {
+      variant: "warning",
+      confirmLabel: t("documentList.retryAI"),
+    });
+    if (!ok) return;
 
     // 🎯 OPTIMISTIC UPDATE: Set status to processing immediately
     setDocuments((prev) =>

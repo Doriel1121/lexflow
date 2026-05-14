@@ -616,6 +616,11 @@
         "noContentExtracted": "טקסט עדיין לא הוצא",
         "viewContentInstructions": "עבור לעמוד התיק וlחץ על ״צפה בתוכן״ כדי לחלץ טקסט"
     },
+    "confirm": {
+        "title": "האם אתה בטוח?",
+        "confirmBtn": "אישור",
+        "deleteBtn": "מחק"
+    },
     "modals": {
         "confirm": "אישור",
         "confirmDelete": "האם אתה בטוח שברצונך למחוק זאת?",

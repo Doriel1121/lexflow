@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { EntityVerification } from "../../components/cases/EntityVerification";
 import { useSnackbar } from "../../context/SnackbarContext";
+import { useConfirm } from "../../context/ConfirmContext";
 
 import { Case } from "../../types";
 
@@ -41,6 +42,7 @@ export default function Cases() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -540,12 +542,13 @@ export default function Cases() {
             <hr className="my-1 border-slate-100" />
             <button
               className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-              onClick={() => {
+              onClick={async () => {
                 setOpenDropdownId(null);
-                if (window.confirm(t("casesPage.deleteConfirm")))
-                  showSnackbar(t("casesPage.deleteComingSoon"), {
-                    type: "info",
-                  });
+                const ok = await confirm(t("casesPage.deleteConfirm"), {
+                  variant: "danger",
+                  confirmLabel: t("common.delete"),
+                });
+                if (ok) showSnackbar(t("casesPage.deleteComingSoon"), { type: "info" });
               }}
             >
               {t("casesPage.deleteCase")}
