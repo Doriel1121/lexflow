@@ -27,10 +27,11 @@ import {
   RefreshCw,
   MoreVertical,
   ChevronDown,
+  X,
+  Lock,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// Predefined collection categories (order determines tab order)
 const CATEGORIES = [
   { key: "", label: "All" },
   { key: "client_id", label: "Client ID" },
@@ -40,11 +41,15 @@ const CATEGORIES = [
   { key: "document_type", label: "Document Type" },
 ];
 
+// Global const categories — system-managed, not user-editable
+const SYSTEM_CATEGORIES = new Set(["case_type", "document_type"]);
+
 export function CollectionsList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
   const { confirm } = useConfirm();
+
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -54,21 +59,18 @@ export function CollectionsList() {
   const [dropdownButtonElement, setDropdownButtonElement] =
     useState<HTMLElement | null>(null);
 
-  // Set up Floating UI for smart dropdown positioning
+  // Edit modal state
+  const [editingTag, setEditingTag] = useState<Tag | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const { refs, floatingStyles, context } = useFloating({
     open: openDropdownId !== null,
-    onOpenChange: (open) => {
-      if (!open) setOpenDropdownId(null);
-    },
-    elements: {
-      reference: dropdownButtonElement,
-    },
-    middleware: [
-      offset(8), // 8px gap between button and menu
-      flip({ padding: 8 }), // Flip to opposite side if goes off-screen
-      shift({ padding: 8 }), // Shift to stay within viewport
-    ],
-    whileElementsMounted: autoUpdate, // Auto-update on scroll/resize
+    onOpenChange: (open) => { if (!open) setOpenDropdownId(null); },
+    elements: { reference: dropdownButtonElement },
+    middleware: [offset(8), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
   });
 
   const click = useClick(context);
@@ -76,9 +78,7 @@ export function CollectionsList() {
   const role = useRole(context);
   const { getFloatingProps } = useInteractions([click, dismiss, role]);
 
-  useEffect(() => {
-    fetchTags(activeCategory);
-  }, [activeCategory]);
+  useEffect(() => { fetchTags(activeCategory); }, [activeCategory]);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdownId(null);
@@ -104,7 +104,6 @@ export function CollectionsList() {
     setSyncing(true);
     try {
       await api.post("/v1/documents/assign-collections-bulk");
-      // Wait a bit for the background task to make progress
       setTimeout(() => fetchTags(activeCategory), 2000);
     } catch (error) {
       console.error("Failed to sync collections:", error);
@@ -113,52 +112,128 @@ export function CollectionsList() {
     }
   };
 
+  const isSystemTag = (tag: Tag) =>
+    tag.organization_id === null || tag.organization_id === undefined
+      ? SYSTEM_CATEGORIES.has(tag.category ?? "")
+      : false;
+
+  // ── Delete ────────────────────────────────────────────────────────────
+
+  const handleDelete = async (tag: Tag) => {
+    setOpenDropdownId(null);
+
+    if (isSystemTag(tag)) {
+      showSnackbar(t("collections.systemCollection"), { type: "warning" });
+      return;
+    }
+
+    const count = tag.document_count ?? 0;
+    const message = count > 0
+      ? t("collections.deleteWarning", { count })
+      : t("collections.deleteConfirm");
+
+    const ok = await confirm(message, {
+      variant: "danger",
+      confirmLabel: t("common.delete"),
+    });
+    if (!ok) return;
+
+    // Optimistic removal
+    const previous = tags;
+    setTags((prev) => prev.filter((t) => t.id !== tag.id));
+
+    try {
+      await api.delete(`/v1/tags/${tag.id}`);
+      showSnackbar(t("collections.deleteSuccess"), { type: "success" });
+    } catch (error: any) {
+      setTags(previous);
+      const status = error.response?.status;
+      if (status === 403) {
+        showSnackbar(t("collections.systemCollection"), { type: "warning" });
+      } else {
+        showSnackbar(
+          error.response?.data?.detail ?? t("common.error"),
+          { type: "error" }
+        );
+      }
+    }
+  };
+
+  // ── Edit / Rename ─────────────────────────────────────────────────────
+
+  const openEditModal = (tag: Tag) => {
+    setOpenDropdownId(null);
+    setEditingTag(tag);
+    setEditName(tag.name);
+    setEditError(null);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingTag || !editName.trim()) return;
+    if (editName.trim() === editingTag.name) {
+      setEditingTag(null);
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError(null);
+
+    try {
+      const response = await api.patch(`/v1/tags/${editingTag.id}`, {
+        name: editName.trim(),
+      });
+      setTags((prev) =>
+        prev.map((t) => (t.id === editingTag.id ? { ...t, name: response.data.name } : t))
+      );
+      showSnackbar(t("collections.editSuccess"), { type: "success" });
+      setEditingTag(null);
+    } catch (error: any) {
+      const status = error.response?.status;
+      if (status === 409) {
+        setEditError(t("collections.nameConflict"));
+      } else if (status === 403) {
+        setEditError(t("collections.systemCollection"));
+      } else {
+        setEditError(error.response?.data?.detail ?? t("common.error"));
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+
   const filteredTags = tags.filter(
     (t) =>
       t.name.toLowerCase().includes(search.toLowerCase()) ||
-      (t.category && t.category.toLowerCase().includes(search.toLowerCase())),
+      (t.category && t.category.toLowerCase().includes(search.toLowerCase()))
   );
 
   const getCategoryIcon = (category?: string) => {
     switch (category) {
-      case "client_id":
-        return <Hash className="h-5 w-5 text-emerald-500" />;
-      case "project":
-        return <FolderGit2 className="h-5 w-5 text-indigo-500" />;
-      case "organization":
-        return <Building2 className="h-5 w-5 text-blue-500" />;
-      case "case_type":
-        return <Scale className="h-5 w-5 text-purple-500" />;
-      case "document_type":
-        return <FileText className="h-5 w-5 text-orange-500" />;
-      default:
-        return <TagIcon className="h-5 w-5 text-slate-400" />;
+      case "client_id":    return <Hash className="h-5 w-5 text-emerald-500" />;
+      case "project":      return <FolderGit2 className="h-5 w-5 text-indigo-500" />;
+      case "organization": return <Building2 className="h-5 w-5 text-blue-500" />;
+      case "case_type":    return <Scale className="h-5 w-5 text-purple-500" />;
+      case "document_type":return <FileText className="h-5 w-5 text-orange-500" />;
+      default:             return <TagIcon className="h-5 w-5 text-slate-400" />;
     }
   };
 
   const getCategoryTheme = (category?: string) => {
     switch (category) {
-      case "client_id":
-        return "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20";
-      case "project":
-        return "bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20";
-      case "organization":
-        return "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20";
-      case "case_type":
-        return "bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20";
-      case "document_type":
-        return "bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20";
-      default:
-        return "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
+      case "client_id":    return "bg-emerald-50 text-emerald-700 border-emerald-100";
+      case "project":      return "bg-indigo-50 text-indigo-700 border-indigo-100";
+      case "organization": return "bg-blue-50 text-blue-700 border-blue-100";
+      case "case_type":    return "bg-purple-50 text-purple-700 border-purple-100";
+      case "document_type":return "bg-orange-50 text-orange-700 border-orange-100";
+      default:             return "bg-slate-50 text-slate-700 border-slate-200";
     }
   };
 
   const formatCategoryName = (cat?: string) => {
     if (!cat) return "General";
-    return cat
-      .split("_")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
+    return cat.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   };
 
   return (
@@ -193,9 +268,7 @@ export function CollectionsList() {
                 className="appearance-none ps-4 pe-10 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 {CATEGORIES.map((cat) => (
-                  <option key={cat.key} value={cat.key}>
-                    {cat.label}
-                  </option>
+                  <option key={cat.key} value={cat.key}>{cat.label}</option>
                 ))}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
@@ -206,11 +279,7 @@ export function CollectionsList() {
             disabled={syncing}
             className="flex items-center gap-2 px-4 py-2 bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 text-sm font-medium transition-all"
           >
-            {syncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {syncing ? t("collections.syncing") : t("collections.sync")}
           </button>
         </div>
@@ -225,134 +294,203 @@ export function CollectionsList() {
           ) : filteredTags.length === 0 ? (
             <div className="p-12 text-center text-slate-500">
               <FolderGit2 className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-              <p className="font-medium text-lg">
-                {t("collections.noCollections")}
-              </p>
-              <p className="text-sm text-slate-400 mt-1">
-                {t("collections.noCollectionsDesc")}
-              </p>
+              <p className="font-medium text-lg">{t("collections.noCollections")}</p>
+              <p className="text-sm text-slate-400 mt-1">{t("collections.noCollectionsDesc")}</p>
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-2.5 text-left text-xs uppercase text-start tracking-wider w-12"></th>
-                  <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider">
+                  <th className="px-4 py-2.5 text-left text-xs uppercase tracking-wider w-12"></th>
+                  <th className="px-2 py-2.5 text-left text-xs uppercase tracking-wider">
                     {t("collections.collectionName")}
                   </th>
-                  <th className="px-2 py-2.5 text-left text-xs uppercase text-start tracking-wider w-40">
+                  <th className="px-2 py-2.5 text-left text-xs uppercase tracking-wider w-40">
                     {t("collections.category")}
                   </th>
-                  <th className="px-2 py-2.5 text-center text-xs uppercase text-start tracking-wider w-28">
+                  <th className="px-2 py-2.5 text-center text-xs uppercase tracking-wider w-28">
                     {t("collections.documents")}
                   </th>
-                  <th className="px-2 py-2.5 text-right text-xs uppercase text-start tracking-wider w-12"></th>
+                  <th className="px-2 py-2.5 text-right text-xs uppercase tracking-wider w-12"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {filteredTags.map((tag) => (
-                  <tr
-                    key={tag.id}
-                    className="hover:bg-slate-50 cursor-pointer transition-colors group"
-                    onClick={() => navigate(`/collections/${tag.id}`)}
-                  >
-                    <td className="px-4 py-2.5">
-                      <div className="p-1.5 rounded inline-flex">
-                        {getCategoryIcon(tag.category)}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-slate-900 text-sm truncate">
-                          {tag.name}
+                {filteredTags.map((tag) => {
+                  const isSystem = isSystemTag(tag);
+                  return (
+                    <tr
+                      key={tag.id}
+                      className="hover:bg-slate-50 cursor-pointer transition-colors group"
+                      onClick={() => navigate(`/collections/${tag.id}`)}
+                    >
+                      <td className="px-4 py-2.5">
+                        <div className="p-1.5 rounded inline-flex">
+                          {getCategoryIcon(tag.category)}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-slate-900 text-sm truncate">
+                              {tag.name}
+                            </span>
+                            {isSystem && (
+                              <div title={t("collections.systemCollection")}>
+                                <Lock className="h-3 w-3 text-slate-300 shrink-0" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-slate-500">ID: {tag.id}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getCategoryTheme(tag.category)}`}>
+                          {formatCategoryName(tag.category)}
                         </span>
-                        <span className="text-xs text-slate-500">
-                          ID: {tag.id}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getCategoryTheme(tag.category)}`}
-                      >
-                        {formatCategoryName(tag.category)}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2.5 text-center text-sm text-slate-700">
-                      {(tag as any).document_count ?? 0}
-                    </td>
-                    <td className="px-2 py-2.5 text-right relative">
-                      <button
-                        className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDropdownButtonElement(
-                            openDropdownId === tag.id
-                              ? null
-                              : (e.currentTarget as HTMLElement),
-                          );
-                          setOpenDropdownId(
-                            openDropdownId === tag.id ? null : tag.id,
-                          );
-                        }}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-2 py-2.5 text-center text-sm text-slate-700">
+                        {tag.document_count ?? 0}
+                      </td>
+                      <td className="px-2 py-2.5 text-right relative">
+                        <button
+                          className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDropdownButtonElement(
+                              openDropdownId === tag.id ? null : (e.currentTarget as HTMLElement)
+                            );
+                            setOpenDropdownId(openDropdownId === tag.id ? null : tag.id);
+                          }}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* Dropdown Menu - Rendered at root level to avoid clipping */}
-        {openDropdownId !== null && (
+        {/* Dropdown Menu */}
+        {openDropdownId !== null && (() => {
+          const tag = tags.find((t) => t.id === openDropdownId);
+          if (!tag) return null;
+          const isSystem = isSystemTag(tag);
+          return (
+            <div
+              ref={refs.setFloating}
+              style={floatingStyles}
+              className="w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50"
+              {...getFloatingProps({ onClick: (e) => e.stopPropagation() })}
+            >
+              <div className="py-1">
+                <button
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  onClick={() => { navigate(`/collections/${openDropdownId}`); setOpenDropdownId(null); }}
+                >
+                  {t("collections.viewCollection")}
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${isSystem ? "text-slate-300 cursor-not-allowed" : "text-slate-700 hover:bg-slate-50"}`}
+                  disabled={isSystem}
+                  onClick={() => !isSystem && openEditModal(tag)}
+                  title={isSystem ? t("collections.systemCollection") : undefined}
+                >
+                  {isSystem && <Lock className="h-3 w-3" />}
+                  {t("collections.editCollection")}
+                </button>
+                <hr className="my-1 border-slate-100" />
+                <button
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${isSystem ? "text-slate-300 cursor-not-allowed" : "text-red-600 hover:bg-red-50"}`}
+                  disabled={isSystem}
+                  onClick={() => !isSystem && handleDelete(tag)}
+                  title={isSystem ? t("collections.systemCollection") : undefined}
+                >
+                  {isSystem && <Lock className="h-3 w-3" />}
+                  {t("collections.deleteCollection")}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Edit / Rename Modal */}
+      {editingTag && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+          onClick={() => setEditingTag(null)}
+        >
           <div
-            ref={refs.setFloating}
-            style={floatingStyles}
-            className="w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50"
-            {...getFloatingProps({
-              onClick: (e) => e.stopPropagation(),
-            })}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="py-1">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900">{t("collections.editModalTitle")}</h3>
               <button
-                className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                onClick={() => {
-                  navigate(`/collections/${openDropdownId}`);
-                  setOpenDropdownId(null);
-                }}
+                onClick={() => setEditingTag(null)}
+                className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                {t("collections.viewCollection")}
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Category — read-only */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  {t("collections.category")}
+                </label>
+                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getCategoryTheme(editingTag.category)}`}>
+                  {formatCategoryName(editingTag.category)}
+                </span>
+              </div>
+
+              {/* Name — editable */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  {t("collections.editNameLabel")}
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => { setEditName(e.target.value); setEditError(null); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleEditSave()}
+                  placeholder={t("collections.editNamePlaceholder")}
+                  className={`w-full px-3 py-2.5 border rounded-xl text-sm outline-none transition-all ${
+                    editError
+                      ? "border-red-300 focus:ring-2 focus:ring-red-100"
+                      : "border-slate-200 focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  }`}
+                  autoFocus
+                />
+                {editError && (
+                  <p className="text-xs text-red-600 mt-1.5">{editError}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="px-5 pb-5 flex gap-3">
+              <button
+                onClick={() => setEditingTag(null)}
+                className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors"
+              >
+                {t("common.cancel")}
               </button>
               <button
-                className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                onClick={() => {
-                  setOpenDropdownId(null);
-                  showSnackbar("Edit coming soon", { type: "info" });
-                }}
+                onClick={handleEditSave}
+                disabled={editSaving || !editName.trim()}
+                className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {t("collections.editCollection")}
-              </button>
-              <hr className="my-1 border-slate-100" />
-              <button
-                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                onClick={async () => {
-                  setOpenDropdownId(null);
-                  const ok = await confirm(t("collections.deleteConfirm"), {
-                    variant: "danger",
-                    confirmLabel: t("common.delete"),
-                  });
-                  if (ok) showSnackbar("Delete coming soon", { type: "info" });
-                }}
-              >
-                {t("collections.deleteCollection")}
+                {editSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t("common.save")}
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -100,6 +100,7 @@ class SmartCollectionsService:
         appropriate tag-based collections.  Safe to call multiple times
         (idempotent — duplicate links are skipped).
         """
+        doc_id = getattr(document, "id", None)
         try:
             org_id = document.organization_id
             tags_to_add = []
@@ -146,18 +147,16 @@ class SmartCollectionsService:
                     added += 1
 
             if added:
+                await db.flush()
                 await db.commit()
-                logger.info(
-                    "SmartCollections: added %d collection(s) to document %d",
-                    added,
-                    document.id,
-                )
+                logger.info("SmartCollections: added %d collection(s) to document %s", added, doc_id)
 
         except Exception as exc:
             logger.error(
-                "SmartCollections: failed to route document %d: %s",
-                document.id,
+                "SmartCollections: failed to route document %s: %s",
+                doc_id,
                 exc,
+                exc_info=True,
             )
             # Never let collection routing crash the processing pipeline
             try:
@@ -181,6 +180,8 @@ class SmartCollectionsService:
 
         # From AI structured parties
         for party in ai_analysis.get("parties", []):
+            if not isinstance(party, dict):
+                continue
             raw = party.get("id_number") or ""
             id_val = _clean(raw)
             if id_val and id_val not in seen:
@@ -232,6 +233,8 @@ class SmartCollectionsService:
         seen: set[str] = set()
         tags = []
         for party in ai_analysis.get("parties", []):
+            if not isinstance(party, dict):
+                continue
             raw_name = (party.get("name") or "").strip()
             if not raw_name:
                 continue
@@ -326,10 +329,17 @@ class SmartCollectionsService:
                         db, name=name, category="ai_tag", organization_id=org_id
                     )
                     tags.append(t)
-            return tags
+            # If nothing passed the confidence threshold, fall back to raw tags
+            # (some providers don't provide confidences; some pipelines supply
+            # fixed/low values).
+            if tags:
+                return tags
 
         # Fallback: raw string tags
-        for tag_name in ai_analysis.get("tags", []):
+        raw_tags = ai_analysis.get("tags", [])
+        if isinstance(raw_tags, str):
+            raw_tags = [t.strip() for t in raw_tags.replace("\n", ",").split(",") if t.strip()]
+        for tag_name in raw_tags or []:
             name = _normalize_tag(str(tag_name))
             if name and name not in seen:
                 seen.add(name)

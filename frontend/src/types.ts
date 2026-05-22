@@ -58,6 +58,8 @@ export interface Tag {
   id: number;
   name: string;
   category?: string;
+  organization_id?: number | null;
+  document_count?: number;
 }
 
 export interface Summary {

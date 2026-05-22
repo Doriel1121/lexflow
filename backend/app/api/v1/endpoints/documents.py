@@ -917,10 +917,20 @@ async def bulk_assign_collections(
             ai_analysis = await document_intelligence_service.analyze_legal_document(
                 doc.content, doc.filename, language=doc.language
             )
-            # Regex metadata DISABLED for collections
-            ai_analysis["routing_ids"] = []
-            ai_analysis["routing_projects"] = []
-            ai_analysis["routing_organizations"] = []
+
+            # Preserve regex-derived routing signals so Smart Collections can still
+            # work when the AI response is sparse (common for IDs / project names).
+            try:
+                regex_meta = await metadata_extraction_service.extract_metadata(
+                    doc.content or "", doc.language or "en"
+                )
+                ai_analysis["routing_ids"] = regex_meta.get("routing_ids", []) or []
+                ai_analysis["routing_projects"] = regex_meta.get("routing_projects", []) or []
+                ai_analysis["routing_organizations"] = regex_meta.get("routing_organizations", []) or []
+            except Exception:
+                ai_analysis.setdefault("routing_ids", [])
+                ai_analysis.setdefault("routing_projects", [])
+                ai_analysis.setdefault("routing_organizations", [])
 
             await smart_collections_service.route_document_to_collections(db, doc, ai_analysis)
             processed += 1

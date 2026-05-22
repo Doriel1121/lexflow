@@ -7,9 +7,12 @@ class MetadataExtractionService:
         # Date patterns for English and Hebrew formats
         self.date_patterns = [
             r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b',  # MM/DD/YYYY or DD-MM-YYYY
+            r'\b\d{1,2}\.\d{1,2}\.\d{2,4}\b',  # DD.MM.YYYY
             r'\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b',  # YYYY-MM-DD
             r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}\b',  # Month DD, YYYY
+            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}(?:st|nd|rd|th),? \d{4}\b',  # Month 1st, YYYY
             r'\b\d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{4}\b',  # DD Month YYYY
+            r'\b\d{1,2}(?:st|nd|rd|th) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{4}\b',  # 1st Month YYYY
         ]
         
         # Case number patterns
@@ -70,9 +73,16 @@ class MetadataExtractionService:
         """Extract dates from text."""
         dates = []
         try:
+            # OCR (especially for Hebrew PDFs) often introduces spaces around separators,
+            # e.g. "10. 05. 2026". Normalize common numeric date separators to improve hits.
+            normalized = re.sub(r"(\d)\s*([./-])\s*(\d)", r"\1\2\3", text)
             for pattern in self.date_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
+                matches = re.findall(pattern, normalized, re.IGNORECASE)
                 dates.extend(matches)
+
+            # Heuristic fallback: detect standalone years (helps when separators are OCR-broken).
+            years = re.findall(r"\b(19\d{2}|20\d{2})\b", normalized)
+            dates.extend(years)
             return list(set(dates))[:20]  # Limit to 20 unique dates
         except:
             return []

@@ -70,23 +70,19 @@ def check_migration_state():
                     print("✓ Fresh database detected")
                     return True
             
-            # Alembic table exists, check version
+            # Alembic table exists: if it has *any* revision recorded, treat it as a
+            # managed database and let Alembic handle upgrades. Dropping tables here
+            # is too destructive and breaks normal multi-revision chains.
             result = conn.execute(text("SELECT version_num FROM alembic_version"))
             versions = [row[0] for row in result.fetchall()]
-            
-            if "317988fe2f1f" in versions and len(versions) == 1:
-                # Already at baseline only
-                print("✓ Database already at baseline migration")
-                return True
-            elif versions:
-                # Old migrations or mixed state detected
-                print(f"⚠ Detected migration entries: {versions}")
-                print("  Dropping all tables for clean rebuild with baseline...")
-                if not drop_all_tables(sync_url):
-                    return False
-                print("✓ Tables dropped, baseline migration will create fresh schema")
-                return True
-            
+
+            if versions:
+                print(f"✓ Alembic version detected: {versions}")
+            else:
+                # Empty alembic_version: schema exists but migration tracking is missing.
+                # Do NOT drop tables automatically; allow operators to decide how to reconcile.
+                print("⚠ alembic_version table is empty; skipping destructive auto-rebuild.")
+
             return True
             
     except Exception as e:

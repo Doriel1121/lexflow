@@ -1,0 +1,8 @@
+============================================================
+🗑️  DATABASE PURGE TOOL
+============================================================
+
+⚠️  WARNING: This will DELETE all data except users!
+
+⚠️  No local database configured
+❌ No databases found to clear

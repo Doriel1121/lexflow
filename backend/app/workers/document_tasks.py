@@ -426,8 +426,9 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 if not ai_analysis.get("classification"):
                     ai_analysis["classification"] = ai_analysis.get("document_type") or "Unknown Document"
 
-                if not ai_analysis.get("missing_documents") and not ai_analysis.get("missing_items"):
-                    ai_analysis["missing_documents"] = regex_meta.get("missing_items") or []
+                # Note: regex extractor doesn't currently detect "missing items"; keep AI value if present.
+                if not ai_analysis.get("missing_documents") and ai_analysis.get("missing_items"):
+                    ai_analysis["missing_documents"] = ai_analysis.get("missing_items") or []
 
                 # Update document record with classification from AI
                 doc = await document_crud.get(db, document_id)
@@ -435,9 +436,11 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                     doc.classification = ai_analysis.get("classification") or "Unknown Document"
                     await db.commit()
 
-                ai_analysis["routing_ids"] = []
-                ai_analysis["routing_projects"] = []
-                ai_analysis["routing_organizations"] = []
+                # IMPORTANT: keep routing_* extracted by regex so Smart Collections can work
+                # even when the AI response is sparse.
+                ai_analysis["routing_ids"] = regex_meta.get("routing_ids", []) or []
+                ai_analysis["routing_projects"] = regex_meta.get("routing_projects", []) or []
+                ai_analysis["routing_organizations"] = regex_meta.get("routing_organizations", []) or []
             except Exception as meta_err:
                 logger.warning(
                     f"[Doc {document_id}] Regex metadata extraction failed: {meta_err}"
@@ -448,9 +451,19 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
 
             # Build simple confidence votes for AI tags
             try:
+                # Normalize tags into a list of strings (providers sometimes return a single string)
+                raw_tags = ai_analysis.get("tags")
+                if isinstance(raw_tags, str):
+                    # Split on commas/newlines; keep non-empty tokens
+                    ai_analysis["tags"] = [t.strip() for t in raw_tags.replace("\n", ",").split(",") if t.strip()]
+                elif raw_tags is None:
+                    ai_analysis["tags"] = []
+
                 tag_votes = []
                 for t in ai_analysis.get("tags", []) or []:
-                    tag_votes.append({"name": t, "confidence": 0.5})
+                    # When the LLM already produced a "tags" list but didn't provide
+                    # confidences, assume they are relevant enough to pass filtering.
+                    tag_votes.append({"name": t, "confidence": 0.8})
                 ai_analysis["tag_votes"] = tag_votes
             except Exception:
                 pass
@@ -529,7 +542,21 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id)
             )
 
-            summary_text = ai_analysis.get("summary") or "No text summary could be generated."
+            # If the structured AI response omitted/emptied the summary, generate one with the
+            # simpler summarizer as a fallback.
+            summary_text = ai_analysis.get("summary")
+            if not isinstance(summary_text, str) or not summary_text.strip():
+                try:
+                    summary_text = await asyncio.wait_for(
+                        llm_service.summarize_text(
+                            input_text if isinstance(input_text, str) and input_text.strip() else normalized_text
+                        ),
+                        timeout=float(settings.AI_ANALYSIS_TIMEOUT_SECONDS or 120),
+                    )
+                except Exception:
+                    summary_text = None
+            if not isinstance(summary_text, str) or not summary_text.strip():
+                summary_text = "Summary unavailable."
             party_names = _dedup_local(
                 [
                     (p.get("name") if isinstance(p, dict) else p)
@@ -646,7 +673,7 @@ def process_document_pipeline(self, document_id: int, file_path: str, user_id: i
                 )
                 logger.info(f"[Doc {document_id}] AI Smart Collections routing complete.")
             except Exception as sc_err:
-                logger.error(f"[Doc {document_id}] AI routing failed: {sc_err}")
+                logger.error(f"[Doc {document_id}] AI routing failed: {sc_err}", exc_info=True)
 
         # ── STEP 6: Embeddings per chunk ────────────────────────────────
         if await _abort_if_timed_out("embedding"):

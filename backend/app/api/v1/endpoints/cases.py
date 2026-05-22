@@ -198,7 +198,14 @@ async def read_case_by_id(
             "filename": d.filename,
             "s3_url": d.s3_url,
             "classification": d.classification,
-            "case_id": d.case_id
+            "language": d.language,
+            "page_count": d.page_count,
+            "case_id": d.case_id,
+            "uploaded_by_user_id": d.uploaded_by_user_id,
+            "created_at": d.created_at,
+            "updated_at": d.updated_at,
+            "processing_status": d.processing_status.value if hasattr(d.processing_status, 'value') else d.processing_status,
+            "processing_stage": d.processing_stage
         } for d in case.documents],
         "assigned_lawyer_id": case.assigned_lawyer_id,
         "assigned_lawyer_name": case.assigned_lawyer.full_name if case.assigned_lawyer else None,
