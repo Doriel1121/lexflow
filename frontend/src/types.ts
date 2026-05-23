@@ -147,6 +147,28 @@ export interface WorkloadEntry {
   case_count: number;
 }
 
+export interface OrgAiHealth {
+  organization_id: number;
+  provider: string;
+  total_documents: number;
+  processing_now: number;
+  failed_documents: number;
+  completed_without_ai: number;
+  embedding_issues: number;
+  chunked_analysis_documents: number;
+  full_analysis_documents: number;
+  embedding_failure_rate_percent: number;
+  processing_errors_7d: number;
+  health_score_percent: number;
+  recent_errors: {
+    document_id: number;
+    filename: string;
+    stage: string | null;
+    message: string;
+    created_at: string | null;
+  }[];
+}
+
 export interface DeadlineHealth {
   overdue: number;
   approaching: number;

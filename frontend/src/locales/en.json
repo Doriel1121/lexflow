@@ -57,9 +57,23 @@
             "uploadDocumentDesc": "Add files to your workspace",
             "emailIntake": "Email Intake",
             "emailIntakeDesc": "Review incoming messages",
-            "semanticSearch": "Semantic Search",
-            "semanticSearchDesc": "Find anything intelligently"
+            "search": "Search",
+            "searchDesc": "Find cases, clients, and documents by name",
+            "aiDocumentSearch": "AI Document Search",
+            "aiDocumentSearchDesc": "Semantic search across document content"
         }
+    },
+    "aiHealth": {
+        "title": "AI Processing Health",
+        "provider": "Provider: {{provider}}",
+        "score": "{{score}}% healthy",
+        "processing": "In progress",
+        "withoutAi": "No AI analysis",
+        "embeddingIssues": "Search issues",
+        "errors7d": "Errors (7d)",
+        "chunkedDocs": "{{count}} multi-section",
+        "embedFailRate": "{{rate}}% embed failures",
+        "recentErrors": "Recent pipeline errors"
     },
     "stats": {
         "activeCases": "Active Cases",
@@ -207,6 +221,8 @@
         "searchPlaceholder": "Search collections...",
         "sync": "Sync",
         "syncing": "Syncing...",
+        "syncSuccess": "Synced {{synced}} document(s) to collections",
+        "syncFailed": "Failed to sync collections",
         "loading": "Loading collections...",
         "noCollections": "No collections found",
         "noCollectionsDesc": "Upload documents and AI will organize them automatically",
@@ -422,6 +438,8 @@
         "retryAIConfirm": "Retry AI analysis for this document?",
         "retryAISuccess": "AI analysis queued successfully",
         "retryAIFailed": "Failed to retry AI analysis",
+        "embeddingPartial": "AI search limited",
+        "semanticSearchUnavailable": "AI search is temporarily unavailable",
         "newDocsReceived": "New documents received via email intake",
         "fileTypeText": "File Type",
         "fileSize": "Size",
@@ -635,7 +653,10 @@
         "amounts": "Amounts",
         "caseNumbers": "Case Numbers",
         "noContentExtracted": "No content extracted yet",
-        "viewContentInstructions": "Go to the case page and click 'View Content' to extract text"
+        "viewContentInstructions": "Go to the case page and click 'View Content' to extract text",
+        "analysisModeChunked": "Multi-section ({{count}} parts)",
+        "analysisModeChunkedHint": "This document was analyzed section-by-section because of its length",
+        "analysisModeChunkedBanner": "Insights were merged from multiple sections of this long document. Some details may only appear in the full text."
     },
     "confirm": {
         "title": "Are you sure?",

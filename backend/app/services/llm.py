@@ -1,8 +1,12 @@
-from typing import List, Dict
-import os
+from typing import List, Dict, Optional
+import re
 import json
+import logging
 from datetime import datetime, timedelta
 from app.core.ai_provider import get_ai_provider
+from app.services.ai_utils import is_zero_vector
+
+logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
@@ -17,16 +21,36 @@ class LLMService:
         except:
             return f"Summary: {text[:300]}... [AI error]"
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(self, text: str) -> Optional[List[float]]:
+        """Return embedding vector, or None if provider inactive or call failed."""
         try:
             if not self.provider.active:
-                dim = getattr(self.provider, "embedding_dimension", 768)
-                return [0.0] * dim
-            return await self.provider.generate_embedding(text)
+                return None
+            vector = await self.provider.generate_embedding(text)
+            if is_zero_vector(vector):
+                return None
+            return vector
         except Exception as e:
-            print(f"Error generating embedding: {e}")
-            dim = getattr(self.provider, "embedding_dimension", 768)
-            return [0.0] * dim
+            logger.warning("Error generating embedding: %s", e)
+            return None
+
+    async def extract_keywords(self, text: str, limit: int = 12) -> List[str]:
+        """Lightweight keywords for routing (no extra LLM call)."""
+        words = re.findall(r"\b[\w\u0590-\u05FF]{4,}\b", text or "")
+        stop = {
+            "from", "subject", "dear", "regards", "with", "that", "this", "have", "been",
+            "document", "attachment", "please", "thank", "your", "הנדון", "בברכה",
+        }
+        seen, out = set(), []
+        for w in words:
+            key = w.lower()
+            if key in stop or key in seen:
+                continue
+            seen.add(key)
+            out.append(w)
+            if len(out) >= limit:
+                break
+        return out
 
     async def extract_key_dates(self, text: str) -> List[Dict[str, str]]:
         """Extract UPCOMING legal deadlines only, excluding citations and irrelevant dates."""

@@ -103,10 +103,21 @@ export function CollectionsList() {
   const handleSyncCollections = async () => {
     setSyncing(true);
     try {
-      await api.post("/v1/documents/assign-collections-bulk");
+      const res = await api.post("/v1/documents/assign-collections-bulk");
+      showSnackbar(
+        t("collections.syncSuccess", {
+          synced: res.data?.synced ?? 0,
+          defaultValue: `Synced ${res.data?.synced ?? 0} document(s)`,
+        }),
+        { type: "success" },
+      );
       setTimeout(() => fetchTags(activeCategory), 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to sync collections:", error);
+      showSnackbar(
+        error.response?.data?.detail || t("collections.syncFailed"),
+        { type: "error" },
+      );
     } finally {
       setSyncing(false);
     }

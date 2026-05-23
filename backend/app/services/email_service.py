@@ -91,13 +91,19 @@ class EmailService:
                             elif isinstance(content, str):
                                 text_content = content
                                 
-                            # Smart Routing
-                            case_id = 0  # Default Inbox (unclassified)
-                            matched_case = await smart_router.route_document(
-                                db, 
-                                content=f"{subject} {from_addr} {text_content[:1000]}"
-                            )
-                            
+                            owner = await db.get(User, config.user_id)
+                            org_id = owner.organization_id if owner else None
+                            case_id = None
+                            try:
+                                matched_case = await smart_router.route_document(
+                                    db,
+                                    content=f"{subject} {from_addr} {text_content[:1000]}",
+                                    metadata={"organization_id": org_id},
+                                )
+                            except Exception as route_err:
+                                logger.warning("Smart routing failed: %s", route_err)
+                                matched_case = None
+
                             if matched_case:
                                 case_id = matched_case.id
                                 logger.info(f"Smart routed email attachment to case {case_id}")
@@ -123,12 +129,10 @@ class EmailService:
                             new_doc = await document_crud.create(db, doc_in, owner_id=config.user_id)
                             logger.info(f"Created document {new_doc.id} for attachment {filename}")
                             
-                            # Audit Log
-                            user = await db.get(User, config.user_id)
-                            if user:
+                            if owner:
                                 await log_audit(
-                                    db, 
-                                    user, 
+                                    db,
+                                    owner, 
                                     "email_attachment_import", 
                                     {
                                         "email_subject": subject, 
