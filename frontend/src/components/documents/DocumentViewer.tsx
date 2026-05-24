@@ -10,7 +10,7 @@ export function DocumentViewer() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { showSnackbar } = useSnackbar();
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [activeTab, setActiveTab] = useState('summary');
   const [loading, setLoading] = useState(true);
   const [document, setDocument] = useState<any>(null);
@@ -190,6 +190,19 @@ export function DocumentViewer() {
               </span>
               <span>•</span>
               <span>{document.classification} • {document.language?.toUpperCase() || 'UNKNOWN'} • {document.page_count || 0} pages</span>
+              {intelligence?.analysis_mode === 'chunked' && (
+                <>
+                  <span>•</span>
+                  <span
+                    className="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-semibold"
+                    title={t('documentViewer.analysisModeChunkedHint')}
+                  >
+                    {t('documentViewer.analysisModeChunked', {
+                      count: intelligence.chunks_analyzed ?? intelligence.ai_health?.chunks_analyzed ?? '?',
+                    })}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -265,6 +278,11 @@ export function DocumentViewer() {
                   </div>
                 ) : (
                   <>
+                    {intelligence?.analysis_mode === 'chunked' && (
+                      <p className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+                        {t('documentViewer.analysisModeChunkedBanner')}
+                      </p>
+                    )}
                     {intelligence?.summary?.content && (
                       <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
                         <div className="flex items-start space-x-3">

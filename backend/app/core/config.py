@@ -54,6 +54,12 @@ class Settings(BaseSettings):
 
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
+    # Above this character count, use per-chunk analysis + merge (sequential, no Celery chord)
+    AI_LONG_DOCUMENT_THRESHOLD_CHARS: int = 25000
+    # Max chunk-level LLM calls per document (cost guardrail)
+    AI_CHUNK_ANALYSIS_MAX_CHUNKS: int = 40
+    # Per-chunk LLM timeout (seconds)
+    AI_CHUNK_ANALYSIS_TIMEOUT_SECONDS: int = 90
 
     # Reaper: mark stuck docs as completed_without_ai after this many minutes
     DOCUMENT_STUCK_MINUTES: int = 30

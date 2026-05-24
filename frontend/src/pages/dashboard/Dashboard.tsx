@@ -4,6 +4,7 @@ import { OrgAdminOverview } from '../../components/dashboard/OrgAdminOverview';
 import { EmployeeTable } from '../../components/dashboard/EmployeeTable';
 import { WorkloadChart } from '../../components/dashboard/WorkloadChart';
 import { DeadlineHealthWidget } from '../../components/dashboard/DeadlineHealthWidget';
+import { AiHealthWidget } from '../../components/dashboard/AiHealthWidget';
 import { RecentDocs } from '../../components/dashboard/RecentDocs';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -24,10 +25,11 @@ export default function Dashboard() {
   const isOrgAdmin = user?.role === 'org_admin' || user?.role === 'admin';
 
   const quickActions = [
-    { icon: Briefcase, labelKey: 'dashboard.actions.newCase', descKey: 'dashboard.actions.newCaseDesc', path: '/cases/new', color: 'text-blue-600 bg-blue-50' },
-    { icon: FileText, labelKey: 'dashboard.actions.uploadDocument', descKey: 'dashboard.actions.uploadDocumentDesc', path: '/documents', color: 'text-emerald-600 bg-emerald-50' },
-    { icon: Mail, labelKey: 'dashboard.actions.emailIntake', descKey: 'dashboard.actions.emailIntakeDesc', path: '/email', color: 'text-amber-600 bg-amber-50' },
-    { icon: Search, labelKey: 'dashboard.actions.semanticSearch', descKey: 'dashboard.actions.semanticSearchDesc', path: '/search', color: 'text-purple-600 bg-purple-50' },
+    { id: 'new-case', icon: Briefcase, labelKey: 'dashboard.actions.newCase', descKey: 'dashboard.actions.newCaseDesc', path: '/cases/new', color: 'text-blue-600 bg-blue-50' },
+    { id: 'upload-document', icon: FileText, labelKey: 'dashboard.actions.uploadDocument', descKey: 'dashboard.actions.uploadDocumentDesc', path: '/documents', color: 'text-emerald-600 bg-emerald-50' },
+    { id: 'email-intake', icon: Mail, labelKey: 'dashboard.actions.emailIntake', descKey: 'dashboard.actions.emailIntakeDesc', path: '/email', color: 'text-amber-600 bg-amber-50' },
+    { id: 'search', icon: Search, labelKey: 'dashboard.actions.search', descKey: 'dashboard.actions.searchDesc', path: '/search', color: 'text-purple-600 bg-purple-50' },
+    { id: 'ai-document-search', icon: Zap, labelKey: 'dashboard.actions.aiDocumentSearch', descKey: 'dashboard.actions.aiDocumentSearchDesc', path: '/documents', color: 'text-violet-600 bg-violet-50' },
   ];
 
   return (
@@ -52,6 +54,8 @@ export default function Dashboard() {
         <>
           {/* Employee Performance Table — full width */}
           <EmployeeTable />
+
+          <AiHealthWidget />
 
           {/* Workload + Deadline Health — side by side */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -78,7 +82,7 @@ export default function Dashboard() {
             <div className="space-y-2">
               {quickActions.map((action) => (
                 <button
-                  key={action.path}
+                  key={action.id}
                   onClick={() => navigate(action.path)}
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors group text-left"
                 >

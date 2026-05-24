@@ -57,9 +57,23 @@
             "uploadDocumentDesc": "הוסף קבצים לסביבת העבודה",
             "emailIntake": "קבלת דואר",
             "emailIntakeDesc": "סקור הודעות נכנסות",
-            "semanticSearch": "חיפוש סמנטי",
-            "semanticSearchDesc": "מצא הכל בצורה חכמה"
+            "search": "חיפוש",
+            "searchDesc": "מצא תיקים, לקוחות ומסמכים לפי שם",
+            "aiDocumentSearch": "חיפוש מסמכים (AI)",
+            "aiDocumentSearchDesc": "חיפוש סמנטי בתוכן המסמכים"
         }
+    },
+    "aiHealth": {
+        "title": "בריאות עיבוד AI",
+        "provider": "ספק: {{provider}}",
+        "score": "{{score}}% תקין",
+        "processing": "בעיבוד",
+        "withoutAi": "ללא ניתוח AI",
+        "embeddingIssues": "בעיות חיפוש",
+        "errors7d": "שגיאות (7 ימים)",
+        "chunkedDocs": "{{count}} רב-חלקי",
+        "embedFailRate": "{{rate}}% כשלי embedding",
+        "recentErrors": "שגיאות אחרונות"
     },
     "stats": {
         "activeCases": "תיקים פעילים",
@@ -207,6 +221,8 @@
         "searchPlaceholder": "חיפוש אוספים...",
         "sync": "סנכרן",
         "syncing": "מסנכרן...",
+        "syncSuccess": "סונכרנו {{synced}} מסמכים לאוספים",
+        "syncFailed": "סנכרון האוספים נכשל",
         "loading": "טוען אוספים...",
         "noCollections": "לא נמצאו אוספים",
         "noCollectionsDesc": "העלה מסמכים ובינה מלאכותית תארגן אותם אוטומטית",
@@ -422,6 +438,8 @@
         "retryAIConfirm": "לנסות שוב ניתוח AI למסמך זה?",
         "retryAISuccess": "ניתוח AI הופעל בהצלחה",
         "retryAIFailed": "הצלחה לחזור על ניתוח AI",
+        "embeddingPartial": "חיפוש AI מוגבל",
+        "semanticSearchUnavailable": "חיפוש AI אינו זמין כרגע",
         "newDocsReceived": "מסמכים חדשים התקבלו דרך צריכת הדוא״ל",
         "dropAreaHint": "PDF, DOCX, JPG (מקס 20MB)",
         "loading": "טוען מסמכים...",
@@ -621,9 +639,12 @@
         "dates": "תאריכים",
         "entities": "ישויות",
         "amounts": "סכומים",
-        "caseNumbers": "מספרי תיqים",
+        "caseNumbers": "מספרי תיקים",
         "noContentExtracted": "טקסט עדיין לא הוצא",
-        "viewContentInstructions": "עבור לעמוד התיק וlחץ על ״צפה בתוכן״ כדי לחלץ טקסט"
+        "viewContentInstructions": "עבור לעמוד התיק ולחץ על ״צפה בתוכן״ כדי לחלץ טקסט",
+        "analysisModeChunked": "ניתוח רב-חלקי ({{count}} חלקים)",
+        "analysisModeChunkedHint": "המסמך נותח חלק-אחר-חלק בשל אורכו",
+        "analysisModeChunkedBanner": "התובנות אוחדו ממספר חלקים במסמך ארוך זה. ייתכן שפרטים מסוימים מופיעים רק בטקסט המלא."
     },
     "confirm": {
         "title": "האם אתה בטוח?",

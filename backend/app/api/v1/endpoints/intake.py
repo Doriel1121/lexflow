@@ -128,68 +128,18 @@ async def _suggest_case(
     metadata: Optional[DocumentMetadata],
     org_id: Optional[int],
 ) -> Optional[dict]:
-    """
-    Lightweight case suggestion:
-      1. Case ID regex in subject/filename
-      2. Client name match in entities
-      3. Keyword match in case titles
-    Returns {case_id, case_title, reason, confidence} or None.
-    """
-    base_query = select(Case).where(
-        Case.status != CaseStatus.CLOSED,
-        Case.organization_id == org_id if org_id else True,
+    from app.services.case_suggestion import case_suggestion_service
+
+    suggestion = await case_suggestion_service.suggest_for_document(
+        db, doc, metadata
     )
-
-    search_text = f"{doc.email_subject or ''} {doc.filename or ''} {doc.content or ''}".lower()
-
-    # 1. Case ID match
-    id_match = re.search(r"case\s*[#\-]?\s*(\d+)", search_text, re.IGNORECASE)
-    if id_match:
-        cid = int(id_match.group(1))
-        case = await db.get(Case, cid)
-        if case and (not org_id or case.organization_id == org_id):
-            return {"case_id": case.id, "case_title": case.title,
-                    "reason": f"Case #{cid} found in subject/content", "confidence": "high"}
-
-    # 2. Client name match from entities
-    if metadata and metadata.entities:
-        for ent in (metadata.entities or []):
-            name = (ent.get("name") if isinstance(ent, dict) else str(ent) or "").strip()
-            if not name or len(name) < 3:
-                continue
-            client_result = await db.execute(
-                select(Client).where(
-                    func.lower(Client.name).contains(name.lower()),
-                    Client.organization_id == org_id if org_id else True,
-                )
-            )
-            client = client_result.scalars().first()
-            if client:
-                case_result = await db.execute(
-                    base_query.where(Case.client_id == client.id).limit(1)
-                )
-                case = case_result.scalars().first()
-                if case:
-                    return {"case_id": case.id, "case_title": case.title,
-                            "reason": f"Client name match: {name}", "confidence": "medium"}
-
-    # 3. Keyword match in case titles (words ≥ 4 chars, appear in both)
-    words = [w for w in re.findall(r"\b\w{4,}\b", search_text) if w not in
-             ("from", "subject", "dear", "regards", "with", "that", "this", "have", "been")]
-    if words:
-        cases_result = await db.execute(base_query.limit(100))
-        cases = cases_result.scalars().all()
-        best, best_count = None, 0
-        for case in cases:
-            title_words = set(re.findall(r"\b\w{4,}\b", (case.title or "").lower()))
-            overlap = sum(1 for w in words if w in title_words)
-            if overlap > best_count:
-                best, best_count = case, overlap
-        if best and best_count >= 2:
-            return {"case_id": best.id, "case_title": best.title,
-                    "reason": f"Keyword match ({best_count} terms)", "confidence": "low"}
-
-    return None
+    if not suggestion:
+        return None
+    if org_id is not None and suggestion.case_id:
+        case = await db.get(Case, suggestion.case_id)
+        if case and case.organization_id != org_id:
+            return None
+    return suggestion.to_dict()
 
 
 # ─── GET /intake — list items ─────────────────────────────────────────────────

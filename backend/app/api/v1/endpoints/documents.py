@@ -260,7 +260,9 @@ async def get_document_status(
         "stage": document.processing_stage,
         "progress": document.processing_progress,
         "processed_chunks": document.processed_chunks,
-        "total_chunks": document.total_chunks
+        "total_chunks": document.total_chunks,
+        "embedding_failed_count": document.embedding_failed_count or 0,
+        "ai_health": document.ai_health or {},
     }
 
 @router.get("/", response_model=List[DocumentSchema])
@@ -310,9 +312,14 @@ async def search_documents_semantic(
     from app.db.models.document import DocumentChunk
     
     # 1. Generate an embedding vector for the user's search string
+    from app.services.ai_utils import valid_embedding
+
     query_vector = await llm_service.generate_embedding(query)
-    if not query_vector:
-        raise HTTPException(status_code=500, detail="Failed to initialize semantic query vector")
+    if not valid_embedding(query_vector):
+        raise HTTPException(
+            status_code=503,
+            detail="Semantic search is unavailable (embedding service inactive or failed).",
+        )
         
     # 2. Search Postgres using L2 Distance (Cosine Similarity via <->)
     user_org_id = current_user.organization_id
@@ -323,7 +330,11 @@ async def search_documents_semantic(
     stmt = (
         select(DBDocument, DocumentChunk.text_content, DocumentChunk.embedding.l2_distance(query_vector).label('distance'))
         .join(DocumentChunk, DBDocument.id == DocumentChunk.document_id)
-        .options(selectinload(DBDocument.tags))
+        .options(
+            selectinload(DBDocument.tags),
+            selectinload(DBDocument.summary),
+            selectinload(DBDocument.document_metadata),
+        )
     )
     
     stmt = apply_user_org_filter(stmt, DBDocument, user_id, user_org_id, user_role)
@@ -469,30 +480,45 @@ async def classify_document(
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
 ):
     """
-    Classify a document automatically.
-    (Placeholder: actual classification service integration will be implemented later)
+    Deprecated: classification is set during document processing from AI document_type.
+    Re-runs intelligence on existing content when invoked manually.
     """
+    from app.services.collections_analysis import (
+        build_ai_analysis_for_collections,
+        classification_from_analysis,
+    )
+
     document = await document_crud.get(db, document_id)
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     verify_resource_access(document, current_user)
-    
-    # Simulate classification
-    document.classification = "contract" # Simulated classification
+
+    if not document.content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document has no extracted text yet.",
+        )
+
+    ai_analysis = await build_ai_analysis_for_collections(
+        document.content, document.filename, language=document.language
+    )
+    document.classification = classification_from_analysis(ai_analysis)
+    health = dict(document.ai_health or {})
+    health["analysis"] = "ok"
+    document.ai_health = health
     await db.commit()
     await db.refresh(document)
-    
-    # Audit Log
+
     await log_audit(
-        db=db, 
-        event_type="document_classify", 
-        organization_id=current_user.organization_id, 
+        db=db,
+        event_type="document_classify",
+        organization_id=current_user.organization_id,
         user_id=current_user.id,
         resource_type="document",
         resource_id=str(document.id),
-        metadata_json={"classification": document.classification}
+        metadata_json={"classification": document.classification},
     )
-    
+
     return document
 
 @router.post("/{document_id}/tags", response_model=DocumentSchema)
@@ -782,6 +808,9 @@ async def get_document_intelligence(
         } if summary else None,
         "tags": [tag.name for tag in doc_with_tags.tags] if doc_with_tags else [],
         "content_preview": document.content[:500] if document.content else None,
+        "analysis_mode": (document.ai_health or {}).get("analysis_mode"),
+        "chunks_analyzed": (document.ai_health or {}).get("chunks_analyzed"),
+        "ai_health": document.ai_health or {},
     }
 
 @router.post("/{document_id}/extract-metadata", response_model=DocumentMetadataSchema)
@@ -837,7 +866,7 @@ async def assign_document_to_collections(
     Use this to backfill existing documents that were uploaded before this feature was enabled.
     Returns a summary of collections assigned.
     """
-    from app.services.document_intelligence import document_intelligence_service
+    from app.services.collections_analysis import build_ai_analysis_for_collections
 
     document = await document_crud.get(db, document_id)
     if not document:
@@ -850,17 +879,11 @@ async def assign_document_to_collections(
             detail="Document has no content yet — wait for processing to complete.",
         )
 
-    # 1. Run AI analysis
-    ai_analysis = await document_intelligence_service.analyze_legal_document(
+    ai_analysis = await build_ai_analysis_for_collections(
         document.content, document.filename, language=document.language
     )
 
-    # 2. Merge regex metadata — DISABLED to use only AI tags
-    ai_analysis["routing_ids"] = []
-    ai_analysis["routing_projects"] = []
-    ai_analysis["routing_organizations"] = []
-
-    # 3. Run SmartCollections routing
+    # Run SmartCollections routing
     tags_before = {t.id for t in document.tags}
     await smart_collections_service.route_document_to_collections(db, document, ai_analysis)
 
@@ -888,7 +911,7 @@ async def bulk_assign_collections(
     that were uploaded before the Smart Collections feature was enabled.
     Returns immediately and processes in the background.
     """
-    from app.services.document_intelligence import document_intelligence_service
+    from app.services.collections_analysis import build_ai_analysis_for_collections
 
     org_id = current_user.organization_id
 
@@ -914,23 +937,9 @@ async def bulk_assign_collections(
     processed = 0
     for doc in docs_needing_sync:
         try:
-            ai_analysis = await document_intelligence_service.analyze_legal_document(
-                doc.content, doc.filename, language=doc.language
+            ai_analysis = await build_ai_analysis_for_collections(
+                doc.content or "", doc.filename, language=doc.language
             )
-
-            # Preserve regex-derived routing signals so Smart Collections can still
-            # work when the AI response is sparse (common for IDs / project names).
-            try:
-                regex_meta = await metadata_extraction_service.extract_metadata(
-                    doc.content or "", doc.language or "en"
-                )
-                ai_analysis["routing_ids"] = regex_meta.get("routing_ids", []) or []
-                ai_analysis["routing_projects"] = regex_meta.get("routing_projects", []) or []
-                ai_analysis["routing_organizations"] = regex_meta.get("routing_organizations", []) or []
-            except Exception:
-                ai_analysis.setdefault("routing_ids", [])
-                ai_analysis.setdefault("routing_projects", [])
-                ai_analysis.setdefault("routing_organizations", [])
 
             await smart_collections_service.route_document_to_collections(db, doc, ai_analysis)
             processed += 1

@@ -53,7 +53,9 @@ class Document(Base):
     processing_progress = Column(Float, default=0.0)
     processed_chunks = Column(Integer, default=0)
     total_chunks = Column(Integer, default=0)
-    
+    embedding_failed_count = Column(Integer, default=0)
+    ai_health = Column(JSON, nullable=True)  # e.g. {"analysis": "ok", "embedding": "partial"}
+
     # Deprecated JSON placeholder. We are moving to the structured DocumentChunk model
     # embeddings = Column(JSON, nullable=True) 
 

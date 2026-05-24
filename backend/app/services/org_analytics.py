@@ -160,12 +160,12 @@ class OrgAnalyticsService:
         for member in members:
             uid = member.id
 
-            # Assigned open cases
+            # Assigned open cases (OPEN + PENDING, not CLOSED)
             open_cases = await db.scalar(
                 select(func.count(Case.id)).where(
                     Case.organization_id == org_id,
                     Case.assigned_lawyer_id == uid,
-                    Case.status == CaseStatus.OPEN,
+                    Case.status != CaseStatus.CLOSED,
                 )
             ) or 0
 
@@ -210,17 +210,36 @@ class OrgAnalyticsService:
                 )
             ) or 0
 
-            compliance_rate = round(
-                (user_completed_deadlines / max(user_total_deadlines, 1)) * 100, 1
-            )
+            # Only calculate compliance rate if user has deadlines
+            compliance_rate = None
+            if user_total_deadlines > 0:
+                compliance_rate = round(
+                    (user_completed_deadlines / user_total_deadlines) * 100, 1
+                )
 
-            # Last activity (most recent case event by this user)
-            last_event = await db.scalar(
+            # Last activity: combine CaseEvent + Document uploads (most recent action)
+            case_event_time = await db.scalar(
                 select(func.max(CaseEvent.created_at)).where(
                     CaseEvent.organization_id == org_id,
                     CaseEvent.user_id == uid,
                 )
             )
+            
+            doc_upload_time = await db.scalar(
+                select(func.max(Document.created_at)).where(
+                    Document.organization_id == org_id,
+                    Document.uploaded_by_user_id == uid,
+                )
+            )
+            
+            # Use the most recent of the two activities
+            last_event = None
+            if case_event_time and doc_upload_time:
+                last_event = max(case_event_time, doc_upload_time)
+            elif case_event_time:
+                last_event = case_event_time
+            elif doc_upload_time:
+                last_event = doc_upload_time
 
             # Cases created this month
             month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

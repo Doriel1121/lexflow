@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, get_current_org, RoleChecker
 from app.db.models.user import User, UserRole
 from app.services.org_analytics import org_analytics_service
+from app.services.ai_health_analytics import ai_health_analytics_service
 
 router = APIRouter(prefix="/org/analytics", tags=["org-analytics"])
 
@@ -64,3 +65,16 @@ async def get_deadline_health(
     Deadline health: overdue, approaching, on-track, compliance trend.
     """
     return await org_analytics_service.get_deadline_health(db, org_id)
+
+
+@router.get("/ai-health")
+async def get_org_ai_health(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_ORG_ADMIN_ONLY),
+    org_id: int = Depends(get_current_org),
+):
+    """
+    AI processing health for the organization: incomplete analysis, embedding
+    failures, recent pipeline errors, and active provider.
+    """
+    return await ai_health_analytics_service.get_org_ai_health(db, org_id)

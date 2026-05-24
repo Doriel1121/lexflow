@@ -38,6 +38,8 @@ interface Document {
   processing_status?: string | null;
   processing_progress?: number;
   processing_stage?: string;
+  embedding_failed_count?: number;
+  ai_health?: { analysis?: string; embedding?: string };
   content?: string;
   tags?: { id: number; name: string }[];
 }
@@ -268,7 +270,7 @@ export function DocumentList() {
         setIsSearching(true);
         // Semantic search isn't paginated the same way currently since chunking vectors handles it, but pass it if available
         response = await api.get("/v1/documents/semantic-search", {
-          params: { query: query.trim(), skip, limit },
+          params: { query: query.trim(), limit },
         });
       } else {
         // Normal fetch
@@ -288,8 +290,15 @@ export function DocumentList() {
 
       setHasMore(incomingDocs.length === limit);
       setPage(targetPage);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch documents:", error);
+      if (error?.response?.status === 503 && semanticSearchActive) {
+        showSnackbar(
+          error.response?.data?.detail ||
+            "AI search is temporarily unavailable.",
+          { type: "error" },
+        );
+      }
     } finally {
       setLoading(false);
       setIsSearching(false);
@@ -468,6 +477,11 @@ export function DocumentList() {
         doc.processing_stage === "completed_without_ai")
     );
   };
+
+  const embeddingUnavailable = (doc: Document) =>
+    doc.processing_stage === "completed_embedding_partial" ||
+    (doc.embedding_failed_count ?? 0) > 0 ||
+    doc.ai_health?.embedding === "partial";
 
   const handleRetryAI = async (docId: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -843,6 +857,18 @@ export function DocumentList() {
                               <button
                                 onClick={(e) => handleRetryAI(doc.id, e)}
                                 className="text-xs text-primary-600 hover:text-primary-800 font-medium underline text-start"
+                              >
+                                {t("documentList.retryAI")}
+                              </button>
+                            </div>
+                          ) : embeddingUnavailable(doc) ? (
+                            <div className="flex flex-col space-y-1.5">
+                              <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-800 shadow-sm border border-amber-200/60">
+                                {t("documentList.embeddingPartial")}
+                              </span>
+                              <button
+                                onClick={(e) => handleRetryAI(doc.id, e)}
+                                className="text-xs text-primary-600 hover:text-primary-800 font-medium underline"
                               >
                                 {t("documentList.retryAI")}
                               </button>

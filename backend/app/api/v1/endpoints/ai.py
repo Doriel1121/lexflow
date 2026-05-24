@@ -79,8 +79,15 @@ async def ask_ai(
 
     # 2. Semantic Retrieval
     # Generate embedding for the question
+    from app.services.ai_utils import valid_embedding
+
     question_vector = await llm_service.generate_embedding(request.question)
-    
+    if not valid_embedding(question_vector):
+        raise HTTPException(
+            status_code=503,
+            detail="AI Q&A is temporarily unavailable (embedding service failed).",
+        )
+
     # Construct query with pgvector cosine distance
     # We join with Document to ensure org/user isolation
     stmt = (

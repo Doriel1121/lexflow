@@ -187,7 +187,27 @@ class DocumentProcessingService:
         Each major stage gets its own database session to prevent
         transaction corruption from propagating through the pipeline.
         """
-        logger.info(f"[Doc {document_id}] Pipeline started. file={file_path}")
+        logger.info(f"[Doc {document_id}] Pipeline started (unified). file={file_path}")
+
+        from app.services.document_pipeline import run_document_pipeline
+
+        try:
+            await run_document_pipeline(
+                document_id,
+                file_path,
+                user_id,
+                organization_id or 0,
+                session_factory=AsyncSessionLocal,
+                allow_embed_fanout=False,
+            )
+            return
+        except Exception as unified_err:
+            logger.error(
+                "[Doc %s] Unified pipeline failed, falling back to legacy stages: %s",
+                document_id,
+                unified_err,
+            )
+
         start_time = time.time()
 
         # ── INIT: Mark as processing ──────────────────────────────────────

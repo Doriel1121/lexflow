@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, HttpUrl, Field
 
@@ -18,6 +18,10 @@ class DocumentBase(BaseModel):
     processing_status: Optional[DocumentProcessingStatus] = None
     processing_stage: Optional[str] = None
     processing_progress: Optional[float] = None
+    processed_chunks: Optional[int] = None
+    total_chunks: Optional[int] = None
+    embedding_failed_count: Optional[int] = None
+    ai_health: Optional[Dict[str, Any]] = None
 
 class DocumentCreate(DocumentBase):
     pass
