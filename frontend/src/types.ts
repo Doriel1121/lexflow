@@ -15,13 +15,13 @@ export interface Case {
   id: number;
   title: string;
   description?: string;
-  status: 'open' | 'closed' | 'pending';
+  status: "open" | "closed" | "pending";
   client_id: number;
   client_name?: string;
   created_by_user_id: number;
   assigned_lawyer_id?: number;
   assigned_lawyer_name?: string;
-  priority?: 'critical' | 'high' | 'normal' | 'low';
+  priority?: "critical" | "high" | "normal" | "low";
   priority_score?: number;
   created_at: string;
   updated_at: string;
@@ -48,7 +48,7 @@ export interface Document {
   classification?: string;
   language?: string;
   page_count?: number;
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed';
+  processing_status: "pending" | "processing" | "completed" | "failed";
   created_at: string;
   updated_at: string;
   tags: Tag[];
@@ -119,7 +119,7 @@ export interface EmployeeStats {
   open_cases: number;
   total_assigned_cases: number;
   documents_uploaded: number;
-  deadline_compliance_rate: number;
+  deadline_compliance_rate: number | null;
   total_deadlines: number;
   completed_deadlines: number;
   overdue_deadlines: number;
