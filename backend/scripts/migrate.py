@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text, inspect, create_engine
+from app.core.config import settings
 
 
 def get_sync_url(async_url: str) -> str:
@@ -43,9 +44,10 @@ def drop_all_tables(sync_url: str) -> bool:
 def check_migration_state():
     """Check current database state and determine action needed."""
     engine = None
-    db_url = os.getenv("DATABASE_URL")
+    db_url = settings.DATABASE_URL
     if not db_url:
-        print("ERROR: DATABASE_URL not set")
+        print("ERROR: DATABASE_URL not set in environment or config")
+        print("Set DATABASE_URL or use RENDER_INTERNAL_DATABASE_URL/RENDER_EXTERNAL_DATABASE_URL")
         return False
 
     sync_url = get_sync_url(db_url)
