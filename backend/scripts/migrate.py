@@ -42,6 +42,7 @@ def drop_all_tables(sync_url: str) -> bool:
 
 def check_migration_state():
     """Check current database state and determine action needed."""
+    engine = None
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         print("ERROR: DATABASE_URL not set")
@@ -90,7 +91,8 @@ def check_migration_state():
         # Continue anyway - let alembic handle it
         return True
     finally:
-        engine.dispose()
+        if engine:
+            engine.dispose()
 
 
 def run_migration():
