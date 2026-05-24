@@ -30,7 +30,15 @@ target_metadata = Base.metadata
 # ... etc.
 
 # set the sqlalchemy.url from our settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+db_url = settings.DATABASE_URL
+if not db_url or not db_url.strip():
+    raise ValueError(
+        "DATABASE_URL is required. Set DATABASE_URL environment variable or "
+        "RENDER_INTERNAL_DATABASE_URL/RENDER_EXTERNAL_DATABASE_URL or "
+        "DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME or "
+        "RENDER_DB_HOST/RENDER_DB_PORT/RENDER_DB_USER/RENDER_DB_PASSWORD/RENDER_DB_NAME."
+    )
+config.set_main_option("sqlalchemy.url", db_url)
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -74,15 +82,30 @@ async def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = create_async_engine(
-        settings.DATABASE_URL,
-        poolclass=pool.NullPool,
-    )
-
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    db_url = settings.DATABASE_URL
+    if not db_url or not db_url.strip():
+        raise ValueError(
+            "DATABASE_URL is required but not set. "
+            "Check environment variables: DATABASE_URL, RENDER_INTERNAL_DATABASE_URL, "
+            "RENDER_EXTERNAL_DATABASE_URL, or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME"
+        )
     
-    await connectable.dispose()
+    try:
+        connectable = create_async_engine(
+            db_url,
+            poolclass=pool.NullPool,
+        )
+    except Exception as e:
+        raise ValueError(
+            f"Failed to create async engine with DATABASE_URL: {db_url}\n"
+            f"Error: {e}"
+        ) from e
+
+    try:
+        async with connectable.connect() as connection:
+            await connection.run_sync(do_run_migrations)
+    finally:
+        await connectable.dispose()
 
 
 if context.is_offline_mode():
