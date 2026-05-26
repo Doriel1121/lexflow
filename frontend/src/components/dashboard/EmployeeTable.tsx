@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Users, ArrowUpDown, TrendingUp, TrendingDown } from "lucide-react";
 import api from "../../services/api";
 import type { EmployeeStats } from "../../types";
@@ -11,6 +12,7 @@ type SortKey =
   | "overdue_deadlines";
 
 export function EmployeeTable() {
+  const { t } = useTranslation();
   const [employees, setEmployees] = useState<EmployeeStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("open_cases");
@@ -90,7 +92,7 @@ export function EmployeeTable() {
     return (
       <div className="bg-white rounded-2xl p-6 text-center text-slate-400">
         <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-        <p className="text-sm">No team members found</p>
+        <p className="text-sm">{t("dashboardPage.noTeamMembers")}</p>
       </div>
     );
   }
@@ -101,10 +103,10 @@ export function EmployeeTable() {
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-slate-500" />
           <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
-            Team Performance
+            {t("dashboardPage.teamPerformance")}
           </h3>
           <span className="ml-auto text-xs text-slate-400">
-            {employees.length} members
+            {employees.length} {t("dashboardPage.members")}
           </span>
         </div>
       </div>
@@ -112,19 +114,28 @@ export function EmployeeTable() {
         <table className="w-full">
           <thead className="bg-slate-50/80">
             <tr>
-              <SortHeader label="Name" sortField="full_name" />
-              <SortHeader label="Open Cases" sortField="open_cases" />
               <SortHeader
-                label="Docs Uploaded"
+                label={t("dashboardPage.name")}
+                sortField="full_name"
+              />
+              <SortHeader
+                label={t("dashboardPage.openCases")}
+                sortField="open_cases"
+              />
+              <SortHeader
+                label={t("dashboardPage.docsUploaded")}
                 sortField="documents_uploaded"
               />
               <SortHeader
-                label="Compliance"
+                label={t("dashboardPage.compliance")}
                 sortField="deadline_compliance_rate"
               />
-              <SortHeader label="Overdue" sortField="overdue_deadlines" />
+              <SortHeader
+                label={t("dashboardPage.overdue")}
+                sortField="overdue_deadlines"
+              />
               <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Last Active
+                {t("dashboardPage.lastActive")}
               </th>
             </tr>
           </thead>
@@ -192,7 +203,7 @@ export function EmployeeTable() {
                         undefined,
                         { month: "short", day: "numeric" },
                       )
-                    : "Never"}
+                    : t("dashboardPage.never")}
                 </td>
               </tr>
             ))}

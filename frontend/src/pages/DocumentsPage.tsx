@@ -209,7 +209,7 @@ const DocumentsPage: React.FC = () => {
                 onClick={() => setSelectedDoc(null)}
                 className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
               >
-                Close
+                {t("common.close")}
               </button>
             </div>
           </div>
@@ -245,7 +245,7 @@ const DocumentsPage: React.FC = () => {
                 onClick={() => setModalContent(null)}
                 className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
               >
-                Close
+                {t("common.close")}
               </button>
             </div>
           </div>

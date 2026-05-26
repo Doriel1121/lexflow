@@ -548,8 +548,8 @@ export function DocumentList() {
               type="text"
               placeholder={
                 semanticSearchActive
-                  ? "AI Search: Ask a legal question..."
-                  : "Search documents by name or content..."
+                  ? t("documentsPage.searchAI")
+                  : t("documentsPage.searchDocuments")
               }
               value={searchTerm}
               onChange={(e) => {
@@ -603,7 +603,9 @@ export function DocumentList() {
               )}
             </button>
             <label className="bg-primary text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-primary-800 transition-all shadow-sm cursor-pointer">
-              {uploading ? "Uploading..." : "Upload"}
+              {uploading
+                ? t("documentsPage.uploading")
+                : t("documentsPage.upload")}
               <input
                 type="file"
                 className="hidden"
@@ -1053,7 +1055,7 @@ export function DocumentList() {
                   type="text"
                   value={filterClassification}
                   onChange={(e) => setFilterClassification(e.target.value)}
-                  placeholder="e.g., Contract, Invoice..."
+                  placeholder={t("documentsPage.classificationPlaceholder")}
                   className="w-full ps-3 pe-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 />
               </div>

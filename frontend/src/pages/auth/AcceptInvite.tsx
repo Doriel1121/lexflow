@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { UserPlus, Loader2, KeyRound } from "lucide-react";
 import api from "../../services/api";
@@ -6,6 +7,7 @@ import api from "../../services/api";
 export default function AcceptInvite() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const token = searchParams.get("token");
 
   const [fullName, setFullName] = useState("");
@@ -125,7 +127,7 @@ export default function AcceptInvite() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="block w-full ps-10 pe-3 py-2.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-                  placeholder="John Doe"
+                  placeholder={t("auth.fullNamePlaceholder")}
                 />
               </div>
             </div>
@@ -144,7 +146,7 @@ export default function AcceptInvite() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full ps-10 pe-3 py-2.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-                  placeholder="At least 8 characters"
+                  placeholder={t("auth.passwordConfirmPlaceholder")}
                 />
               </div>
             </div>
@@ -163,7 +165,7 @@ export default function AcceptInvite() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="block w-full ps-10 pe-3 py-2.5 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors"
-                  placeholder="Repeat new password"
+                  placeholder={t("auth.passwordRepeatPlaceholder")}
                 />
               </div>
             </div>

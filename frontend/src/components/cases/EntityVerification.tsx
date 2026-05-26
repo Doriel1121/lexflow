@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Search, ShieldAlert, ShieldCheck, Loader2 } from "lucide-react";
 import api from "../../services/api";
 
@@ -26,6 +27,7 @@ interface EntityVerificationProps {
 export const EntityVerification: React.FC<EntityVerificationProps> = ({
   onVerified,
 }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<RiskDetails | null>(null);
@@ -84,7 +86,7 @@ export const EntityVerification: React.FC<EntityVerificationProps> = ({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleVerify()}
             className="w-full ps-9 pe-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary text-sm bg-white"
-            placeholder="e.g. 512345678 or Acme Corp"
+            placeholder={t("clients.entitySearchPlaceholder")}
           />
         </div>
         <button

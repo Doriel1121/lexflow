@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileText } from "lucide-react";
 import api from "../../services/api";
 
@@ -11,6 +12,7 @@ interface Document {
 }
 
 export function RecentDocs() {
+  const { t } = useTranslation();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,13 +49,13 @@ export function RecentDocs() {
     <div className="bg-white rounded-2xl overflow-hidden">
       <div className="px-5 py-4 flex justify-between items-center">
         <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
-          Recent Documents
+          {t("dashboardPage.recentDocuments")}
         </h3>
         <a
           href="/documents"
           className="text-xs text-slate-400 hover:text-slate-600 font-medium transition-colors"
         >
-          View all →
+          {t("dashboardPage.viewAll")}
         </a>
       </div>
       <div className="overflow-x-auto">
@@ -83,7 +85,7 @@ export function RecentDocs() {
                 >
                   <div className="flex items-center justify-center gap-2">
                     <div className="h-4 w-4 rounded-full border-2 border-slate-200 border-t-slate-400 animate-spin" />
-                    Loading...
+                    {t("common.loading")}
                   </div>
                 </td>
               </tr>
@@ -93,7 +95,7 @@ export function RecentDocs() {
                   colSpan={4}
                   className="px-5 py-10 text-center text-slate-400 text-sm"
                 >
-                  No documents uploaded yet.
+                  {t("documentsPage.noDocumentsUploaded")}
                 </td>
               </tr>
             ) : (

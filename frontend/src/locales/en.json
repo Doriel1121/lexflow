@@ -7,6 +7,7 @@
         "edit": "Edit",
         "back": "Back",
         "create": "Create",
+        "add": "Add",
         "submit": "Submit",
         "search": "Search",
         "filter": "Filter",
@@ -14,7 +15,8 @@
         "viewAll": "View all",
         "noResults": "No results found",
         "error": "An error occurred",
-        "success": "Success"
+        "success": "Success",
+        "criticalDeadline": "Critical deadline"
     },
     "nav": {
         "dashboard": "Dashboard",
@@ -93,7 +95,11 @@
         "noCases": "No cases yet",
         "active": "Active",
         "closed": "Closed",
-        "pending": "Pending"
+        "pending": "Pending",
+        "caseTitle": "Case Title",
+        "caseTitlePlaceholder": "Enter case title",
+        "description": "Description",
+        "descriptionPlaceholder": "Enter case description"
     },
     "documents": {
         "title": "Documents",
@@ -125,7 +131,19 @@
         },
         "noContactInfo": "No contact info",
         "highRisk": "High Risk",
-        "verified": "Verified"
+        "verified": "Verified",
+        "officialEntityName": "Official Entity Name",
+        "entityNamePlaceholder": "Legal name of standard entity",
+        "primaryContact": "Primary Contact Person",
+        "contactNamePlaceholder": "Full name",
+        "contactEmail": "Contact Email",
+        "emailPlaceholder": "email@example.com",
+        "phoneNumber": "Phone Number",
+        "phonePlaceholder": "+1 (555) 000-0000",
+        "registeredAddress": "Registered Address",
+        "addressPlaceholder": "123 Corporate Blvd",
+        "entityVerification": "Verify Entity",
+        "entitySearchPlaceholder": "e.g. 512345678 or Acme Corp"
     },
     "settings": {
         "title": "Settings",
@@ -146,6 +164,7 @@
         "subtitle": "Manage workspace members and their roles.",
         "inviteTeammate": "Invite Teammate",
         "emailAddress": "Email Address",
+        "emailPlaceholder": "colleague@firm.com",
         "role": "Role",
         "roles": {
             "lawyer": "Lawyer (Standard)",
@@ -170,7 +189,9 @@
         "subtitle": "Tamper-evident security and activity feed for your organization.",
         "admin": {
             "title": "Audit Logs",
-            "subtitle": "Platform-wide security and compliance activity feed."
+            "subtitle": "Platform-wide security and compliance activity feed.",
+            "searchPlaceholder": "Search events, paths, user hashes…",
+            "noAuditEvents": "No audit events recorded yet."
         },
         "timestamp": "Timestamp",
         "user": "User",
@@ -181,6 +202,7 @@
         "searchPlaceholder": "Search events or resources…",
         "loading": "Loading secure logs…",
         "noLogs": "No logs found matching your criteria.",
+        "noLogsMatch": "No logs match your search.",
         "userId": "UID-{{id}}",
         "system": "System"
     },
@@ -188,12 +210,33 @@
         "login": "Sign In",
         "logout": "Sign Out",
         "email": "Email",
+        "emailAddress": "Email Address",
         "password": "Password",
         "forgotPassword": "Forgot password?",
+        "forgot": "Forgot?",
         "noAccount": "Don't have an account?",
+        "haveAccount": "Already have a workspace?",
         "register": "Sign up",
+        "registerOrganization": "Register your organization",
         "welcomeBack": "Welcome back",
-        "signInToContinue": "Sign in to continue to LegalOS"
+        "signInToContinue": "Sign in to continue to LegalOS",
+        "signInToWorkspace": "Sign in to your workspace to continue.",
+        "createWorkspace": "Create your workspace",
+        "createWorkspaceButton": "Create Workspace",
+        "emailPlaceholder": "name@company.com",
+        "passwordPlaceholder": "••••••••",
+        "organizationName": "Law Firm / Organization Name",
+        "organizationPlaceholder": "Acme Legal Group",
+        "fullName": "Full Name",
+        "fullNamePlaceholder": "Jane Doe",
+        "workEmail": "Work Email",
+        "workEmailPlaceholder": "jane@acmelegal.com",
+        "adminAccount": "Admin Account",
+        "confirmPassword": "Confirm",
+        "passwordConfirmPlaceholder": "At least 8 characters",
+        "passwordRepeatPlaceholder": "Repeat new password",
+        "passwordsDoNotMatch": "Passwords do not match",
+        "registrationFailed": "Registration failed. Please try again."
     },
     "search": {
         "title": "Semantic Search",
@@ -242,6 +285,7 @@
         "editSuccess": "Collection renamed successfully",
         "nameConflict": "A collection with this name already exists",
         "systemCollection": "System collections cannot be edited or deleted",
+        "noDocumentsInCollection": "No documents have been categorized under this collection yet.",
         "categories": {
             "all": "All",
             "clientId": "Client ID",
@@ -295,6 +339,30 @@
         "briefDescPlaceholder": "Brief description of the case and key parties involved...",
         "caseTitlePlaceholder": "e.g., Contract Dispute — Acme Corp",
         "notAvailable": "N/A"
+    },
+    "caseDetail": {
+        "loading": "Loading case details...",
+        "errorLoading": "Error Loading Case",
+        "backToCases": "Back to Cases",
+        "documents": "Documents",
+        "processingWithAI": "Processing with AI...",
+        "noDocuments": "No documents",
+        "timeline": "Timeline",
+        "noUpcomingDeadlines": "No upcoming deadlines",
+        "undo": "Undo",
+        "notes": "Notes",
+        "noCaseNotes": "No case notes",
+        "editDeadline": "Edit Deadline",
+        "addNewDeadline": "Add New Deadline",
+        "deadlinePlaceholder": "e.g., File Statement of Defense",
+        "additionalDetails": "Additional details...",
+        "updateDeadline": "Update Deadline",
+        "createDeadline": "Create Deadline",
+        "addCaseNote": "Add Case Note",
+        "noteContentPlaceholder": "Enter note content...",
+        "addNote": "Add Note",
+        "created": "Created",
+        "assignedTo": "Assigned To"
     },
     "adminUsers": {
         "title": "Users & Roles",
@@ -410,7 +478,10 @@
         "setup2": "On your fax machine / scanner, change the \"Send to email\" destination to that address",
         "setup3": "Done — documents will appear in LegalOS automatically",
         "security": "Security",
-        "securityDesc": "All inbound emails are processed over TLS. Attachments are scanned and stored encrypted. Every ingested document is logged in the tamper-evident audit trail."
+        "securityDesc": "All inbound emails are processed over TLS. Attachments are scanned and stored encrypted. Every ingested document is logged in the tamper-evident audit trail.",
+        "pauseIngestion": "Pause ingestion",
+        "enableIngestion": "Enable ingestion",
+        "removeEmail": "Remove"
     },
     "documentList": {
         "dropArea": "Drag & drop files here, or click to select",
@@ -517,6 +588,16 @@
         "anonCounts": "Anonymous counts",
         "calls": "Calls"
     },
+    "adminOrganizations": {
+        "organizationName": "Organization Name",
+        "organizationNamePlaceholder": "e.g. Acme Law Firm",
+        "primaryContact": "Primary Contact",
+        "primaryContactPlaceholder": "e.g. Jane Smith",
+        "email": "Email",
+        "emailPlaceholder": "admin@firm.com",
+        "apiKey": "API Key",
+        "apiKeyPlaceholder": "Auto-generated if empty"
+    },
     "documentsPage": {
         "title": "All Documents",
         "loading": "Loading documents...",
@@ -540,7 +621,14 @@
         "caseNumbers": "📋 Case Numbers",
         "none": "None",
         "noContent": "No content extracted yet.",
-        "extractText": "Go to the case page and click \"View Content\" to extract text."
+        "extractText": "Go to the case page and click \"View Content\" to extract text.",
+        "classificationFilter": "Classification",
+        "classificationPlaceholder": "e.g., Contract, Invoice...",
+        "searchDocuments": "Search documents by name or content...",
+        "searchAI": "AI Search: Ask a legal question...",
+        "upload": "Upload",
+        "uploading": "Uploading...",
+        "noDocumentsUploaded": "No documents uploaded yet."
     },
     "dashboardPage": {
         "title": "Dashboard",
@@ -548,13 +636,29 @@
         "loading": "Loading dashboard...",
         "totalCases": "Total Cases",
         "activeCases": "Active Cases",
+        "activeCasesDesc": "Cases currently open",
         "documents": "Documents",
+        "documentsDesc": "Processed this month",
+        "actionRequired": "Action Required",
+        "actionRequiredDesc": "Pending your review",
+        "openCases": "Open Cases",
+        "overdue": "Overdue",
+        "dueIn7Days": "Due in 7 Days",
+        "unassigned": "Unassigned",
+        "compliance": "Compliance",
         "recentCases": "Recent Cases",
         "viewAll": "View All →",
         "recentDocuments": "Recent Documents",
         "status": "Status",
         "noCases": "No cases yet. Create your first case!",
-        "noDocuments": "No documents yet. Upload documents from case pages!"
+        "noDocuments": "No documents yet. Upload documents from case pages!",
+        "teamPerformance": "Team Performance",
+        "members": "members",
+        "name": "Name",
+        "docsUploaded": "Docs Uploaded",
+        "lastActive": "Last Active",
+        "noTeamMembers": "No team members found",
+        "never": "Never"
     },
     "emailIntake": {
         "title": "AI Intake Center",
@@ -599,6 +703,11 @@
         "gmailExpired": "Gmail access expired. Please login again.",
         "syncFailed": "Sync failed"
     },
+    "languageSwitcher": {
+        "switchToEnglish": "Switch to English",
+        "switchToHebrew": "עבור לעברית",
+        "toggleLanguage": "Toggle language"
+    },
     "searchPage": {
         "title": "Global Search Center",
         "subtitle": "Unified search across clients, cases, and documents.",
@@ -631,7 +740,13 @@
         "contactPerson": "Contact Person",
         "forgotPassword": "Forgot password?",
         "agree": "I agree to",
-        "termsAndConditions": "terms and conditions"
+        "termsAndConditions": "terms and conditions",
+        "title": "Title",
+        "date": "Date",
+        "time": "Time",
+        "type": "Type",
+        "assignee": "Assignee",
+        "description": "Description"
     },
     "status": {
         "active": "Active",
@@ -656,7 +771,8 @@
         "viewContentInstructions": "Go to the case page and click 'View Content' to extract text",
         "analysisModeChunked": "Multi-section ({{count}} parts)",
         "analysisModeChunkedHint": "This document was analyzed section-by-section because of its length",
-        "analysisModeChunkedBanner": "Insights were merged from multiple sections of this long document. Some details may only appear in the full text."
+        "analysisModeChunkedBanner": "Insights were merged from multiple sections of this long document. Some details may only appear in the full text.",
+        "deleteConfirmation": "Are you sure you want to delete"
     },
     "confirm": {
         "title": "Are you sure?",

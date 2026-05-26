@@ -425,8 +425,8 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
           <SectionHeader
-            title="API Call Volume"
-            subtitle="System-wide requests over the last 30 days"
+            title={t("adminDashboard.apiCallVolume")}
+            subtitle={t("adminDashboard.lastThirtyDays")}
           />
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart
@@ -479,8 +479,8 @@ export default function AdminDashboard() {
 
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
           <SectionHeader
-            title="Error Rate"
-            subtitle="Percentage of failed requests over 30 days"
+            title={t("adminDashboard.errorRateChart")}
+            subtitle={t("adminDashboard.errorRateDesc")}
           />
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart
@@ -537,8 +537,8 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
           <SectionHeader
-            title="Tenant Growth"
-            subtitle="New and active tenants per month"
+            title={t("adminDashboard.tenantGrowth")}
+            subtitle={t("adminDashboard.newAndActive")}
           />
           {growthData.length === 0 ? (
             <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
@@ -588,8 +588,8 @@ export default function AdminDashboard() {
 
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
           <SectionHeader
-            title="Feature Usage"
-            subtitle="System-wide feature calls over the last 7 days"
+            title={t("adminDashboard.featureUsage")}
+            subtitle={t("adminDashboard.lastSevenDays")}
           />
           {featureData.length === 0 ? (
             <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
@@ -643,8 +643,8 @@ export default function AdminDashboard() {
       {roleData.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
           <SectionHeader
-            title="User Role Distribution"
-            subtitle="System-wide count of users per role type"
+            title={t("adminDashboard.roleDistribution")}
+            subtitle={t("adminDashboard.anonCounts")}
           />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mt-2">
             {roleData.map(({ name, count }) => (

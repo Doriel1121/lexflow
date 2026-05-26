@@ -274,10 +274,15 @@ const CaseDetailPage: React.FC = () => {
   };
 
   const handleDeleteDeadline = async (deadlineId: number) => {
-    const ok = await confirm(t("confirm.deleteDeadline", { defaultValue: "Are you sure you want to delete this deadline?" }), {
-      variant: "danger",
-      confirmLabel: t("common.delete"),
-    });
+    const ok = await confirm(
+      t("confirm.deleteDeadline", {
+        defaultValue: "Are you sure you want to delete this deadline?",
+      }),
+      {
+        variant: "danger",
+        confirmLabel: t("common.delete"),
+      },
+    );
     if (!ok) return;
     try {
       await api.delete(`/v1/deadlines/${deadlineId}`);
@@ -358,20 +363,24 @@ const CaseDetailPage: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-slate-400">
         <Loader2 className="h-6 w-6 animate-spin" />
-        <span>Loading case details...</span>
+        <span>
+          {t("caseDetail.loading", { defaultValue: "Loading case details..." })}
+        </span>
       </div>
     );
   if (error || !caseData)
     return (
       <div className="p-8 text-center bg-red-50 text-red-600 rounded-xl border border-red-100">
         <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <h2 className="text-lg font-bold">Error Loading Case</h2>
+        <h2 className="text-lg font-bold">
+          {t("caseDetail.errorLoading", { defaultValue: "Error Loading Case" })}
+        </h2>
         <p className="mt-2">{error}</p>
         <button
           onClick={() => navigate("/cases")}
           className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg"
         >
-          Back to Cases
+          {t("caseDetail.backToCases", { defaultValue: "Back to Cases" })}
         </button>
       </div>
     );
@@ -400,7 +409,9 @@ const CaseDetailPage: React.FC = () => {
           className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors group"
         >
           <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-          <span>Back to Cases</span>
+          <span>
+            {t("caseDetail.backToCases", { defaultValue: "Back to Cases" })}
+          </span>
         </button>
       </div>
 
@@ -426,7 +437,7 @@ const CaseDetailPage: React.FC = () => {
                 <Calendar className="h-3.5 w-3.5 text-slate-400" />
                 <div>
                   <p className="text-slate-400 font-medium leading-tight">
-                    Created
+                    {t("caseDetail.created", { defaultValue: "Created" })}
                   </p>
                   <p className="font-bold text-slate-700">
                     {new Date(caseData.created_at).toLocaleDateString()}
@@ -437,7 +448,9 @@ const CaseDetailPage: React.FC = () => {
                 <User className="h-3.5 w-3.5 text-slate-400" />
                 <div>
                   <p className="text-slate-400 font-medium leading-tight">
-                    Assigned To
+                    {t("caseDetail.assignedTo", {
+                      defaultValue: "Assigned To",
+                    })}
                   </p>
                   <button
                     onClick={openAssignLawyerModal}
@@ -490,7 +503,9 @@ const CaseDetailPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         <div className="bg-card border border-border rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-slate-800">Documents</h2>
+            <h2 className="text-xl font-semibold text-slate-800">
+              {t("caseDetail.documents", { defaultValue: "Documents" })}
+            </h2>
             <label className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors cursor-pointer">
               <Upload className="h-4 w-4" />
               <span>{uploading ? "..." : "Upload"}</span>
@@ -507,7 +522,9 @@ const CaseDetailPage: React.FC = () => {
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3">
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
               <span className="text-xs text-blue-700 font-medium">
-                Processing with AI...
+                {t("caseDetail.processingWithAI", {
+                  defaultValue: "Processing with AI...",
+                })}
               </span>
             </div>
           )}
@@ -543,7 +560,9 @@ const CaseDetailPage: React.FC = () => {
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400">
               <FileText className="h-8 w-8 mb-2 opacity-20" />
-              <p className="text-xs">No documents</p>
+              <p className="text-xs">
+                {t("caseDetail.noDocuments", { defaultValue: "No documents" })}
+              </p>
             </div>
           )}
         </div>
@@ -551,7 +570,7 @@ const CaseDetailPage: React.FC = () => {
         <div className="bg-card border border-border rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
-              Timeline{" "}
+              {t("caseDetail.timeline", { defaultValue: "Timeline" })}{" "}
               <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
                 {pendingDeadlines.length}
               </span>
@@ -632,14 +651,16 @@ const CaseDetailPage: React.FC = () => {
             ) : (
               <div className="text-center py-8 text-slate-400 text-xs">
                 <Calendar className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                No upcoming deadlines
+                {t("caseDetail.noUpcomingDeadlines", {
+                  defaultValue: "No upcoming deadlines",
+                })}
               </div>
             )}
 
             {completedDeadlines.length > 0 && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                  Completed
+                  {t("status.completed", { defaultValue: "Completed" })}
                 </h3>
                 <div className="space-y-2">
                   {completedDeadlines.map((d: any) => (
@@ -662,7 +683,7 @@ const CaseDetailPage: React.FC = () => {
                         onClick={() => toggleDeadlineComplete(d)}
                         className="text-[10px] text-primary hover:underline"
                       >
-                        Undo
+                        {t("caseDetail.undo", { defaultValue: "Undo" })}
                       </button>
                     </div>
                   ))}
@@ -674,13 +695,15 @@ const CaseDetailPage: React.FC = () => {
 
         <div className="bg-card border border-border rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-slate-800">Notes</h2>
+            <h2 className="text-xl font-semibold text-slate-800">
+              {t("caseDetail.notes", { defaultValue: "Notes" })}
+            </h2>
             <button
               onClick={() => setShowNoteModal(true)}
               className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
             >
               <Plus className="h-4 w-4" />
-              Add
+              {t("common.add", { defaultValue: "Add" })}
             </button>
           </div>
           {caseData.notes && caseData.notes.length > 0 ? (
@@ -715,7 +738,9 @@ const CaseDetailPage: React.FC = () => {
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400">
               <Plus className="h-8 w-8 mb-2 opacity-20" />
-              <p className="text-xs">No case notes</p>
+              <p className="text-xs">
+                {t("caseDetail.noCaseNotes", { defaultValue: "No case notes" })}
+              </p>
             </div>
           )}
         </div>
@@ -727,7 +752,13 @@ const CaseDetailPage: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-200">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-xl font-bold text-slate-800">
-                {editingDeadline ? "Edit Deadline" : "Add New Deadline"}
+                {editingDeadline
+                  ? t("caseDetail.editDeadline", {
+                      defaultValue: "Edit Deadline",
+                    })
+                  : t("caseDetail.addNewDeadline", {
+                      defaultValue: "Add New Deadline",
+                    })}
               </h3>
               <button
                 onClick={() => {
@@ -742,7 +773,7 @@ const CaseDetailPage: React.FC = () => {
             <form onSubmit={handleSaveDeadline} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                  Title
+                  {t("forms.title", { defaultValue: "Title" })}
                 </label>
                 <input
                   type="text"
@@ -752,13 +783,15 @@ const CaseDetailPage: React.FC = () => {
                     setDeadlineForm({ ...deadlineForm, title: e.target.value })
                   }
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                  placeholder="e.g., File Statement of Defense"
+                  placeholder={t("caseDetail.deadlinePlaceholder", {
+                    defaultValue: "e.g., File Statement of Defense",
+                  })}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                    Date
+                    {t("forms.date", { defaultValue: "Date" })}
                   </label>
                   <input
                     type="date"
@@ -775,7 +808,7 @@ const CaseDetailPage: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                    Time
+                    {t("forms.time", { defaultValue: "Time" })}
                   </label>
                   <input
                     type="time"
@@ -794,7 +827,7 @@ const CaseDetailPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                    Type
+                    {t("forms.type", { defaultValue: "Type" })}
                   </label>
                   <select
                     value={deadlineForm.deadline_type}
@@ -818,7 +851,7 @@ const CaseDetailPage: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                    Assignee
+                    {t("forms.assignee", { defaultValue: "Assignee" })}
                   </label>
                   <select
                     value={deadlineForm.assignee_id}
@@ -841,7 +874,7 @@ const CaseDetailPage: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                  Description
+                  {t("forms.description", { defaultValue: "Description" })}
                 </label>
                 <textarea
                   rows={3}
@@ -853,7 +886,9 @@ const CaseDetailPage: React.FC = () => {
                     })
                   }
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none resize-none"
-                  placeholder="Additional details..."
+                  placeholder={t("caseDetail.additionalDetails", {
+                    defaultValue: "Additional details...",
+                  })}
                 />
               </div>
               <div className="pt-4 flex gap-3">
@@ -865,7 +900,7 @@ const CaseDetailPage: React.FC = () => {
                   }}
                   className="flex-1 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors"
                 >
-                  Cancel
+                  {t("common.cancel", { defaultValue: "Cancel" })}
                 </button>
                 <button
                   type="submit"
@@ -875,7 +910,13 @@ const CaseDetailPage: React.FC = () => {
                   {savingDeadline && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
-                  {editingDeadline ? "Update Deadline" : "Create Deadline"}
+                  {editingDeadline
+                    ? t("caseDetail.updateDeadline", {
+                        defaultValue: "Update Deadline",
+                      })
+                    : t("caseDetail.createDeadline", {
+                        defaultValue: "Create Deadline",
+                      })}
                 </button>
               </div>
             </form>
@@ -889,7 +930,7 @@ const CaseDetailPage: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-xl font-bold text-slate-800">
-                Add Case Note
+                {t("caseDetail.addCaseNote", { defaultValue: "Add Case Note" })}
               </h3>
               <button
                 onClick={() => setShowNoteModal(false)}
@@ -904,14 +945,16 @@ const CaseDetailPage: React.FC = () => {
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all resize-none mb-4"
-                placeholder="Enter note content..."
+                placeholder={t("caseDetail.noteContentPlaceholder", {
+                  defaultValue: "Enter note content...",
+                })}
               />
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowNoteModal(false)}
                   className="flex-1 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors"
                 >
-                  Cancel
+                  {t("common.cancel", { defaultValue: "Cancel" })}
                 </button>
                 <button
                   onClick={handleAddNote}
@@ -919,7 +962,7 @@ const CaseDetailPage: React.FC = () => {
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
                 >
                   {addingNote && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Add Note
+                  {t("caseDetail.addNote", { defaultValue: "Add Note" })}
                 </button>
               </div>
             </div>

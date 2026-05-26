@@ -117,7 +117,7 @@ export default function TeamSettings() {
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                    placeholder="colleague@firm.com"
+                    placeholder={t("team.emailPlaceholder")}
                   />
                 </div>
               </div>

@@ -1,7 +1,7 @@
-
-import { useEffect, useState } from 'react';
-import { Briefcase, FileText, AlertCircle } from 'lucide-react';
-import api from '../../services/api';
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Briefcase, FileText, AlertCircle } from "lucide-react";
+import api from "../../services/api";
 
 interface StatCard {
   label: string;
@@ -12,6 +12,7 @@ interface StatCard {
 }
 
 export function OverviewCards() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState({
     active_cases: 0,
     total_documents: 0,
@@ -25,7 +26,7 @@ export function OverviewCards() {
 
   const fetchStats = async () => {
     try {
-      const response = await api.get('/v1/cases/stats');
+      const response = await api.get("/v1/cases/stats");
       setStats(response.data);
     } catch {
       // silently fail - stats are informational
@@ -36,25 +37,25 @@ export function OverviewCards() {
 
   const cards: StatCard[] = [
     {
-      label: 'Active Cases',
-      value: loading ? '—' : stats.active_cases.toString(),
+      label: t("dashboardPage.activeCases"),
+      value: loading ? "—" : stats.active_cases.toString(),
       icon: Briefcase,
-      accent: 'text-blue-600',
-      description: 'Cases currently open',
+      accent: "text-blue-600",
+      description: t("dashboardPage.activeCasesDesc"),
     },
     {
-      label: 'Documents',
-      value: loading ? '—' : stats.total_documents.toString(),
+      label: t("dashboardPage.documents"),
+      value: loading ? "—" : stats.total_documents.toString(),
       icon: FileText,
-      accent: 'text-emerald-600',
-      description: 'Processed this month',
+      accent: "text-emerald-600",
+      description: t("dashboardPage.documentsDesc"),
     },
     {
-      label: 'Action Required',
-      value: loading ? '—' : stats.action_required.toString(),
+      label: t("dashboardPage.actionRequired"),
+      value: loading ? "—" : stats.action_required.toString(),
       icon: AlertCircle,
-      accent: 'text-amber-600',
-      description: 'Pending your review',
+      accent: "text-amber-600",
+      description: t("dashboardPage.actionRequiredDesc"),
     },
   ];
 
@@ -67,8 +68,12 @@ export function OverviewCards() {
         >
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{card.label}</p>
-              <p className="text-3xl font-bold text-slate-800 mt-1.5">{card.value}</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                {card.label}
+              </p>
+              <p className="text-3xl font-bold text-slate-800 mt-1.5">
+                {card.value}
+              </p>
               <p className="text-xs text-slate-400 mt-1">{card.description}</p>
             </div>
             <div className={`p-2 rounded-xl bg-slate-50 ${card.accent}`}>

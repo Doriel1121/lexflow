@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import api from '../services/api';
-import { clientsService, Client } from '../services/clients';
-import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate, Link } from "react-router-dom";
+import api from "../services/api";
+import { clientsService, Client } from "../services/clients";
+import { ShieldAlert, ShieldCheck } from "lucide-react";
 
 const CreateCasePage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    status: 'open' as 'open' | 'closed' | 'pending',
-    client_id: '',
+    title: "",
+    description: "",
+    status: "open" as "open" | "closed" | "pending",
+    client_id: "",
   });
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,11 +30,17 @@ const CreateCasePage: React.FC = () => {
     fetchClients();
   }, []);
 
-  const selectedClient = clients.find(c => c.id.toString() === formData.client_id);
+  const selectedClient = clients.find(
+    (c) => c.id.toString() === formData.client_id,
+  );
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,10 +53,12 @@ const CreateCasePage: React.FC = () => {
         ...formData,
         client_id: parseInt(formData.client_id),
       };
-      const response = await api.post('/v1/cases/', payload);
+      const response = await api.post("/v1/cases/", payload);
       navigate(`/cases/${response.data.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Failed to create case');
+      setError(
+        err.response?.data?.detail || err.message || "Failed to create case",
+      );
       setLoading(false);
     }
   };
@@ -56,9 +66,11 @@ const CreateCasePage: React.FC = () => {
   return (
     <div className="p-4 max-w-2xl mx-auto">
       <div className="mb-4">
-        <Link to="/cases" className="text-blue-600 dark:text-blue-400">&larr; Back to cases</Link>
+        <Link to="/cases" className="text-blue-600 dark:text-blue-400">
+          &larr; Back to cases
+        </Link>
       </div>
-      
+
       <h1 className="text-3xl font-bold mb-6">Create New Case</h1>
 
       {error && (
@@ -67,10 +79,15 @@ const CreateCasePage: React.FC = () => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
+      >
         <div className="mb-4">
-          <label htmlFor="client_id" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">
+          <label
+            htmlFor="client_id"
+            className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2"
+          >
             Client *
           </label>
           <select
@@ -81,16 +98,20 @@ const CreateCasePage: React.FC = () => {
             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600 bg-white"
             required
           >
-            <option value="" disabled>Select a verified client...</option>
-            {clients.map(client => (
+            <option value="" disabled>
+              Select a verified client...
+            </option>
+            {clients.map((client) => (
               <option key={client.id} value={client.id}>
-                {client.name} {client.is_high_risk ? '(High Risk)' : ''}
+                {client.name} {client.is_high_risk ? "(High Risk)" : ""}
               </option>
             ))}
           </select>
           {selectedClient && (
             <div className="mt-3 flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-700 dark:border-slate-600">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Entity Risk Profile:</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                Entity Risk Profile:
+              </span>
               {selectedClient.is_high_risk ? (
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
                   <ShieldAlert className="h-3.5 w-3.5" /> High Risk Detected
@@ -105,7 +126,10 @@ const CreateCasePage: React.FC = () => {
         </div>
 
         <div className="mb-4">
-          <label htmlFor="title" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">
+          <label
+            htmlFor="title"
+            className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2"
+          >
             Case Title *
           </label>
           <input
@@ -115,13 +139,16 @@ const CreateCasePage: React.FC = () => {
             value={formData.title}
             onChange={handleChange}
             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
-            placeholder="Enter case title"
+            placeholder={t("cases.caseTitlePlaceholder")}
             required
           />
         </div>
 
         <div className="mb-4">
-          <label htmlFor="description" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">
+          <label
+            htmlFor="description"
+            className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2"
+          >
             Description
           </label>
           <textarea
@@ -131,12 +158,15 @@ const CreateCasePage: React.FC = () => {
             onChange={handleChange}
             rows={4}
             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white dark:border-gray-600"
-            placeholder="Enter case description"
+            placeholder={t("cases.descriptionPlaceholder")}
           />
         </div>
 
         <div className="mb-6">
-          <label htmlFor="status" className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">
+          <label
+            htmlFor="status"
+            className="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2"
+          >
             Status *
           </label>
           <select
@@ -159,7 +189,7 @@ const CreateCasePage: React.FC = () => {
             disabled={loading}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50"
           >
-            {loading ? 'Creating...' : 'Create Case'}
+            {loading ? "Creating..." : "Create Case"}
           </button>
           <Link
             to="/cases"

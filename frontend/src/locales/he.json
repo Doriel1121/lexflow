@@ -7,6 +7,7 @@
         "edit": "עריכה",
         "back": "חזרה",
         "create": "צור",
+        "add": "הוסף",
         "submit": "שלח",
         "search": "חיפוש",
         "filter": "סינון",
@@ -14,7 +15,8 @@
         "viewAll": "הצג הכל",
         "noResults": "לא נמצאו תוצאות",
         "error": "אירעה שגיאה",
-        "success": "הצלחה"
+        "success": "הצלחה",
+        "criticalDeadline": "פניה קריטית"
     },
     "nav": {
         "dashboard": "לוח בקרה",
@@ -93,7 +95,11 @@
         "noCases": "אין תיקים עדיין",
         "active": "פעיל",
         "closed": "סגור",
-        "pending": "ממתין"
+        "pending": "ממתין",
+        "caseTitle": "כותרת התיק",
+        "caseTitlePlaceholder": "הזן כותרת תיק",
+        "description": "תיאור",
+        "descriptionPlaceholder": "הזן תיאור תיק"
     },
     "documents": {
         "title": "מסמכים",
@@ -125,7 +131,19 @@
         },
         "noContactInfo": "אין מידע ליצירת קשר",
         "highRisk": "סיכון גבוה",
-        "verified": "מאומת"
+        "verified": "מאומת",
+        "officialEntityName": "שם הישות הרשמי",
+        "entityNamePlaceholder": "שם משפטי של ישות סטנדרטית",
+        "primaryContact": "איש קשר עיקרי",
+        "contactNamePlaceholder": "שם מלא",
+        "contactEmail": "דוא״ל ליצירת קשר",
+        "emailPlaceholder": "email@example.com",
+        "phoneNumber": "מספר טלפון",
+        "phonePlaceholder": "+1 (555) 000-0000",
+        "registeredAddress": "כתובת רשומה",
+        "addressPlaceholder": "123 Corporate Blvd",
+        "entityVerification": "אמת ישות",
+        "entitySearchPlaceholder": "למשל 512345678 או Acme Corp"
     },
     "settings": {
         "title": "הגדרות",
@@ -146,6 +164,7 @@
         "subtitle": "נהל את חברי סביבת העבודה ואת התפקידים שלהם.",
         "inviteTeammate": "הזמן חבר לצוות",
         "emailAddress": "כתובת אימייל",
+        "emailPlaceholder": "colleague@firm.com",
         "role": "תפקיד",
         "roles": {
             "lawyer": "עורך דין (סטנדרטי)",
@@ -170,7 +189,9 @@
         "subtitle": "עדכון אבטחה ופעילות חסין לשינויים עבור הארגון שלך.",
         "admin": {
             "title": "יומן ביקורת",
-            "subtitle": "עדכון אבטחה ותאימות ברחבי הפלטפורמה."
+            "subtitle": "עדכון אבטחה ותאימות ברחבי הפלטפורמה.",
+            "searchPlaceholder": "חפש אירועים, נתיבים, גיבובי משתמשים…",
+            "noAuditEvents": "אין אירועי ביקורת שתועדו."
         },
         "timestamp": "חותמת זמן",
         "user": "משתמש",
@@ -181,6 +202,7 @@
         "searchPlaceholder": "חפש אירועים או משאבים…",
         "loading": "טוען יומנים מאובטחים…",
         "noLogs": "לא נמצאו יומנים התואמים את הקריטריונים שלך.",
+        "noLogsMatch": "אין יומנים התואמים את החיפוש שלך.",
         "userId": "UID-{{id}}",
         "system": "מערכת"
     },
@@ -188,12 +210,33 @@
         "login": "כניסה",
         "logout": "התנתקות",
         "email": "דואר אלקטרוני",
+        "emailAddress": "כתובת דואר אלקטרוני",
         "password": "סיסמה",
         "forgotPassword": "שכחת סיסמה?",
+        "forgot": "שכחת?",
         "noAccount": "אין לך חשבון?",
+        "haveAccount": "יש לך כבר מרחב עבודה?",
         "register": "הירשם",
+        "registerOrganization": "הירשם בארגון שלך",
         "welcomeBack": "ברוך שובך",
-        "signInToContinue": "התחבר כדי להמשיך ל-LegalOS"
+        "signInToContinue": "התחבר כדי להמשיך ל-LegalOS",
+        "signInToWorkspace": "התחבר למרחב העבודה שלך כדי להמשיך.",
+        "createWorkspace": "צור את מרחב העבודה שלך",
+        "createWorkspaceButton": "צור מרחב עבודה",
+        "emailPlaceholder": "name@company.com",
+        "passwordPlaceholder": "••••••••",
+        "organizationName": "שם משרד הדין / ארגון",
+        "organizationPlaceholder": "Acme Legal Group",
+        "fullName": "שם מלא",
+        "fullNamePlaceholder": "Jane Doe",
+        "workEmail": "דואר עבודה",
+        "workEmailPlaceholder": "jane@acmelegal.com",
+        "adminAccount": "חשבון מנהל",
+        "confirmPassword": "אשר",
+        "passwordConfirmPlaceholder": "לפחות 8 תווים",
+        "passwordRepeatPlaceholder": "חזור על סיסמה חדשה",
+        "passwordsDoNotMatch": "הסיסמאות אינן תואמות",
+        "registrationFailed": "ההרשמה נכשלה. אנא נסה שוב."
     },
     "search": {
         "title": "חיפוש סמנטי",
@@ -242,6 +285,7 @@
         "editSuccess": "שם האוסף שונה בהצלחה",
         "nameConflict": "אוסף עם שם זה כבר קיים",
         "systemCollection": "לא ניתן לערוך או למחוק אוספי מערכת",
+        "noDocumentsInCollection": "טרם סווגו מסמכים תחת אוסף זה.",
         "categories": {
             "all": "הכל",
             "clientId": "מזהה לקוח",
@@ -295,6 +339,30 @@
         "briefDescPlaceholder": "תיאור קצר של התיק והצדדים המעורבים...",
         "caseTitlePlaceholder": "לדוגמה, סכסוך חוזים — חברת אקמי",
         "notAvailable": "לא זמין"
+    },
+    "caseDetail": {
+        "loading": "טוען פרטי תיק...",
+        "errorLoading": "שגיאה בטעינת התיק",
+        "backToCases": "חזרה לתיקים",
+        "documents": "מסמכים",
+        "processingWithAI": "מעבד עם AI...",
+        "noDocuments": "אין מסמכים",
+        "timeline": "ציר הזמן",
+        "noUpcomingDeadlines": "אין תאריכי יעד קרובים",
+        "undo": "שחזר",
+        "notes": "הערות",
+        "noCaseNotes": "אין הערות לתיק",
+        "editDeadline": "ערוך תאריך יעד",
+        "addNewDeadline": "הוסף תאריך יעד חדש",
+        "deadlinePlaceholder": "לדוגמה, הגש תגובה",
+        "additionalDetails": "פרטים נוספים...",
+        "updateDeadline": "עדכן תאריך יעד",
+        "createDeadline": "צור תאריך יעד",
+        "addCaseNote": "הוסף הערה לתיק",
+        "noteContentPlaceholder": "הזן תוכן הערה...",
+        "addNote": "הוסף הערה",
+        "created": "נוצר",
+        "assignedTo": "מוקצה ל"
     },
     "adminUsers": {
         "title": "משתמשים ותפקידים",
@@ -410,7 +478,10 @@
         "setup2": "במכשיר הפקס / סורק, שנה את כתובת \"שלח לדוא\"ל\" לכתובת זו",
         "setup3": "סיים — מסמכים יופיעו ב- LegalOS אוטומטית",
         "security": "אבטחה",
-        "securityDesc": "כל הודעות הדוא\"ל הנכנסות מעובדות דרך TLS. הקבצים המצורפים נסרקים ונשמרים מוצפנים. כל מסמך שנקלט נרשם ביומן הביקורת החסין לשינויים."
+        "securityDesc": "כל הודעות הדוא\"ל הנכנסות מעובדות דרך TLS. הקבצים המצורפים נסרקים ונשמרים מוצפנים. כל מסמך שנקלט נרשם ביומן הביקורת החסין לשינויים.",
+        "pauseIngestion": "השהה קליטה",
+        "enableIngestion": "אפשר קליטה",
+        "removeEmail": "הסר"
     },
     "documentList": {
         "dropArea": "גרור ושחרר קבצים לכאן, או לחץ לבחירה",
@@ -498,6 +569,16 @@
         "anonCounts": "ספירות אנונימיות",
         "calls": "קריאות"
     },
+    "adminOrganizations": {
+        "organizationName": "שם הארגון",
+        "organizationNamePlaceholder": "למשל Acme Law Firm",
+        "primaryContact": "איש קשר ראשי",
+        "primaryContactPlaceholder": "למשל ג׳יין סמית׳",
+        "email": "דוא״ל",
+        "emailPlaceholder": "admin@firm.com",
+        "apiKey": "מפתח API",
+        "apiKeyPlaceholder": "ייווצר באופן אוטומטי אם אינו מלא"
+    },
     "documentsPage": {
         "title": "כל המסמכים",
         "loading": "טוען מסמכים...",
@@ -521,7 +602,14 @@
         "caseNumbers": "📋 מספרי תיקים",
         "none": "כלום",
         "noContent": "טרם חולץ תוכן.",
-        "extractText": "עבור לדף התיק ולחץ על \"View Content\" כדי לחלץ טקסט."
+        "extractText": "עבור לדף התיק ולחץ על \"View Content\" כדי לחלץ טקסט.",
+        "classificationFilter": "סיווג",
+        "classificationPlaceholder": "למשל, חוזה, חשבונית...",
+        "searchDocuments": "חיפוש מסמכים לפי שם או תוכן...",
+        "searchAI": "חיפוש AI: שאל שאלה משפטית...",
+        "upload": "העלה",
+        "uploading": "מעלה...",
+        "noDocumentsUploaded": "טרם הועלו מסמכים."
     },
     "dashboardPage": {
         "title": "לוח בקרה",
@@ -529,13 +617,29 @@
         "loading": "טוען לוח בקרה...",
         "totalCases": "סה״כ התיקים",
         "activeCases": "תיקים פעילים",
+        "activeCasesDesc": "תיקים שכרגע פתוחים",
         "documents": "מסמכים",
+        "documentsDesc": "עובד בחודש זה",
+        "actionRequired": "נדרשת פעולה",
+        "actionRequiredDesc": "בהמתנה לסקירה שלך",
+        "openCases": "תיקים פתוחים",
+        "overdue": "חולפים",
+        "dueIn7Days": "יעד בעוד 7 ימים",
+        "unassigned": "לא משוייכים",
+        "compliance": "נענו",
         "recentCases": "תיקים אחרונים",
         "viewAll": "צפה בהכל →",
         "recentDocuments": "מסמכים אחרונים",
         "status": "סטטוס",
         "noCases": "אין תיקים עדיין. צור את התיק הראשון שלך!",
-        "noDocuments": "אין מסמכים עדיין. העלה מסמכים מדפי תיקים!"
+        "noDocuments": "אין מסמכים עדיין. העלה מסמכים מדפי תיקים!",
+        "teamPerformance": "ביצועי הצוות",
+        "members": "חברים",
+        "name": "שם",
+        "docsUploaded": "מסמכים שהועלו",
+        "lastActive": "פעיל לאחרונה",
+        "noTeamMembers": "לא נמצאו חברי צוות",
+        "never": "אף פעם"
     },
     "emailIntake": {
         "title": "מרכז קליטה בינה מלאכותית",
@@ -580,6 +684,11 @@
         "gmailExpired": "גישת Gmail פקעה. אנא התחבר שוב.",
         "syncFailed": "סנכרון נכשל"
     },
+    "languageSwitcher": {
+        "switchToEnglish": "Switch to English",
+        "switchToHebrew": "עבור לעברית",
+        "toggleLanguage": "החלף שפה"
+    },
     "searchPage": {
         "title": "מרכז חיפוש גלובלי",
         "subtitle": "חיפוש מאוחד ללקוחות, תיקים ומסמכים.",
@@ -608,7 +717,13 @@
         "contactPerson": "איש קשר",
         "forgotPassword": "שכחת סיסמה?",
         "agree": "אני מסכים ל",
-        "termsAndConditions": "תנאים והגבלות"
+        "termsAndConditions": "תנאים והגבלות",
+        "title": "כותרת",
+        "date": "תאריך",
+        "time": "זמן",
+        "type": "סוג",
+        "assignee": "מוקצה ל",
+        "description": "תיאור"
     },
     "admin": {
         "userAnalytics": "ניתוח משתמשים",
@@ -644,7 +759,8 @@
         "viewContentInstructions": "עבור לעמוד התיק ולחץ על ״צפה בתוכן״ כדי לחלץ טקסט",
         "analysisModeChunked": "ניתוח רב-חלקי ({{count}} חלקים)",
         "analysisModeChunkedHint": "המסמך נותח חלק-אחר-חלק בשל אורכו",
-        "analysisModeChunkedBanner": "התובנות אוחדו ממספר חלקים במסמך ארוך זה. ייתכן שפרטים מסוימים מופיעים רק בטקסט המלא."
+        "analysisModeChunkedBanner": "התובנות אוחדו ממספר חלקים במסמך ארוך זה. ייתכן שפרטים מסוימים מופיעים רק בטקסט המלא.",
+        "deleteConfirmation": "האם אתה בטוח שברצונך למחוק"
     },
     "confirm": {
         "title": "האם אתה בטוח?",
