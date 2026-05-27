@@ -63,48 +63,65 @@ def embed_chunk_batch_task(self, document_id: int, chunk_ids: list[int]):
     Celery overhead and Redis queue pressure.
     """
     async def _run():
-        for chunk_id in chunk_ids:
-            async with CeleryAsyncSessionLocal() as db:
-                res = await db.execute(select(DocumentChunk).filter(DocumentChunk.id == chunk_id))
-                chunk = res.scalars().first()
+        if not chunk_ids:
+            return
+
+        async with CeleryAsyncSessionLocal() as db:
+            # Load chunks in one query, then preserve original order.
+            res = await db.execute(
+                select(DocumentChunk).where(DocumentChunk.id.in_(chunk_ids))
+            )
+            found = {c.id: c for c in res.scalars().all()}
+            ordered_chunks = [found.get(cid) for cid in chunk_ids]
+
+            missing_count = sum(1 for c in ordered_chunks if c is None)
+            if missing_count:
+                logger.warning(
+                    f"[Doc {document_id}] Missing {missing_count}/{len(chunk_ids)} chunks; counting as processed to avoid stalling."
+                )
+
+            texts: list[str] = [
+                (c.text_content if c else "") for c in ordered_chunks
+            ]
+            vectors = await llm_service.generate_embeddings(texts)
+
+            failed_in_batch = 0
+            for chunk, vector in zip(ordered_chunks, vectors):
                 if not chunk:
                     continue
-
-                try:
-                    vector = await llm_service.generate_embedding(chunk.text_content)
-                    if not valid_embedding(vector):
-                        doc = await document_crud.get(db, document_id)
-                        if doc:
-                            doc.embedding_failed_count = (doc.embedding_failed_count or 0) + 1
-                            await db.commit()
-                        continue
+                if valid_embedding(vector):
                     chunk.embedding = vector
-                    await db.commit()
-                except Exception as e:
-                    logger.warning(f"[Doc {document_id}] Embedding chunk {chunk_id} failed: {e}")
-                    await db.rollback()
-                    doc = await document_crud.get(db, document_id)
-                    if doc:
-                        doc.embedding_failed_count = (doc.embedding_failed_count or 0) + 1
-                        await db.commit()
-                    continue
+                else:
+                    failed_in_batch += 1
 
-                # Increment processed_chunks atomically
-                await db.execute(
-                    update(Document)
-                    .where(Document.id == document_id)
-                    .values(processed_chunks=Document.processed_chunks + 1)
+            doc = await document_crud.get(db, document_id)
+            if doc and (failed_in_batch or missing_count):
+                doc.embedding_failed_count = (doc.embedding_failed_count or 0) + (
+                    failed_in_batch + missing_count
                 )
-                await db.commit()
+                health = dict(doc.ai_health or {})
+                health["embedding"] = "partial"
+                doc.ai_health = health
 
-                # Update progress
-                doc = await document_crud.get(db, document_id)
-                if doc:
-                    total = max(doc.total_chunks or 0, 1)
-                    processed = doc.processed_chunks or 0
-                    doc.processing_stage = "embedding"
-                    doc.processing_progress = round(57.0 + (processed / total) * 38.0, 1)
-                    await db.commit()
+            await db.commit()
+
+            # IMPORTANT: Even failed/invalid embeddings must advance `processed_chunks`
+            # or the document can get stuck in "embedding" forever.
+            await db.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(processed_chunks=Document.processed_chunks + len(chunk_ids))
+            )
+            await db.commit()
+
+            # Update progress based on processed_chunks.
+            doc = await document_crud.get(db, document_id)
+            if doc:
+                total = max(doc.total_chunks or 0, 1)
+                processed = doc.processed_chunks or 0
+                doc.processing_stage = "embedding"
+                doc.processing_progress = round(57.0 + (processed / total) * 38.0, 1)
+                await db.commit()
 
         # ── Atomic completion check ───────────────────────────────────
         # Only ONE batch task will successfully flip the status to COMPLETED

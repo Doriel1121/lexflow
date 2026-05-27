@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
@@ -316,10 +317,49 @@ class CohereProvider(BaseAIProvider):
         }
 
     async def _post(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Cohere can rate limit (429). Retry with exponential backoff and honor Retry-After.
+        max_retries = int(os.getenv("COHERE_HTTP_MAX_RETRIES", "6") or "6")
+        max_retries = max(0, min(max_retries, 12))
+
         async with httpx.AsyncClient(timeout=self.timeout_s) as client:
-            resp = await client.post(url, json=payload, headers=self._headers())
-            resp.raise_for_status()
-            return resp.json()
+            last_exc: Exception | None = None
+            for attempt in range(max_retries + 1):
+                try:
+                    resp = await client.post(url, json=payload, headers=self._headers())
+                    resp.raise_for_status()
+                    return resp.json()
+                except httpx.HTTPStatusError as e:
+                    last_exc = e
+                    status = e.response.status_code
+                    retryable = status in (429, 500, 502, 503, 504)
+                    if (not retryable) or attempt >= max_retries:
+                        raise
+
+                    retry_after_s: float | None = None
+                    try:
+                        ra = (e.response.headers.get("retry-after") or "").strip()
+                        if ra:
+                            retry_after_s = float(ra)
+                    except Exception:
+                        retry_after_s = None
+
+                    base = 0.8 * (2**attempt)
+                    jitter = random.uniform(0.0, 0.35)
+                    wait_s = min(20.0, base + jitter)
+                    if retry_after_s is not None:
+                        wait_s = min(30.0, max(wait_s, retry_after_s))
+                    await asyncio.sleep(wait_s)
+                except Exception as e:
+                    last_exc = e
+                    if attempt >= max_retries:
+                        raise
+                    base = 0.8 * (2**attempt)
+                    jitter = random.uniform(0.0, 0.35)
+                    await asyncio.sleep(min(20.0, base + jitter))
+
+            if last_exc:
+                raise last_exc
+            raise RuntimeError("Cohere request failed without exception")
 
     async def generate_text(self, prompt: str) -> Optional[str]:
         if not self.active:
@@ -419,6 +459,37 @@ class CohereProvider(BaseAIProvider):
             logger.error("Cohere embedding failed: %s", e)
         
         return [0.0] * self.embedding_dimension
+
+    async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Batch embeddings to reduce request rate (helps prevent 429)."""
+        if not texts:
+            return []
+        if not self.active or not self.embedding_model:
+            return [[0.0] * self.embedding_dimension for _ in texts]
+
+        url = self.compat_base_url.rstrip("/") + "/embed"
+        payload = {
+            "model": self.embedding_model,
+            "texts": texts,
+            "input_type": "search_document",
+        }
+        try:
+            result = await self._post(url, payload)
+            embeddings = result.get("embeddings") or []
+            out: List[List[float]] = []
+            for i in range(len(texts)):
+                vec: List[float] = []
+                if i < len(embeddings) and isinstance(embeddings[i], list):
+                    vec = embeddings[i]
+                if len(vec) > self.embedding_dimension:
+                    vec = vec[: self.embedding_dimension]
+                elif len(vec) < self.embedding_dimension:
+                    vec = vec + ([0.0] * (self.embedding_dimension - len(vec)))
+                out.append(vec)
+            return out
+        except Exception as e:
+            logger.error("Cohere batch embedding failed: %s", e)
+            return [[0.0] * self.embedding_dimension for _ in texts]
 
 
 def get_ai_provider() -> BaseAIProvider:

@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     AI_CHUNK_ANALYSIS_MAX_CHUNKS: int = 40
     # Per-chunk LLM timeout (seconds)
     AI_CHUNK_ANALYSIS_TIMEOUT_SECONDS: int = 90
+    # Chunked analysis concurrency (bounded; helps large docs finish faster)
+    AI_CHUNK_ANALYSIS_CONCURRENCY: int = 3
 
     # Reaper: mark stuck docs as completed_without_ai after this many minutes
     DOCUMENT_STUCK_MINUTES: int = 30

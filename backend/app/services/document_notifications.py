@@ -29,6 +29,7 @@ async def create_org_notification(
     message: str,
     source_type: Optional[str] = None,
     source_id: Optional[int] = None,
+    extra_payload: Optional[dict] = None,
 ) -> int:
     result = await db.execute(select(User.id).where(User.organization_id == organization_id))
     org_user_ids = list(result.scalars().all())
@@ -57,6 +58,9 @@ async def create_org_notification(
     }
     if source_type == "document" and source_id is not None:
         ws_payload["document_id"] = source_id
+    if isinstance(extra_payload, dict) and extra_payload:
+        # Allow callers to include additional fields (e.g., stage/progress/status)
+        ws_payload.update(extra_payload)
 
     publish_notification_for_users(org_user_ids, ws_payload)
 

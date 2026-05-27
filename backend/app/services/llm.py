@@ -34,6 +34,33 @@ class LLMService:
             logger.warning("Error generating embedding: %s", e)
             return None
 
+    async def generate_embeddings(self, texts: List[str]) -> List[Optional[List[float]]]:
+        """Batch embeddings when supported by provider; falls back to per-text."""
+        if not texts:
+            return []
+        if not self.provider.active:
+            return [None for _ in texts]
+
+        batch_fn = getattr(self.provider, "generate_embeddings", None)
+        if callable(batch_fn):
+            try:
+                vectors = await batch_fn(texts)
+                out: List[Optional[List[float]]] = []
+                for v in vectors:
+                    out.append(None if is_zero_vector(v) else v)
+                # Be defensive if provider returns wrong length.
+                if len(out) != len(texts):
+                    out = (out + [None for _ in range(len(texts))])[: len(texts)]
+                return out
+            except Exception as e:
+                logger.warning("Error generating batch embeddings: %s", e)
+
+        # Fallback: sequential per-text (still safe, just slower / more requests).
+        out: List[Optional[List[float]]] = []
+        for t in texts:
+            out.append(await self.generate_embedding(t))
+        return out
+
     async def extract_keywords(self, text: str, limit: int = 12) -> List[str]:
         """Lightweight keywords for routing (no extra LLM call)."""
         words = re.findall(r"\b[\w\u0590-\u05FF]{4,}\b", text or "")

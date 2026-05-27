@@ -112,11 +112,36 @@ export function DocumentList() {
       setUploading(false);
     };
 
-    const handleStatusUpdate = () => {
+    const handleStatusUpdate = (event: Event) => {
       console.log("[DocumentList] Status update via WebSocket");
-      if (uploading) {
-        fetchDocuments(); // Refresh if we're actively uploading
+      const customEvent = event as CustomEvent;
+      const detail = customEvent.detail || {};
+      const documentId = Number(detail.document_id);
+      if (!documentId) return;
+
+      // Prefer in-place state update when payload includes stage/progress/status.
+      if (
+        detail.stage !== undefined ||
+        detail.progress !== undefined ||
+        detail.status !== undefined
+      ) {
+        setDocuments((prev) =>
+          prev.map((d) =>
+            d.id !== documentId
+              ? d
+              : {
+                  ...d,
+                  processing_status: detail.status ?? d.processing_status,
+                  processing_progress: detail.progress ?? d.processing_progress,
+                  processing_stage: detail.stage ?? d.processing_stage,
+                },
+          ),
+        );
+        return;
       }
+
+      // Fallback: refresh list (older servers may only send document_id).
+      fetchDocuments();
     };
 
     window.addEventListener("document_processed", handleDocumentProcessed);

@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import cast, select, func, or_
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.document import Document, DocumentProcessingStatus
@@ -64,7 +65,7 @@ class AiHealthAnalyticsService:
             select(func.count(Document.id)).where(
                 base,
                 Document.ai_health.isnot(None),
-                Document.ai_health.contains({"analysis_mode": "chunked"}),
+                cast(Document.ai_health, JSONB).contains({"analysis_mode": "chunked"}),
             )
         ) or 0
 
@@ -72,7 +73,7 @@ class AiHealthAnalyticsService:
             select(func.count(Document.id)).where(
                 base,
                 Document.ai_health.isnot(None),
-                Document.ai_health.contains({"analysis_mode": "full"}),
+                cast(Document.ai_health, JSONB).contains({"analysis_mode": "full"}),
             )
         ) or 0
 

@@ -5,7 +5,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 
 from app.db.session import AsyncSessionLocal
 
@@ -21,7 +21,7 @@ from app.crud.tag import crud_tag
 from app.crud.summary import crud_summary # Import CRUD for Summary
 from app.crud.document_metadata import crud_document_metadata
 from app.db.models.user import User as DBUser
-from app.db.models.document import Document as DBDocument, DocumentProcessingStatus
+from app.db.models.document import Document as DBDocument, DocumentChunk, DocumentProcessingStatus
 from app.db.models.tag import Tag as DBTag
 from app.services.llm import llm_service # Import LLM Service for summary generation
 from app.services.metadata_extraction import metadata_extraction_service
@@ -1016,3 +1016,60 @@ async def retry_ai_analysis(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to queue retry: {str(e)}"
         )
+
+
+@router.post("/reconcile-embedding/{document_id}", status_code=status.HTTP_200_OK)
+async def reconcile_embedding(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: DBUser = Depends(
+        RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])
+    ),
+):
+    """
+    Repair a document stuck in the embedding stage by reconciling DB state with
+    actual chunk embeddings. This is safe to run multiple times.
+    """
+    document = await document_crud.get(db, document_id)
+    if not document:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    verify_resource_access(document, current_user)
+
+    total_chunks = int(document.total_chunks or 0)
+    if total_chunks <= 0:
+        res_total = await db.execute(
+            select(func.count(DocumentChunk.id)).where(DocumentChunk.document_id == document_id)
+        )
+        total_chunks = int(res_total.scalar() or 0)
+
+    res_embedded = await db.execute(
+        select(func.count(DocumentChunk.id)).where(
+            DocumentChunk.document_id == document_id,
+            DocumentChunk.embedding.isnot(None),
+        )
+    )
+    embedded_chunks = int(res_embedded.scalar() or 0)
+
+    missing = max(total_chunks - embedded_chunks, 0)
+    document.total_chunks = total_chunks
+    document.processed_chunks = total_chunks
+    document.embedding_failed_count = missing
+    document.processing_status = DocumentProcessingStatus.COMPLETED
+    document.processing_progress = 100.0
+    document.processing_stage = "completed" if missing == 0 else "completed_embedding_partial"
+
+    health = dict(document.ai_health or {})
+    health["embedding"] = "ok" if missing == 0 else "partial"
+    document.ai_health = health
+
+    await db.commit()
+
+    return {
+        "document_id": document_id,
+        "total_chunks": total_chunks,
+        "embedded_chunks": embedded_chunks,
+        "missing_embeddings": missing,
+        "processing_stage": document.processing_stage,
+        "processing_status": document.processing_status.value,
+    }

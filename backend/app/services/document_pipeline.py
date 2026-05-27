@@ -130,6 +130,11 @@ async def run_document_pipeline(
                     message="Text extraction complete. Document is now viewable.",
                     source_type="document",
                     source_id=document_id,
+                    extra_payload={
+                        "stage": doc.processing_stage,
+                        "progress": round(float(doc.processing_progress or 0.0), 1),
+                        "status": (doc.processing_status.value if doc.processing_status else None),
+                    },
                 )
             except Exception as e:
                 logger.warning(f"[Doc {document_id}] Failed to persist OCR status notification: {e}")

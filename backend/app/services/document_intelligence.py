@@ -106,34 +106,49 @@ Return ONLY JSON."""
         document_id: Optional[int] = None,
         organization_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Sequential per-chunk analysis with deterministic merge."""
+        """Per-chunk analysis with bounded concurrency + deterministic merge."""
         max_chunks = settings.AI_CHUNK_ANALYSIS_MAX_CHUNKS or 40
         to_analyze = chunks[:max_chunks]
         partials: List[Dict[str, Any]] = []
 
         from app.services.processing_telemetry import track_stage
 
-        for item in to_analyze:
-            idx = item.get("index", len(partials))
-            async with track_stage(
-                document_id or 0,
-                organization_id,
-                "ai_chunk",
-                chunk_index=idx,
-                total_chunks=len(to_analyze),
-                filename=filename,
-            ):
-                partial = await self.analyze_chunk(
-                    item.get("text") or "",
-                    filename=filename,
+        concurrency = int(getattr(settings, "AI_CHUNK_ANALYSIS_CONCURRENCY", 3) or 3)
+        concurrency = max(1, min(concurrency, 8))
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _run_one(item: Dict[str, Any]) -> Dict[str, Any]:
+            idx = item.get("index")
+            if idx is None:
+                idx = 0
+            async with sem:
+                async with track_stage(
+                    document_id or 0,
+                    organization_id,
+                    "ai_chunk",
                     chunk_index=idx,
                     total_chunks=len(to_analyze),
-                    page_number=item.get("page_number"),
-                    language=language,
-                )
-            if partial:
-                partial["_chunk_index"] = item.get("index", len(partials))
-                partials.append(partial)
+                    filename=filename,
+                ):
+                    partial = await self.analyze_chunk(
+                        item.get("text") or "",
+                        filename=filename,
+                        chunk_index=idx,
+                        total_chunks=len(to_analyze),
+                        page_number=item.get("page_number"),
+                        language=language,
+                    )
+            if isinstance(partial, dict) and partial:
+                partial["_chunk_index"] = idx
+                return partial
+            return {}
+
+        # Run concurrently but keep deterministic merge ordering by _chunk_index.
+        results = await asyncio.gather(*[_run_one(item) for item in to_analyze])
+        for r in results:
+            if r:
+                partials.append(r)
+        partials.sort(key=lambda p: int(p.get("_chunk_index", 0)))
 
         if not partials:
             return self._fallback_analysis("", filename)
