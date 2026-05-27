@@ -5,7 +5,7 @@
 @layer base {
   :root {
     --font-english: 'Inter', system-ui, sans-serif;
-    --font-hebrew: 'Assistant', 'Inter', sans-serif;
+    --font-hebrew: 'Noto Sans Hebrew', 'Open Sans Hebrew', 'Assistant', system-ui, sans-serif;
   }
 
   html {

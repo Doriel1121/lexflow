@@ -7,6 +7,7 @@ import {
   Sparkles,
   User as UserIcon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import aiService from "../../services/ai";
 import { Citation } from "../../types";
 
@@ -29,11 +30,17 @@ const AskAI: React.FC<AskAIProps> = ({
   documentIds,
   title = "Ask AI about this Case",
 }) => {
+  const { i18n } = useTranslation();
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Detect if text contains Hebrew characters
+  const isHebrewText = (text: string): boolean => {
+    return /[\u0590-\u05FF]/.test(text);
+  };
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -142,6 +149,19 @@ const AskAI: React.FC<AskAIProps> = ({
 
               <div className={`max-w-[85%] space-y-2`}>
                 <div
+                  dir={isHebrewText(msg.content) ? "rtl" : "ltr"}
+                  lang={isHebrewText(msg.content) ? "he" : i18n.language}
+                  style={
+                    msg.role === "assistant" && isHebrewText(msg.content)
+                      ? {
+                          fontFamily:
+                            "'Noto Sans Hebrew', 'Open Sans Hebrew', 'Segoe UI', system-ui, sans-serif",
+                          fontSize: "0.95rem",
+                          fontWeight: 500,
+                          lineHeight: "1.6",
+                        }
+                      : undefined
+                  }
                   className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                     msg.role === "user"
                       ? "bg-primary-600 text-white rounded-tr-none shadow-md shadow-primary-100 font-medium"
@@ -211,6 +231,8 @@ const AskAI: React.FC<AskAIProps> = ({
           )}
 
           <textarea
+            dir={isHebrewText(question) ? "rtl" : "ltr"}
+            lang={isHebrewText(question) ? "he" : i18n.language}
             value={question}
             onFocus={() => setIsFocused(true)}
             onBlur={() => !question && !hasHistory && setIsFocused(false)}
@@ -223,7 +245,7 @@ const AskAI: React.FC<AskAIProps> = ({
             }}
             placeholder=""
             rows={isFocused || hasHistory ? 2 : 1}
-            className={`w-full ps-4 pe-12 py-3 bg-slate-50/50 border-none rounded-xl focus:bg-white focus:ring-0 outline-none resize-none transition-all text-sm font-medium ${isFocused || hasHistory ? "min-h-[60px]" : "min-h-[48px]"}`}
+            className={`w-full ps-4 pe-12 py-3 bg-slate-50/50 border-none rounded-xl focus:bg-white focus:ring-0 outline-none resize-none transition-all text-sm font-medium ${isHebrewText(question) ? 'font-["Noto Sans Hebrew", "Open Sans Hebrew", "Arial", sans-serif]' : ""} ${isFocused || hasHistory ? "min-h-[60px]" : "min-h-[48px]"}`}
             disabled={isLoading}
           />
 

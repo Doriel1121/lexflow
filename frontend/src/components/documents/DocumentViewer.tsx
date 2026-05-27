@@ -300,9 +300,14 @@ export function DocumentViewer() {
                   </div>
                 )}
                 <p
-                  className="whitespace-pre-wrap font-sans"
+                  className={`whitespace-pre-wrap font-sans ${isRTL ? "font-[var(--font-hebrew)]" : ""}`}
                   dir={isRTL ? "rtl" : "ltr"}
                   lang={i18n.language}
+                  style={{
+                    fontFamily: isRTL
+                      ? "'Noto Sans Hebrew', 'Open Sans Hebrew', 'Assistant', system-ui, sans-serif"
+                      : "var(--font-english)",
+                  }}
                 >
                   {normalizeContent(document.content)}
                 </p>
@@ -365,9 +370,14 @@ export function DocumentViewer() {
                               AI Summary
                             </h3>
                             <pre
-                              className="text-sm text-blue-800 leading-relaxed whitespace-pre-wrap font-sans"
+                              className={`text-sm text-blue-800 leading-relaxed whitespace-pre-wrap font-sans ${isRTL ? "font-[var(--font-hebrew)]" : ""}`}
                               dir={isRTL ? "rtl" : "ltr"}
                               lang={i18n.language}
+                              style={{
+                                fontFamily: isRTL
+                                  ? "'Noto Sans Hebrew', 'Open Sans Hebrew', 'Assistant', system-ui, sans-serif"
+                                  : "var(--font-english)",
+                              }}
                             >
                               {intelligence.summary.content}
                             </pre>
