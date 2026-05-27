@@ -22,7 +22,7 @@ import {
   ChevronDown,
   UserPlus,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import api from "../../services/api";
 import { EntityVerification } from "../../components/cases/EntityVerification";
@@ -40,13 +40,16 @@ interface Client {
 
 export default function Cases() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
   const { confirm } = useConfirm();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(
+    searchParams.get("newCase") === "true",
+  );
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
@@ -77,6 +80,12 @@ export default function Cases() {
     fetchClients();
     fetchTeamMembers();
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("newCase") === "true") {
+      setShowCreateModal(true);
+    }
+  }, [searchParams]);
 
   const fetchTeamMembers = async () => {
     try {
@@ -548,7 +557,10 @@ export default function Cases() {
                   variant: "danger",
                   confirmLabel: t("common.delete"),
                 });
-                if (ok) showSnackbar(t("casesPage.deleteComingSoon"), { type: "info" });
+                if (ok)
+                  showSnackbar(t("casesPage.deleteComingSoon"), {
+                    type: "info",
+                  });
               }}
             >
               {t("casesPage.deleteCase")}

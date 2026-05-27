@@ -62,7 +62,6 @@ import { CollectionsList } from "./pages/collections/CollectionsList";
 import { CollectionView } from "./pages/collections/CollectionView";
 import { ClientsPage } from "./pages/clients/ClientsPage";
 import { CreateClientPage } from "./pages/clients/CreateClientPage";
-import CreateCasePage from "./pages/CreateCasePage";
 
 // ── Admin pages ───────────────────────────────────────────────────────────
 import AdminDashboard from "./pages/admin/dashboard/AdminDashboard";
@@ -188,14 +187,6 @@ function AppRoutes() {
           element={
             <TenantOnlyGuard>
               <Cases />
-            </TenantOnlyGuard>
-          }
-        />
-        <Route
-          path="cases/new"
-          element={
-            <TenantOnlyGuard>
-              <CreateCasePage />
             </TenantOnlyGuard>
           }
         />
