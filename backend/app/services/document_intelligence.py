@@ -20,7 +20,7 @@ CHUNK_PARTIAL_SCHEMA = """
   "key_clauses": [{"type": "string", "summary": "string"}],
   "risks": ["string"],
   "missing_items": ["string"],
-  "tags": ["string"],
+  "tags": ["string (max 5 specific tags from this section ONLY: document-specific keywords, clause types, risk categories, or key concepts - NOT generic words like 'document', 'legal', 'agreement')"],
   "summary": "1-2 sentences for THIS section only"
 }
 """
@@ -42,6 +42,55 @@ class DocumentIntelligenceService:
         if lang.startswith("fr"):
             return "You MUST answer in French."
         return "You MUST answer in the same language as the document."
+    
+    def _clean_and_limit_tags(self, tags: Any) -> List[str]:
+        """Clean, deduplicate, and limit tags to max 5-7 relevant ones."""
+        if not tags:
+            return []
+        
+        # Ensure tags is a list
+        if not isinstance(tags, list):
+            return []
+        
+        # Generic/low-quality tags to filter out
+        generic_tags = {
+            'document', 'legal', 'agreement', 'contract', 'file', 'page',
+            'text', 'content', 'document agreement', 'legal document',
+            'other', 'miscellaneous', 'general', 'unknown', 'todo',
+            'document type', 'section', 'undefined', 'pending',
+        }
+        
+        cleaned = set()
+        for tag in tags:
+            if not isinstance(tag, str):
+                continue
+            
+            tag = tag.strip()
+            if not tag:  # Skip empty tags
+                continue
+            
+            # Skip tags that are too short or too long
+            if len(tag) < 3 or len(tag) > 50:
+                continue
+            
+            # Skip generic tags (case-insensitive)
+            if tag.lower() in generic_tags:
+                continue
+            
+            # Skip tags that are only punctuation/numbers
+            if not any(c.isalpha() for c in tag):
+                continue
+            
+            cleaned.add(tag)
+        
+        # Convert back to list and limit to 5-7 tags
+        result = list(cleaned)
+        max_tags = 7
+        if len(result) > max_tags:
+            # If we have too many, keep only the first max_tags (preserves AI priority ordering)
+            result = result[:max_tags]
+        
+        return sorted(result)  # Return sorted for consistency
 
     def should_use_chunked_analysis(self, text_length: int) -> bool:
         threshold = settings.AI_LONG_DOCUMENT_THRESHOLD_CHARS or 25000
@@ -160,6 +209,13 @@ Return ONLY JSON."""
         if len(chunks) > max_chunks:
             merged["chunks_truncated"] = True
         merged["_chunk_partials"] = partials
+        
+        # Clean and limit tags after merge
+        if "tags" in merged and merged["tags"]:
+            merged["tags"] = self._clean_and_limit_tags(merged["tags"])
+        else:
+            merged["tags"] = []
+        
         return merged
 
     async def analyze_document(
@@ -248,13 +304,14 @@ Extract and return ONLY valid JSON with this exact structure:
   "missing_items": ["string"],
   "related_documents": ["string"],
   "summary": "string (2-3 sentence executive summary)",
-  "tags": ["string (relevant tags for categorization)"]
+  "tags": ["string (EXACTLY 5-7 specific tags: use document-specific keywords like clause types, key obligations, risk categories, party types, or jurisdictions. Examples: 'Non-Compete', 'IP Assignment', 'Termination Fee', 'Governing Law - NY', 'Automatic Renewal'. DO NOT use generic tags like 'document', 'legal', 'agreement', 'contract', 'file' or single-word vague terms)"]
 }}
 
 IMPORTANT:
 - For parties: Extract full names, roles, and ANY identification numbers (ID, passport, tax ID, company registration)
 - For financial_terms: ALWAYS include description of what the amount represents (e.g., "Purchase price", "Monthly rent", "Penalty fee")
 - For financial_terms: Include who pays (payer) and who receives (payee) if mentioned
+- For tags: Generate EXACTLY 5-7 tags maximum. Each tag must be specific and meaningful (not generic). Examples of GOOD tags: 'Non-Compete', 'IP Rights', 'Severance', 'Arbitration Clause'. Examples of BAD tags: 'agreement', 'legal', 'document', 'section'.
 - Be thorough and extract ALL information found. If a field has no data, use empty array [] or empty string "" or null.
 Return ONLY the JSON, no other text."""
         try:
@@ -280,6 +337,12 @@ Return ONLY the JSON, no other text."""
                 type(result).__name__,
             )
             return self._fallback_analysis(text, filename)
+        
+        # Clean and limit tags
+        if "tags" in result and result["tags"]:
+            result["tags"] = self._clean_and_limit_tags(result["tags"])
+        else:
+            result["tags"] = []
         
         return result
     

@@ -282,9 +282,10 @@ export function DocumentViewer() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Pane: Original Document (PDF) */}
+        {/* Left Pane: Original Document (PDF/DOCX) */}
         <div className="w-1/2 bg-slate-50 border-r border-border flex flex-col">
-          {document.s3_url ? (
+          {document.s3_url &&
+          document.filename.toLowerCase().endsWith(".pdf") ? (
             <iframe
               src={document.s3_url}
               title={document.filename}

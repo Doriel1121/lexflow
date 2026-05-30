@@ -89,6 +89,24 @@ class OCRService:
                     from app.services.ocr_engine import tesseract_ocr_service
                     return await tesseract_ocr_service.extract_text_from_scanned_pdf(actual_file_path)
             
+            # DOCX/DOC files
+            if path.suffix.lower() in ['.docx', '.doc']:
+                try:
+                    from docx import Document
+                    doc = Document(path)
+                    text_parts = [para.text for para in doc.paragraphs]
+                    # Also extract text from tables
+                    for table in doc.tables:
+                        for row in table.rows:
+                            for cell in row.cells:
+                                text_parts.append(cell.text)
+                    full_text = "\n".join(text_parts)
+                    logger.info(f"Successfully extracted text from DOCX: {len(full_text)} characters")
+                    return {"text": full_text, "language": "en", "page_count": 1}
+                except Exception as e:
+                    logger.error(f"Failed to extract text from DOCX: {e}", exc_info=True)
+                    return {"text": "", "language": "en", "page_count": 0}
+            
             # Other files
             return {"text": f"Document: {path.name}\n\nFile Type: {path.suffix}\nSize: {path.stat().st_size} bytes", "language": "en", "page_count": 1}
         except Exception as e:
