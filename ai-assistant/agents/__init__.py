@@ -1,0 +1,1 @@
+"""Agent prompt helpers for the local AI assistant."""

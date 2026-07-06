@@ -129,6 +129,9 @@ Thumbs.db
 # Project specific
 backend/uploads/
 uploads/
+ai-assistant/*.faiss
+ai-assistant/*.pkl
+ai-assistant/knowledge_graph.json
 
 # User requests
 *.md

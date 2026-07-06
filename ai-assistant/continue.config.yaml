@@ -1,0 +1,14 @@
+﻿name: LexFlow Local AI
+version: 0.0.1
+schema: v1
+
+models:
+  - name: LexFlow Local Architect
+    provider: openai
+    model: lexflow-local
+    apiBase: http://localhost:8008/v1
+    apiKey: local
+    roles:
+      - chat
+      - edit
+      - apply

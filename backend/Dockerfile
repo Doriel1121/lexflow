@@ -73,7 +73,7 @@ COPY . .
 # Copy entrypoint and supervisord config
 COPY entrypoint.sh /entrypoint.sh
 COPY supervisord.conf /app/backend/supervisord.conf
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # ── Expose & health check ────────────────────────────────────
 EXPOSE 8000
