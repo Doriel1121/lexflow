@@ -18,3 +18,12 @@ from .deadline import Deadline, DeadlineType
 from .case_event import CaseEvent
 from .email_config import EmailConfig
 from .email_message import EmailMessage
+from .legal_workflow import (
+    CourtBundle,
+    CourtBundleItem,
+    LegalArtifact,
+    LegalDraft,
+    LegalWorkflow,
+    LegalWorkflowStep,
+    WorkflowEvent,
+)

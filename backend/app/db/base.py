@@ -13,3 +13,12 @@ from app.db.models.summary import Summary  # noqa: F401
 from app.db.models.audit_log import AuditLog  # noqa: F401
 from app.db.models.notification import Notification  # noqa: F401
 from app.db.models.deadline import Deadline  # noqa: F401
+from app.db.models.legal_workflow import (  # noqa: F401
+    CourtBundle,
+    CourtBundleItem,
+    LegalArtifact,
+    LegalDraft,
+    LegalWorkflow,
+    LegalWorkflowStep,
+    WorkflowEvent,
+)

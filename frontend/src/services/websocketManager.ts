@@ -8,7 +8,7 @@ type MessageListener = (data: any) => void;
 class WebSocketManager {
   private static instance: WebSocketManager;
   private ws: WebSocket | null = null;
-  private reconnectTimeoutRef: NodeJS.Timeout | null = null;
+  private reconnectTimeoutRef: ReturnType<typeof setTimeout> | null = null;
   private isConnectingRef = false;
   private messageListeners: Set<MessageListener> = new Set();
   private connectionStateListeners: Set<(connected: boolean) => void> =

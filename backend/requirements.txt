@@ -62,3 +62,6 @@ aiosqlite==0.20.0
 cachetools==7.0.1
 spacy>=3.8.0
 dateparser>=1.2.0
+pymupdf>=1.22.0
+reportlab>=4.0.0
+

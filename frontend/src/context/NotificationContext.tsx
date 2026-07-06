@@ -7,7 +7,6 @@ import React, {
   useCallback,
 } from "react";
 import { notificationsService } from "../services/notifications";
-import { API_BASE_URL } from "../services/api";
 import { useAuth } from "./AuthContext";
 
 export interface Notification {
@@ -44,7 +43,6 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const { isAuthenticated } = useAuth();
-  const token = localStorage.getItem("access_token");
 
   const fetchNotifications = useCallback(async () => {
     if (!isAuthenticated) return;

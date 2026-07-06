@@ -1,0 +1,15 @@
+# LegalOS Architecture & Rules
+
+## Tech Stack
+
+- Frontend: React
+- Backend: Python
+
+## Guidelines for Cline
+
+1. NO PERMISSION NEEDED: You are in autopilot mode. Do not ask for permission to write code, create files, or run safe terminal commands. Just do it.
+2. CONTEXT FIRST: Before writing a new feature, automatically run `tree` or `ls` to understand the folder structure of the React app and the Python backend.
+3. TERMINAL USAGE:
+   - Backend (Python): Always ensure you are aware of the virtual environment (e.g., `.venv`) before installing packages with `pip` or running scripts.
+   - Frontend (React): Use standard `npm` commands. Create reusable components and place them in the correct directory (e.g., `src/components`).
+4. CODE STYLE: Keep React components modular and Python functions focused. Ensure clear and standard RESTful API communication between the React client and the Python server.

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.core.config import settings
 from app.api.v1.endpoints import (
     users, cases, documents, search, email, auth, organizations,
     admin, tags, invitations, risk, notifications, clients, deadlines, ai,
@@ -24,3 +25,8 @@ api_router_v1.include_router(notifications.router, prefix="/notifications", tags
 api_router_v1.include_router(clients.router, prefix="/clients", tags=["clients"])
 api_router_v1.include_router(deadlines.router, prefix="/deadlines", tags=["deadlines"])
 api_router_v1.include_router(org_analytics.router, tags=["org-analytics"])
+
+if settings.LEGAL_WORKFLOWS_ENABLED:
+    from app.api.v1.endpoints import workflows
+
+    api_router_v1.include_router(workflows.router, tags=["workflows"])

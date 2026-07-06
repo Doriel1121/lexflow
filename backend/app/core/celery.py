@@ -10,7 +10,7 @@ celery_app = Celery(
     "documents_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["app.workers.document_tasks"]
+    include=["app.workers.document_tasks", "app.workers.workflow_tasks"]
 )
 
 # Optional configuration

@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # Embedding fan-out (Celery only)
     DOCUMENT_EMBEDDING_FANOUT: bool = True
 
+    # Feature flags
+    LEGAL_WORKFLOWS_ENABLED: bool = False
+
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
     # Above this character count, use per-chunk analysis + merge (sequential, no Celery chord)

@@ -62,6 +62,7 @@ import { CollectionsList } from "./pages/collections/CollectionsList";
 import { CollectionView } from "./pages/collections/CollectionView";
 import { ClientsPage } from "./pages/clients/ClientsPage";
 import { CreateClientPage } from "./pages/clients/CreateClientPage";
+import WorkflowWorkspace from "./pages/workflows/WorkflowWorkspace";
 
 // ── Admin pages ───────────────────────────────────────────────────────────
 import AdminDashboard from "./pages/admin/dashboard/AdminDashboard";
@@ -76,6 +77,7 @@ import { NotificationProvider } from "./context/NotificationContext";
 import { SnackbarProvider } from "./context/SnackbarContext";
 import { ConfirmProvider } from "./context/ConfirmContext";
 
+import { featureFlags } from "./lib/featureFlags";
 import { normalizeRole } from "./lib/rbac";
 
 // ─── Loading screen ───────────────────────────────────────────────────────
@@ -198,6 +200,16 @@ function AppRoutes() {
             </TenantOnlyGuard>
           }
         />
+        {featureFlags.legalWorkflows && (
+          <Route
+            path="cases/:caseId/workflows/:workflowId"
+            element={
+              <TenantOnlyGuard>
+                <WorkflowWorkspace />
+              </TenantOnlyGuard>
+            }
+          />
+        )}
 
         <Route
           path="clients"

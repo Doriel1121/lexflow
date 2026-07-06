@@ -28,6 +28,8 @@ import AskAI from "../components/ai/AskAI";
 import { useSnackbar } from "../context/SnackbarContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useDocumentWebSocket } from "../hooks/useDocumentWebSocket";
+import { featureFlags } from "../lib/featureFlags";
+import workflowsApi, { Workflow } from "../services/workflows";
 
 interface Deadline {
   id: number;
@@ -72,11 +74,20 @@ const CaseDetailPage: React.FC = () => {
   // Assign Lawyer state
   const [showAssignLawyerModal, setShowAssignLawyerModal] = useState(false);
   const [selectedLawyerId, setSelectedLawyerId] = useState<number | null>(null);
+  const [assigning, setAssigning] = useState(false);
+
+  // Workflow state
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [workflowsLoading, setWorkflowsLoading] = useState(false);
+  const [startingWorkflow, setStartingWorkflow] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     fetchCase();
     fetchTeamMembers();
+    if (featureFlags.legalWorkflows) {
+      fetchWorkflows();
+    }
   }, [id]);
 
   // Use WebSocket for real-time document updates (replaces polling)
@@ -98,7 +109,7 @@ const CaseDetailPage: React.FC = () => {
 
   // Fallback: Keep light polling as backup (every 5 seconds) if WebSocket fails
   useEffect(() => {
-    let fallbackInterval: NodeJS.Timeout | null = null;
+    let fallbackInterval: ReturnType<typeof setTimeout> | null = null;
 
     // Only poll if uploading AND WebSocket is not connected
     if (uploading && id && !isConnected) {
@@ -157,7 +168,39 @@ const CaseDetailPage: React.FC = () => {
     }
   };
 
-  const [assigning, setAssigning] = useState(false);
+  const fetchWorkflows = async () => {
+    if (!id) return;
+    setWorkflowsLoading(true);
+    try {
+      const data = await workflowsApi.listCaseWorkflows(parseInt(id));
+      setWorkflows(data);
+    } catch (e) {
+      console.error("Failed to fetch workflows", e);
+    } finally {
+      setWorkflowsLoading(false);
+    }
+  };
+
+  const handleStartWorkflow = async () => {
+    if (!id || !caseData) return;
+    // Use the most recently uploaded completed document as source
+    const completedDoc = caseData.documents
+      ?.filter((d) => d.processing_status === "completed")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    setStartingWorkflow(true);
+    try {
+      const wf = await workflowsApi.createWorkflow({
+        case_id: parseInt(id),
+        source_document_id: completedDoc?.id ?? null,
+        workflow_type: "COURT_RESPONSE",
+      });
+      navigate(`/cases/${id}/workflows/${wf.id}`);
+    } catch (e: any) {
+      showSnackbar(e?.response?.data?.detail || "Failed to create workflow", { type: "error" });
+    } finally {
+      setStartingWorkflow(false);
+    }
+  };
 
   const openAssignLawyerModal = () => {
     setSelectedLawyerId(caseData?.assigned_lawyer_id || null);
@@ -499,6 +542,62 @@ const CaseDetailPage: React.FC = () => {
       <div className="w-full max-w-4xl mx-auto">
         <AskAI caseId={parseInt(id || "0")} />
       </div>
+
+      {/* Workflows Section */}
+      {featureFlags.legalWorkflows && (
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold text-slate-800">⚖️ Response Workflows</span>
+            {workflowsLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
+          </div>
+          <button
+            id="start-workflow-btn"
+            onClick={handleStartWorkflow}
+            disabled={startingWorkflow || !caseData?.documents?.some(d => d.processing_status === 'completed')}
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title={!caseData?.documents?.some(d => d.processing_status === 'completed') ? 'Upload and process a document first' : 'Start a new court response workflow'}
+          >
+            <Plus className="h-4 w-4" />
+            {startingWorkflow ? 'Starting…' : 'New Workflow'}
+          </button>
+        </div>
+
+        {workflows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400">
+            <span className="text-3xl mb-2">⚖️</span>
+            <p className="text-sm font-medium text-slate-500">No workflows yet</p>
+            <p className="text-xs mt-1 max-w-xs">
+              Upload a legal document and start a workflow to generate an AI-drafted court response.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {workflows.map((wf) => (
+              <button
+                key={wf.id}
+                id={`workflow-row-${wf.id}`}
+                onClick={() => navigate(`/cases/${id}/workflows/${wf.id}`)}
+                className="w-full text-left flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-base">{wf.status === 'PENDING_HUMAN_REVIEW' || wf.status === 'IN_HUMAN_REVIEW' ? '👤' : wf.status === 'APPROVED_FOR_ASSEMBLY' ? '✅' : wf.status === 'AI_DRAFTING' ? '🤖' : '⚙️'}</span>
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">
+                      Workflow #{wf.id} · {wf.workflow_type.replace(/_/g, ' ')}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {wf.status.replace(/_/g, ' ')} · {new Date(wf.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-slate-300 group-hover:text-blue-500 transition-colors">→</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         <div className="bg-card border border-border rounded-xl p-6">
