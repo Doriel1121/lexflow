@@ -589,6 +589,20 @@
         "calls": "Calls"
     },
     "adminOrganizations": {
+        "title": "Tenant Management",
+        "subtitle": "Provision new tenants · Aggregated stats only · No tenant identifiers displayed",
+        "provisionTenant": "Provision Tenant",
+        "activeTenants": "Active Tenants",
+        "inactiveTenants": "Inactive Tenants",
+        "newThisMonth": "New This Month",
+        "isolationPolicy": "Data Isolation Policy",
+        "isolationDesc": "Individual tenant records (names, slugs, member lists) are not accessible from the system admin panel. This enforces multi-tenant data isolation. To manage a specific tenant's settings, use the Org Admin role within that organization.",
+        "firstAdminUser": "First Admin User",
+        "fullName": "Full Name",
+        "password": "Password",
+        "leaveBlank": "(leave blank to auto-generate)",
+        "cancel": "Cancel",
+        "provisioning": "Provisioning…",
         "organizationName": "Organization Name",
         "organizationNamePlaceholder": "e.g. Acme Law Firm",
         "primaryContact": "Primary Contact",
@@ -597,6 +611,36 @@
         "emailPlaceholder": "admin@firm.com",
         "apiKey": "API Key",
         "apiKeyPlaceholder": "Auto-generated if empty"
+    },
+    "adminHeader": {
+        "systemAdmin": "System Admin Console"
+    },
+    "adminAudit": {
+        "title": "Audit Logs",
+        "subtitle": "Anonymized system-wide activity log",
+        "allEvents": "All events",
+        "timestamp": "Timestamp",
+        "userHashed": "User (hashed)",
+        "event": "Event",
+        "method": "Method",
+        "path": "Path",
+        "status": "Status",
+        "ip": "IP"
+    },
+    "adminUsers": {
+        "title": "User Analytics",
+        "subtitle": "Aggregated user statistics · No personal data displayed",
+        "totalUsers": "Total Users",
+        "activeToday": "Active Today",
+        "newToday": "New Today",
+        "avgUsersPerTenant": "Avg Users / Tenant",
+        "roleDistribution": "Role Distribution",
+        "roleDesc": "System-wide user count per role type",
+        "recentActivity": "Recent System Activity",
+        "recentActivityDesc": "User IDs are hashed · No personal data is shown",
+        "noEvents": "No audit events recorded yet",
+        "retry": "Retry",
+        "error": "An error occurred."
     },
     "documentsPage": {
         "title": "All Documents",

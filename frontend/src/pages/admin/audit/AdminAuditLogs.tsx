@@ -143,7 +143,7 @@ export default function AdminAuditLogs() {
             onChange={(e) => {
               setEventFilter(e.target.value);
             }}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
             <option value="">All events</option>
             <option value="POST">POST</option>
@@ -173,7 +173,7 @@ export default function AdminAuditLogs() {
               placeholder={t("auditLogs.admin.searchPlaceholder")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full ps-9 pe-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+              className="w-full ps-9 pe-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700 transition-all"
             />
           </div>
         </div>
@@ -201,7 +201,7 @@ export default function AdminAuditLogs() {
                     className="px-6 py-12 text-center text-slate-500"
                   >
                     <div className="flex flex-col items-center gap-3">
-                      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-purple-600 animate-spin" />
+                      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-primary-700 animate-spin" />
                       Loading audit logs…
                     </div>
                   </td>

@@ -87,7 +87,7 @@ export default function AdminOrganizations() {
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          className="flex items-center gap-2 bg-primary hover:bg-primary-800 text-white px-4 py-2 rounded-lg font-medium transition-colors"
         >
           <Plus className="h-4 w-4" />
           Provision Tenant
@@ -110,8 +110,8 @@ export default function AdminOrganizations() {
               key={label}
               className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"
             >
-              <div className="p-2 bg-purple-100 rounded-lg w-fit mb-3">
-                <Building2 className="h-5 w-5 text-purple-600" />
+              <div className="p-2 bg-primary-50 rounded-lg w-fit mb-3">
+                <Building2 className="h-5 w-5 text-primary-700" />
               </div>
               <p className="text-sm text-slate-500 font-medium">{label}</p>
               <h3 className="text-3xl font-bold text-slate-800 mt-1 tabular-nums">
@@ -176,7 +176,7 @@ export default function AdminOrganizations() {
                   placeholder={t(
                     "adminOrganizations.organizationNamePlaceholder",
                   )}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
                 />
               </div>
 
@@ -199,7 +199,7 @@ export default function AdminOrganizations() {
                       placeholder={t(
                         "adminOrganizations.primaryContactPlaceholder",
                       )}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
                     />
                   </div>
                   <div>
@@ -217,7 +217,7 @@ export default function AdminOrganizations() {
                         })
                       }
                       placeholder={t("adminOrganizations.emailPlaceholder")}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
                     />
                   </div>
                   <div>
@@ -234,7 +234,7 @@ export default function AdminOrganizations() {
                         setFormData({ ...formData, password: e.target.value })
                       }
                       placeholder={t("adminOrganizations.apiKeyPlaceholder")}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
                     />
                   </div>
                 </div>
@@ -251,7 +251,7 @@ export default function AdminOrganizations() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-800 disabled:opacity-50 rounded-lg transition-colors"
                 >
                   {isSubmitting ? (
                     <>

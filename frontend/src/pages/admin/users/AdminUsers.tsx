@@ -66,7 +66,7 @@ export default function AdminUsers() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-9 w-9 rounded-full border-4 border-slate-200 border-t-purple-600 animate-spin" />
+        <div className="h-9 w-9 rounded-full border-4 border-slate-200 border-t-primary-700 animate-spin" />
       </div>
     );
   }
@@ -110,7 +110,7 @@ export default function AdminUsers() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Users"        value={userStats.total_users.toLocaleString()}     icon={Users}      color="text-blue-600" />
         <StatCard label="Active Today"        value={userStats.active_users_today.toLocaleString()} icon={UserCheck} color="text-emerald-600" />
-        <StatCard label="New Today"           value={userStats.new_users_today.toLocaleString()}  icon={UserPlus}  color="text-purple-600" />
+        <StatCard label="New Today"           value={userStats.new_users_today.toLocaleString()}  icon={UserPlus}  color="text-primary-700" />
         <StatCard label="Avg Users / Tenant" value={userStats.avg_users_per_tenant}               icon={Activity}  color="text-amber-600" />
       </div>
 
@@ -141,7 +141,7 @@ export default function AdminUsers() {
               contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}
               formatter={(v: number) => [v.toLocaleString(), 'Users']}
             />
-            <Bar dataKey="count" fill="#7c3aed" radius={[4,4,0,0]} />
+            <Bar dataKey="count" fill="#334e68" radius={[4,4,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

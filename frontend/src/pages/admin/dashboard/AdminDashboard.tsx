@@ -168,7 +168,7 @@ function SectionHeader({
 }
 
 const CHART_COLORS = {
-  primary: "#7c3aed",
+  primary: "#334e68",   // primary-700 navy
   secondary: "#3b82f6",
   success: "#10b981",
   warning: "#f59e0b",
@@ -223,7 +223,7 @@ export default function AdminDashboard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-purple-600 animate-spin" />
+          <div className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-primary-700 animate-spin" />
           <p className="text-slate-500 text-sm font-medium">
             {t("adminDashboard.loading")}
           </p>
@@ -240,7 +240,7 @@ export default function AdminDashboard() {
           <p className="text-red-600 font-medium">{error ?? "Unknown error"}</p>
           <button
             onClick={load}
-            className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
+            className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-800 transition-colors"
           >
             {t("adminDashboard.retry")}
           </button>
@@ -330,8 +330,8 @@ export default function AdminDashboard() {
           value={tenant_stats.total_tenants.toLocaleString()}
           subtext={`${tenant_stats.active_tenants} ${t("adminDashboard.active")} · ${tenant_stats.inactive_tenants} ${t("adminDashboard.inactive")}`}
           icon={Building2}
-          iconColor="text-purple-600"
-          iconBg="bg-purple-100"
+          iconColor="text-primary-700"
+          iconBg="bg-primary-50"
           trend={{
             value: tenant_stats.new_tenants_today,
             label: t("adminDashboard.today"),
@@ -374,8 +374,8 @@ export default function AdminDashboard() {
           value={activity_stats.ai_calls_today.toLocaleString()}
           subtext={t("adminDashboard.systemWideUsage")}
           icon={Zap}
-          iconColor="text-violet-600"
-          iconBg="bg-violet-100"
+          iconColor="text-primary-700"
+          iconBg="bg-primary-50"
         />
         <KPICard
           label={t("adminDashboard.apiRequestsToday")}
@@ -665,21 +665,21 @@ export default function AdminDashboard() {
       )}
 
       {/* ── New tenant this month callout ──────────────────────────────── */}
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl p-6 text-white">
+      <div className="bg-gradient-to-r from-primary-900 to-primary-700 rounded-xl p-6 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-purple-200 text-sm font-medium">
+            <p className="text-primary-200 text-sm font-medium">
               New Tenants This Month
             </p>
             <h3 className="text-4xl font-bold mt-1 tabular-nums">
               {tenant_stats.new_tenants_this_month}
             </h3>
-            <p className="text-purple-200 text-sm mt-2">
+            <p className="text-primary-200 text-sm mt-2">
               {tenant_stats.active_tenants} tenants currently active on the
               platform
             </p>
           </div>
-          <TrendingUp className="h-16 w-16 text-purple-300 opacity-50" />
+          <TrendingUp className="h-16 w-16 text-secondary-300 opacity-60" />
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@
 
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
+import { AdminHeader } from './AdminHeader';
 import { useTranslation } from 'react-i18next';
 
 export function AdminLayout() {
@@ -22,15 +23,16 @@ export function AdminLayout() {
   return (
     <div className="flex min-h-screen bg-slate-50" dir={isRTL ? 'rtl' : 'ltr'}>
       <Sidebar />
-      <main className="flex-1 ps-60 overflow-y-auto">
-        {/* Purple top bar to visually distinguish the admin context */}
-        <div className="h-1 w-full bg-gradient-to-r from-purple-600 via-violet-500 to-indigo-600" />
-        <div className="p-8">
-          <div className="max-w-7xl mx-auto">
+      <div className="flex-1 flex flex-col min-h-screen ps-60">
+        <AdminHeader />
+        {/* Brand top bar — navy-to-gold gradient distinguishes admin context */}
+        <div className="h-1 w-full bg-gradient-to-r from-primary-900 via-primary-700 to-secondary-500" />
+        <main className="flex-1 px-8 py-6 overflow-y-auto">
+          <div className="max-w-7xl mx-auto w-full">
             <Outlet />
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

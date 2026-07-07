@@ -570,6 +570,20 @@
         "calls": "קריאות"
     },
     "adminOrganizations": {
+        "title": "ניהול דיירים (Tenants)",
+        "subtitle": "הקמת דיירים חדשים · נתונים מרוכזים בלבד · ללא הצגת מזהי דיירים",
+        "provisionTenant": "הקם דייר",
+        "activeTenants": "דיירים פעילים",
+        "inactiveTenants": "דיירים לא פעילים",
+        "newThisMonth": "חדשים החודש",
+        "isolationPolicy": "מדיניות בידוד נתונים",
+        "isolationDesc": "רשומות דייר פרטניות (שמות, מזהים, רשימות חברים) אינן נגישות ממסוף מנהל המערכת. זאת על מנת לאכוף בידוד נתונים בריבוי דיירים (Multi-tenant). לניהול הגדרות של דייר מסוים, יש להשתמש בתפקיד מנהל הארגון (Org Admin) בתוך אותו ארגון.",
+        "firstAdminUser": "משתמש מנהל ראשוני",
+        "fullName": "שם מלא",
+        "password": "סיסמה",
+        "leaveBlank": "(השאר ריק ליצירה אוטומטית)",
+        "cancel": "ביטול",
+        "provisioning": "מקים…",
         "organizationName": "שם הארגון",
         "organizationNamePlaceholder": "למשל Acme Law Firm",
         "primaryContact": "איש קשר ראשי",
@@ -578,6 +592,36 @@
         "emailPlaceholder": "admin@firm.com",
         "apiKey": "מפתח API",
         "apiKeyPlaceholder": "ייווצר באופן אוטומטי אם אינו מלא"
+    },
+    "adminHeader": {
+        "systemAdmin": "מסוף ניהול מערכת"
+    },
+    "adminAudit": {
+        "title": "יומני ביקורת",
+        "subtitle": "יומן פעילות אנונימי ברמת המערכת",
+        "allEvents": "כל האירועים",
+        "timestamp": "חותמת זמן",
+        "userHashed": "משתמש (מגובב)",
+        "event": "אירוע",
+        "method": "מתודה",
+        "path": "נתיב",
+        "status": "סטטוס",
+        "ip": "כתובת IP"
+    },
+    "adminUsers": {
+        "title": "ניתוח נתוני משתמשים",
+        "subtitle": "סטטיסטיקות משתמשים מרוכזות · ללא הצגת מידע אישי",
+        "totalUsers": "סה״כ משתמשים",
+        "activeToday": "פעילים היום",
+        "newToday": "חדשים היום",
+        "avgUsersPerTenant": "ממוצע משתמשים לדייר",
+        "roleDistribution": "חלוקת תפקידים",
+        "roleDesc": "ספירת משתמשים ברמת המערכת לפי תפקיד",
+        "recentActivity": "פעילות מערכת אחרונה",
+        "recentActivityDesc": "מזהי משתמשים מגובבים · ללא הצגת מידע אישי",
+        "noEvents": "טרם נרשמו אירועי ביקורת",
+        "retry": "נסה שוב",
+        "error": "אירעה שגיאה."
     },
     "documentsPage": {
         "title": "כל המסמכים",
