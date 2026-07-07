@@ -81,7 +81,12 @@ async def ask_ai(
     # Generate embedding for the question
     from app.services.ai_utils import valid_embedding
 
-    question_vector = await llm_service.generate_embedding(request.question)
+    question_vector = await llm_service.generate_embedding(
+        request.question,
+        db=db,
+        organization_id=org_id,
+        task_type="embedding.rag_query",
+    )
     if not valid_embedding(question_vector):
         raise HTTPException(
             status_code=503,
@@ -169,7 +174,12 @@ INSTRUCTIONS:
     try:
         # We use summarize_text's underlying provider or just a generic call if available.
         # LLMService doesn't have a generic 'ask' yet, so let's add one or use provider directly.
-        ai_response = await llm_service.provider.generate_text(prompt)
+        ai_response = await llm_service.generate_text(
+            prompt,
+            db=db,
+            organization_id=org_id,
+            task_type="reader.rag_answer",
+        )
         
         if not ai_response:
             return AskAIResponse(answer="AI service is currently unavailable.", citations=[])

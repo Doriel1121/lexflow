@@ -575,7 +575,12 @@ class DocumentProcessingService:
                     for chunk_text in p_chunks:
                         vector = None
                         try:
-                            vector = await llm_service.generate_embedding(chunk_text)
+                            vector = await llm_service.generate_embedding(
+                                chunk_text,
+                                db=db,
+                                organization_id=organization_id,
+                                task_type="embedding.document_chunk",
+                            )
                         except Exception:
                             pass
 

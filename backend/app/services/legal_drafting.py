@@ -19,8 +19,9 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.ai_provider import get_ai_provider
+from app.core.ai_router import AITask, ai_router
 from app.core.legal_workflow_constants import LegalDraftStatus
+from app.services.ai_usage_logger import track_ai_call
 from app.crud.legal_workflow import legal_workflow_crud
 from app.db.models.case import Case as DBCase
 from app.db.models.document import Document as DBDocument
@@ -187,6 +188,7 @@ class DraftInputCollector:
     ) -> Dict[str, Any]:
         context: Dict[str, Any] = {
             "case_id": workflow.case_id,
+            "organization_id": workflow.organization_id,
             "workflow_type": workflow.workflow_type,
             "workflow_metadata": workflow.metadata_json or {},
             "ocr_text": "",
@@ -235,7 +237,7 @@ class LegalDraftingService:
     """
 
     def __init__(self):
-        self.provider = get_ai_provider()
+        self.provider = ai_router.provider_for(AITask.DRAFTING)
         self.collector = DraftInputCollector()
 
     async def generate_draft(
@@ -256,7 +258,7 @@ class LegalDraftingService:
             instructions = (workflow.metadata_json or {}).get("drafting_instructions")
 
         # 3. Generate draft text (AI or fallback)
-        draft_text = await self._call_ai(context, instructions)
+        draft_text = await self._call_ai(db, context, instructions)
 
         # 4. Convert to TipTap JSON
         tiptap_json = _plain_text_to_tiptap(draft_text)
@@ -299,6 +301,7 @@ class LegalDraftingService:
 
     async def _call_ai(
         self,
+        db: AsyncSession,
         context: Dict[str, Any],
         instructions: Optional[str],
     ) -> str:
@@ -313,10 +316,18 @@ class LegalDraftingService:
         prompt = self._build_prompt(context, instructions)
 
         try:
-            result = await asyncio.wait_for(
-                self.provider.generate_text(prompt),
-                timeout=120.0,
-            )
+            async with track_ai_call(
+                db,
+                organization_id=context.get("organization_id"),
+                task_type="drafting.legal_response",
+                provider=self.provider,
+                input_text=prompt,
+            ) as usage:
+                result = await asyncio.wait_for(
+                    self.provider.generate_text(prompt),
+                    timeout=120.0,
+                )
+                usage["output_chars"] = len(result or "")
             if result:
                 return result.strip()
         except asyncio.TimeoutError:

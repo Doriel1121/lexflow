@@ -3,8 +3,11 @@ import asyncio
 import logging
 
 from app.core.config import settings
-from app.core.ai_provider import get_ai_provider
+from app.core.ai_router import AITask, ai_router
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.analysis_merge import merge_analyses
+from app.services.ai_usage_logger import track_ai_call
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ CHUNK_PARTIAL_SCHEMA = """
 
 class DocumentIntelligenceService:
     def __init__(self):
-        self.provider = get_ai_provider()
+        self.provider = ai_router.provider_for(AITask.READER)
     
     def _language_instruction(self, language: Optional[str], text: str) -> str:
         lang = (language or "").lower()
@@ -105,6 +108,8 @@ class DocumentIntelligenceService:
         total_chunks: int,
         page_number: Optional[int] = None,
         language: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+        organization_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Extract structured data from a single document section."""
         if not self.provider.active or not (chunk_text or "").strip():
@@ -130,10 +135,18 @@ Return ONLY JSON."""
 
         timeout = float(settings.AI_CHUNK_ANALYSIS_TIMEOUT_SECONDS or 90)
         try:
-            result = await asyncio.wait_for(
-                self.provider.generate_json(prompt),
-                timeout=timeout,
-            )
+            async with track_ai_call(
+                db,
+                organization_id=organization_id,
+                task_type="reader.chunk_analysis",
+                provider=self.provider,
+                input_text=prompt,
+            ) as usage:
+                result = await asyncio.wait_for(
+                    self.provider.generate_json(prompt),
+                    timeout=timeout,
+                )
+                usage["output_chars"] = len(str(result)) if result is not None else 0
         except Exception as e:
             logger.warning(
                 "Chunk %s/%s analysis failed for '%s': %s",
@@ -154,6 +167,7 @@ Return ONLY JSON."""
         *,
         document_id: Optional[int] = None,
         organization_id: Optional[int] = None,
+        db: Optional[AsyncSession] = None,
     ) -> Dict[str, Any]:
         """Per-chunk analysis with bounded concurrency + deterministic merge."""
         max_chunks = settings.AI_CHUNK_ANALYSIS_MAX_CHUNKS or 40
@@ -186,6 +200,8 @@ Return ONLY JSON."""
                         total_chunks=len(to_analyze),
                         page_number=item.get("page_number"),
                         language=language,
+                        db=db,
+                        organization_id=organization_id,
                     )
             if isinstance(partial, dict) and partial:
                 partial["_chunk_index"] = idx
@@ -228,6 +244,7 @@ Return ONLY JSON."""
         force_single_pass: bool = False,
         document_id: Optional[int] = None,
         organization_id: Optional[int] = None,
+        db: Optional[AsyncSession] = None,
     ) -> Dict[str, Any]:
         """
         Choose single-pass or chunked analysis based on document size.
@@ -250,14 +267,23 @@ Return ONLY JSON."""
                 language,
                 document_id=document_id,
                 organization_id=organization_id,
+                db=db,
             )
 
-        result = await self.analyze_legal_document(text, filename, language)
+        result = await self.analyze_legal_document(text, filename, language, db=db, organization_id=organization_id)
         if isinstance(result, dict):
             result["analysis_mode"] = "full"
         return result
 
-    async def analyze_legal_document(self, text: str, filename: str, language: Optional[str] = None) -> Dict[str, Any]:
+    async def analyze_legal_document(
+        self,
+        text: str,
+        filename: str,
+        language: Optional[str] = None,
+        *,
+        db: Optional[AsyncSession] = None,
+        organization_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
         Comprehensive legal document analysis extracting all critical information
         """
@@ -315,10 +341,18 @@ IMPORTANT:
 - Be thorough and extract ALL information found. If a field has no data, use empty array [] or empty string "" or null.
 Return ONLY the JSON, no other text."""
         try:
-            result = await asyncio.wait_for(
-                self.provider.generate_json(prompt),
-                timeout=float(settings.AI_ANALYSIS_TIMEOUT_SECONDS or 120),
-            )
+            async with track_ai_call(
+                db,
+                organization_id=organization_id,
+                task_type="reader.document_analysis",
+                provider=self.provider,
+                input_text=prompt,
+            ) as usage:
+                result = await asyncio.wait_for(
+                    self.provider.generate_json(prompt),
+                    timeout=float(settings.AI_ANALYSIS_TIMEOUT_SECONDS or 120),
+                )
+                usage["output_chars"] = len(str(result)) if result is not None else 0
         except asyncio.TimeoutError:
             logger.error("AI analysis timed out for document '%s'. Falling back.", filename)
             return self._fallback_analysis(text, filename)

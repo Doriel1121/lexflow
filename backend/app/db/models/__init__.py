@@ -27,3 +27,5 @@ from .legal_workflow import (
     LegalWorkflowStep,
     WorkflowEvent,
 )
+
+from app.db.models.ai_usage_event import AIUsageEvent

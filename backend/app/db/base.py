@@ -22,3 +22,4 @@ from app.db.models.legal_workflow import (  # noqa: F401
     LegalWorkflowStep,
     WorkflowEvent,
 )
+from app.db.models.ai_usage_event import AIUsageEvent  # noqa: F401

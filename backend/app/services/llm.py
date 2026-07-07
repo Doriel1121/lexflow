@@ -3,14 +3,18 @@ import re
 import json
 import logging
 from datetime import datetime, timedelta
-from app.core.ai_provider import get_ai_provider
+from app.core.ai_router import AITask, ai_router
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.ai_utils import is_zero_vector
+from app.services.ai_usage_logger import track_ai_call
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.provider = get_ai_provider()
+        self.provider = ai_router.provider_for(AITask.READER)
+        self.embedding_provider = ai_router.provider_for(AITask.EMBEDDING)
     
     async def summarize_text(self, text: str, length: str = "medium") -> str:
         try:
@@ -21,12 +25,27 @@ class LLMService:
         except:
             return f"Summary: {text[:300]}... [AI error]"
 
-    async def generate_embedding(self, text: str) -> Optional[List[float]]:
+    async def generate_embedding(
+        self,
+        text: str,
+        *,
+        db: Optional[AsyncSession] = None,
+        organization_id: Optional[int] = None,
+        task_type: str = "embedding.document_chunk",
+    ) -> Optional[List[float]]:
         """Return embedding vector, or None if provider inactive or call failed."""
         try:
-            if not self.provider.active:
+            if not self.embedding_provider.active:
                 return None
-            vector = await self.provider.generate_embedding(text)
+            async with track_ai_call(
+                db,
+                organization_id=organization_id,
+                task_type=task_type,
+                provider=self.embedding_provider,
+                input_text=text,
+            ) as usage:
+                vector = await self.embedding_provider.generate_embedding(text)
+                usage["output_chars"] = len(vector or [])
             if is_zero_vector(vector):
                 return None
             return vector
@@ -34,17 +53,32 @@ class LLMService:
             logger.warning("Error generating embedding: %s", e)
             return None
 
-    async def generate_embeddings(self, texts: List[str]) -> List[Optional[List[float]]]:
+    async def generate_embeddings(
+        self,
+        texts: List[str],
+        *,
+        db: Optional[AsyncSession] = None,
+        organization_id: Optional[int] = None,
+        task_type: str = "embedding.document_chunk_batch",
+    ) -> List[Optional[List[float]]]:
         """Batch embeddings when supported by provider; falls back to per-text."""
         if not texts:
             return []
-        if not self.provider.active:
+        if not self.embedding_provider.active:
             return [None for _ in texts]
 
-        batch_fn = getattr(self.provider, "generate_embeddings", None)
+        batch_fn = getattr(self.embedding_provider, "generate_embeddings", None)
         if callable(batch_fn):
             try:
-                vectors = await batch_fn(texts)
+                async with track_ai_call(
+                    db,
+                    organization_id=organization_id,
+                    task_type=task_type,
+                    provider=self.embedding_provider,
+                    input_chars=sum(len(t or "") for t in texts),
+                ) as usage:
+                    vectors = await batch_fn(texts)
+                    usage["output_chars"] = sum(len(v or []) for v in vectors or [])
                 out: List[Optional[List[float]]] = []
                 for v in vectors:
                     out.append(None if is_zero_vector(v) else v)
@@ -58,8 +92,36 @@ class LLMService:
         # Fallback: sequential per-text (still safe, just slower / more requests).
         out: List[Optional[List[float]]] = []
         for t in texts:
-            out.append(await self.generate_embedding(t))
+            out.append(
+                await self.generate_embedding(
+                    t,
+                    db=db,
+                    organization_id=organization_id,
+                    task_type=task_type,
+                )
+            )
         return out
+
+    async def generate_text(
+        self,
+        prompt: str,
+        *,
+        db: Optional[AsyncSession] = None,
+        organization_id: Optional[int] = None,
+        task_type: str = "reader.text_generation",
+    ) -> Optional[str]:
+        if not self.provider.active:
+            return None
+        async with track_ai_call(
+            db,
+            organization_id=organization_id,
+            task_type=task_type,
+            provider=self.provider,
+            input_text=prompt,
+        ) as usage:
+            response_text = await self.provider.generate_text(prompt)
+            usage["output_chars"] = len(response_text or "")
+            return response_text
 
     async def extract_keywords(self, text: str, limit: int = 12) -> List[str]:
         """Lightweight keywords for routing (no extra LLM call)."""

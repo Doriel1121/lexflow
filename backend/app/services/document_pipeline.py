@@ -246,6 +246,7 @@ async def run_document_pipeline(
                     chunks=chunks_data if use_chunked else None,
                     document_id=document_id,
                     organization_id=organization_id,
+                    db=db,
                 )
             logger.info(f"[Doc {document_id}] AI analysis returned successfully.")
 
@@ -655,7 +656,12 @@ async def _embed_chunks_inline(
                         success = True
                         break
 
-                    vector = await llm_service.generate_embedding(chunk.text_content)
+                    vector = await llm_service.generate_embedding(
+                        chunk.text_content,
+                        db=db,
+                        organization_id=organization_id,
+                        task_type="embedding.document_chunk",
+                    )
                     doc = await document_crud.get(db, document_id)
                     if not valid_embedding(vector):
                         if doc:

@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     # Feature flags
     LEGAL_WORKFLOWS_ENABLED: bool = False
 
+    # AI provider routing
+    # Backwards compatible default: if task-specific providers are empty, use AI_PROVIDER.
+    AI_PROVIDER: str = "gemini"
+    AI_READER_PROVIDER: str = ""
+    AI_DRAFTING_PROVIDER: str = ""
+    AI_EMBEDDING_PROVIDER: str = ""
+    AI_FALLBACK_PROVIDER: str = ""
+
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
     # Above this character count, use per-chunk analysis + merge (sequential, no Celery chord)

@@ -80,10 +80,18 @@ def embed_chunk_batch_task(self, document_id: int, chunk_ids: list[int]):
                     f"[Doc {document_id}] Missing {missing_count}/{len(chunk_ids)} chunks; counting as processed to avoid stalling."
                 )
 
+            doc = await document_crud.get(db, document_id)
+            organization_id = doc.organization_id if doc else None
+
             texts: list[str] = [
                 (c.text_content if c else "") for c in ordered_chunks
             ]
-            vectors = await llm_service.generate_embeddings(texts)
+            vectors = await llm_service.generate_embeddings(
+                texts,
+                db=db,
+                organization_id=organization_id,
+                task_type="embedding.document_chunk_batch",
+            )
 
             failed_in_batch = 0
             for chunk, vector in zip(ordered_chunks, vectors):
@@ -94,7 +102,6 @@ def embed_chunk_batch_task(self, document_id: int, chunk_ids: list[int]):
                 else:
                     failed_in_batch += 1
 
-            doc = await document_crud.get(db, document_id)
             if doc and (failed_in_batch or missing_count):
                 doc.embedding_failed_count = (doc.embedding_failed_count or 0) + (
                     failed_in_batch + missing_count

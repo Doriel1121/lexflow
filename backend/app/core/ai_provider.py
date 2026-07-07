@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import logging
 import os
@@ -492,14 +492,14 @@ class CohereProvider(BaseAIProvider):
             return [[0.0] * self.embedding_dimension for _ in texts]
 
 
-def get_ai_provider() -> BaseAIProvider:
-    """Factory — returns the configured AI provider singleton."""
+def get_ai_provider(provider_name: Optional[str] = None) -> BaseAIProvider:
+    """Factory — returns the requested AI provider."""
     # Load .env from project root (3 levels up from this file)
     env_path = Path(__file__).resolve().parents[3] / ".env"
     load_dotenv(env_path)
-    provider_name = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
+    provider_name = (provider_name or os.getenv("AI_PROVIDER") or "gemini").strip().lower()
     
-    logger.info(f"🔍 get_ai_provider(): AI_PROVIDER={provider_name}")
+    logger.info(f"🔍 get_ai_provider(): provider={provider_name}")
     
     if provider_name == "ollama":
         logger.info("📡 Initialising Ollama AI provider...")
@@ -617,3 +617,4 @@ class OllamaProvider(BaseAIProvider):
             else:
                 vector = vector + ([0.0] * (self.embedding_dimension - len(vector)))
         return vector
+

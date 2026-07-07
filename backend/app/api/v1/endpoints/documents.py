@@ -314,7 +314,12 @@ async def search_documents_semantic(
     # 1. Generate an embedding vector for the user's search string
     from app.services.ai_utils import valid_embedding
 
-    query_vector = await llm_service.generate_embedding(query)
+    query_vector = await llm_service.generate_embedding(
+        query,
+        db=db,
+        organization_id=user_org_id,
+        task_type="embedding.document_search",
+    )
     if not valid_embedding(query_vector):
         raise HTTPException(
             status_code=503,
