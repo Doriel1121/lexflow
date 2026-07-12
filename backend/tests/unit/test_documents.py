@@ -1,8 +1,33 @@
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud.document import document_crud
 from app.schemas.document import DocumentCreate
+from app.db.models.case import Case
 from app.db.models.document import Document as DBDocument
+from app.db.models.user import User, UserRole
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def seed_document_parent_records(db_session: AsyncSession):
+    """Seed the parent user/case expected by these document CRUD tests."""
+    db_session.add(
+        User(
+            id=1,
+            email="document-tests@example.com",
+            hashed_password="test",
+            full_name="Document Tests",
+            role=UserRole.LAWYER,
+        )
+    )
+    db_session.add(
+        Case(
+            id=1,
+            title="Document Test Case",
+            created_by_user_id=1,
+        )
+    )
+    await db_session.flush()
 
 
 @pytest.mark.asyncio
@@ -30,7 +55,7 @@ async def test_create_document_with_page_count(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_create_document_without_page_count(db_session: AsyncSession):
-    """Test creating a document without page_count (should default to None)."""
+    """Test creating a document without page_count (should default to 0)."""
     document_in = DocumentCreate(
         filename="test.txt",
         s3_url="http://storage.local/test.txt",
@@ -42,7 +67,7 @@ async def test_create_document_without_page_count(db_session: AsyncSession):
     document = await document_crud.create(db_session, document_in, uploaded_by_user_id=1)
     
     assert document.id is not None
-    assert document.page_count is None
+    assert document.page_count == 0
 
 
 @pytest.mark.asyncio

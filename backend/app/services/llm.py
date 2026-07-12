@@ -3,26 +3,89 @@ import re
 import json
 import logging
 from datetime import datetime, timedelta
-from app.core.ai_router import AITask, ai_router
+from app.core.ai_router import AIIntent, AIRiskLevel, AITask, AITaskContext, ai_router
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ai_utils import is_zero_vector
+from app.services.ai_quota import AIQuotaExceeded, enforce_ai_quota
 from app.services.ai_usage_logger import track_ai_call
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.provider = ai_router.provider_for(AITask.READER)
-        self.embedding_provider = ai_router.provider_for(AITask.EMBEDDING)
+        pass
+
+    def _has_hebrew(self, text: str) -> bool:
+        return any("֐" <= ch <= "׿" for ch in (text or "")[:4000])
+
+    def _reader_context(
+        self,
+        *,
+        prompt: str,
+        task_type: str,
+        intent: Optional[AIIntent | str] = None,
+        feature: Optional[str] = None,
+        language: Optional[str] = None,
+        risk_level: Optional[AIRiskLevel | str] = None,
+        requires_citations: bool = False,
+    ) -> AITaskContext:
+        lowered = (task_type or "").lower()
+        inferred_intent: AIIntent | str = intent or AIIntent.GENERAL
+        if intent is None:
+            if "ask" in lowered and ("legal" in lowered or "reason" in lowered):
+                inferred_intent = AIIntent.LEGAL_REASONING
+            elif "ask" in lowered or "qa" in lowered or "question" in lowered:
+                inferred_intent = AIIntent.DOCUMENT_QA
+            elif "analysis" in lowered or "extract" in lowered or "json" in lowered:
+                inferred_intent = AIIntent.DOCUMENT_ANALYSIS
+            elif "summary" in lowered or "summar" in lowered:
+                inferred_intent = AIIntent.SUMMARIZATION
+            elif "classif" in lowered or "tag" in lowered:
+                inferred_intent = AIIntent.CLASSIFICATION
+        inferred_language = language or ("he" if self._has_hebrew(prompt) else "")
+        inferred_risk = risk_level or (
+            AIRiskLevel.HIGH
+            if inferred_intent == AIIntent.LEGAL_REASONING or "legal" in lowered
+            else AIRiskLevel.MEDIUM
+        )
+        return AITaskContext(
+            task=AITask.READER,
+            feature=feature or lowered.split(".", 1)[0] or "llm",
+            intent=inferred_intent,
+            language=inferred_language,
+            input_chars=len(prompt or ""),
+            risk_level=inferred_risk,
+            requires_citations=requires_citations,
+        )
+
+    def _embedding_context(self, *, text: str, task_type: str) -> AITaskContext:
+        return AITaskContext(
+            task=AITask.EMBEDDING,
+            feature=(task_type or "embedding").split(".", 1)[0],
+            intent=AIIntent.EMBEDDING,
+            language="he" if self._has_hebrew(text) else "",
+            input_chars=len(text or ""),
+            risk_level=AIRiskLevel.LOW,
+        )
     
     async def summarize_text(self, text: str, length: str = "medium") -> str:
+        prompt = f"Summarize this legal document concisely:\n\n{text[:4000]}"
+        provider = ai_router.provider_for(
+            AITask.READER,
+            self._reader_context(
+                prompt=prompt,
+                task_type="reader.summary",
+                intent=AIIntent.SUMMARIZATION,
+                risk_level=AIRiskLevel.LOW,
+            ),
+        )
         try:
-            if not self.provider.active:
+            if not provider.active:
                 return f"Summary: {text[:300]}..."
-            response_text = await self.provider.generate_text(f"Summarize this legal document concisely:\n\n{text[:4000]}")
+            response_text = await provider.generate_text(prompt)
             return response_text if response_text else f"Summary: {text[:300]}... [AI unavailable]"
-        except:
+        except Exception:
             return f"Summary: {text[:300]}... [AI error]"
 
     async def generate_embedding(
@@ -32,23 +95,42 @@ class LLMService:
         db: Optional[AsyncSession] = None,
         organization_id: Optional[int] = None,
         task_type: str = "embedding.document_chunk",
+        input_type: Optional[str] = None,
     ) -> Optional[List[float]]:
         """Return embedding vector, or None if provider inactive or call failed."""
         try:
-            if not self.embedding_provider.active:
+            embedding_provider = ai_router.provider_for(
+                AITask.EMBEDDING,
+                self._embedding_context(text=text, task_type=task_type),
+            )
+            if not embedding_provider.active:
                 return None
+            await enforce_ai_quota(
+                db,
+                organization_id=organization_id,
+                task_type=task_type,
+                input_chars=len(text or ""),
+            )
+            effective_input_type = input_type or ("search_query" if ("query" in task_type or "ask" in task_type) else "search_document")
             async with track_ai_call(
                 db,
                 organization_id=organization_id,
                 task_type=task_type,
-                provider=self.embedding_provider,
+                provider=embedding_provider,
                 input_text=text,
             ) as usage:
-                vector = await self.embedding_provider.generate_embedding(text)
+                import inspect
+                fn_params = inspect.signature(embedding_provider.generate_embedding).parameters
+                if "input_type" in fn_params:
+                    vector = await embedding_provider.generate_embedding(text, input_type=effective_input_type)
+                else:
+                    vector = await embedding_provider.generate_embedding(text)
                 usage["output_chars"] = len(vector or [])
             if is_zero_vector(vector):
                 return None
             return vector
+        except AIQuotaExceeded:
+            raise
         except Exception as e:
             logger.warning("Error generating embedding: %s", e)
             return None
@@ -64,17 +146,34 @@ class LLMService:
         """Batch embeddings when supported by provider; falls back to per-text."""
         if not texts:
             return []
-        if not self.embedding_provider.active:
+        embedding_provider = ai_router.provider_for(
+            AITask.EMBEDDING,
+            AITaskContext(
+                task=AITask.EMBEDDING,
+                feature=(task_type or "embedding").split(".", 1)[0],
+                intent=AIIntent.EMBEDDING,
+                language="he" if any(self._has_hebrew(t) for t in texts) else "",
+                input_chars=sum(len(t or "") for t in texts),
+                risk_level=AIRiskLevel.LOW,
+            ),
+        )
+        if not embedding_provider.active:
             return [None for _ in texts]
+        await enforce_ai_quota(
+            db,
+            organization_id=organization_id,
+            task_type=task_type,
+            input_chars=sum(len(t or "") for t in texts),
+        )
 
-        batch_fn = getattr(self.embedding_provider, "generate_embeddings", None)
+        batch_fn = getattr(embedding_provider, "generate_embeddings", None)
         if callable(batch_fn):
             try:
                 async with track_ai_call(
                     db,
                     organization_id=organization_id,
                     task_type=task_type,
-                    provider=self.embedding_provider,
+                    provider=embedding_provider,
                     input_chars=sum(len(t or "") for t in texts),
                 ) as usage:
                     vectors = await batch_fn(texts)
@@ -109,19 +208,86 @@ class LLMService:
         db: Optional[AsyncSession] = None,
         organization_id: Optional[int] = None,
         task_type: str = "reader.text_generation",
+        intent: Optional[AIIntent | str] = None,
+        feature: Optional[str] = None,
+        language: Optional[str] = None,
+        risk_level: Optional[AIRiskLevel | str] = None,
+        requires_citations: bool = False,
     ) -> Optional[str]:
-        if not self.provider.active:
+        provider = ai_router.provider_for(
+            AITask.READER,
+            self._reader_context(
+                prompt=prompt,
+                task_type=task_type,
+                intent=intent,
+                feature=feature,
+                language=language,
+                risk_level=risk_level,
+                requires_citations=requires_citations,
+            ),
+        )
+        if not provider.active:
             return None
+        await enforce_ai_quota(
+            db,
+            organization_id=organization_id,
+            task_type=task_type,
+            input_chars=len(prompt or ""),
+        )
         async with track_ai_call(
             db,
             organization_id=organization_id,
             task_type=task_type,
-            provider=self.provider,
+            provider=provider,
             input_text=prompt,
         ) as usage:
-            response_text = await self.provider.generate_text(prompt)
+            response_text = await provider.generate_text(prompt)
             usage["output_chars"] = len(response_text or "")
             return response_text
+
+    async def generate_json(
+        self,
+        prompt: str,
+        *,
+        db: Optional[AsyncSession] = None,
+        organization_id: Optional[int] = None,
+        task_type: str = "reader.json_generation",
+        intent: Optional[AIIntent | str] = None,
+        feature: Optional[str] = None,
+        language: Optional[str] = None,
+        risk_level: Optional[AIRiskLevel | str] = None,
+        requires_citations: bool = False,
+    ) -> Optional[Dict[str, object]]:
+        provider = ai_router.provider_for(
+            AITask.READER,
+            self._reader_context(
+                prompt=prompt,
+                task_type=task_type,
+                intent=intent,
+                feature=feature,
+                language=language,
+                risk_level=risk_level,
+                requires_citations=requires_citations,
+            ),
+        )
+        if not provider.active:
+            return None
+        await enforce_ai_quota(
+            db,
+            organization_id=organization_id,
+            task_type=task_type,
+            input_chars=len(prompt or ""),
+        )
+        async with track_ai_call(
+            db,
+            organization_id=organization_id,
+            task_type=task_type,
+            provider=provider,
+            input_text=prompt,
+        ) as usage:
+            response_json = await provider.generate_json(prompt)
+            usage["output_chars"] = len(json.dumps(response_json, ensure_ascii=False)) if response_json else 0
+            return response_json
 
     async def extract_keywords(self, text: str, limit: int = 12) -> List[str]:
         """Lightweight keywords for routing (no extra LLM call)."""
@@ -144,9 +310,6 @@ class LLMService:
     async def extract_key_dates(self, text: str) -> List[Dict[str, str]]:
         """Extract UPCOMING legal deadlines only, excluding citations and irrelevant dates."""
         try:
-            if not self.provider.active:
-                return []
-            
             today = datetime.now()
             three_years_ago = (today - timedelta(days=3*365)).strftime("%Y-%m-%d")
             ten_years_future = (today + timedelta(days=10*365)).strftime("%Y-%m-%d")
@@ -170,7 +333,12 @@ class LLMService:
                 "If no valid deadlines, return []"
             )
             
-            response_text = await self.provider.generate_text(prompt)
+            response_text = await self.generate_text(
+                prompt,
+                task_type="reader.deadline_extraction",
+                intent=AIIntent.DOCUMENT_ANALYSIS,
+                risk_level=AIRiskLevel.HIGH,
+            )
             if not response_text:
                 return []
             
@@ -204,22 +372,29 @@ class LLMService:
 
     async def extract_parties(self, text: str) -> List[str]:
         try:
-            if not self.provider.active:
-                return []
-            response_text = await self.provider.generate_text(f"Extract all party names (people, companies) from this legal text, return as comma-separated list:\n\n{text[:2000]}")
+            response_text = await self.generate_text(
+                f"Extract all party names (people, companies) from this legal text, return as comma-separated list:\n\n{text[:2000]}",
+                task_type="reader.party_extraction",
+                intent=AIIntent.DOCUMENT_ANALYSIS,
+                risk_level=AIRiskLevel.MEDIUM,
+            )
             if not response_text:
                 return []
             return [p.strip() for p in response_text.split(",") if p.strip()]
-        except:
+        except Exception:
             return []
 
     async def suggest_missing_documents(self, case_context: str) -> str:
         try:
-            if not self.provider.active:
-                return "AI suggestions unavailable"
-            response_text = await self.provider.generate_text(f"Based on this case, suggest what documents might be missing:\n\n{case_context[:2000]}")
+            response_text = await self.generate_text(
+                f"Based on this case, suggest what documents might be missing:\n\n{case_context[:2000]}",
+                task_type="reader.missing_documents",
+                intent=AIIntent.LEGAL_REASONING,
+                risk_level=AIRiskLevel.HIGH,
+                requires_citations=True,
+            )
             return response_text if response_text else "AI suggestions unavailable"
-        except:
+        except Exception:
             return "AI suggestions unavailable"
 
 llm_service = LLMService()

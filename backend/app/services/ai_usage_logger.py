@@ -27,7 +27,14 @@ def provider_name(provider: Any) -> str:
     return type(provider).__name__.replace("Provider", "").lower() or "unknown"
 
 
-def provider_model(provider: Any) -> Optional[str]:
+def provider_model(provider: Any, task_type: Optional[str] = None) -> Optional[str]:
+    if (task_type or "").startswith("embedding"):
+        embedding_model = getattr(provider, "embedding_model", None)
+        if embedding_model:
+            return str(embedding_model)
+    provider_model_name = getattr(provider, "model_name", None)
+    if provider_model_name:
+        return str(provider_model_name)
     model = getattr(provider, "model", None)
     if isinstance(model, str):
         return model
@@ -61,7 +68,7 @@ async def record_ai_usage(
                     organization_id=organization_id,
                     task_type=task_type,
                     provider=provider_name(provider),
-                    model=provider_model(provider),
+                    model=provider_model(provider, task_type),
                     status=status,
                     latency_ms=latency_ms,
                     input_chars=input_chars,

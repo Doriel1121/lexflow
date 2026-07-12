@@ -233,37 +233,41 @@ async def websocket_notification_endpoint(websocket: WebSocket, token: str):
         await pubsub.subscribe(channel)
         logger.info("[WS] User %s subscribed to Redis channel %s", user_id, channel)
 
-        last_heartbeat = asyncio.get_event_loop().time()
-
-        while True:
-            # Check for Redis messages (non-blocking, 100ms timeout)
-            try:
-                redis_msg = await asyncio.wait_for(
-                    pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1),
-                    timeout=0.5,
-                )
-                if redis_msg and redis_msg["type"] == "message":
-                    data = json.loads(redis_msg["data"])
-                    await websocket.send_json(data)
-            except asyncio.TimeoutError:
-                pass
-
-            # Check for pings from client (non-blocking)
-            try:
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
-                if data == "ping":
-                    await websocket.send_json({"type": "pong"})
-            except asyncio.TimeoutError:
-                pass
-
-            # Heartbeat: send ping every HEARTBEAT_INTERVAL seconds
-            now = asyncio.get_event_loop().time()
-            if now - last_heartbeat >= HEARTBEAT_INTERVAL:
+        async def _redis_reader():
+            while True:
                 try:
-                    await websocket.send_json({"type": "heartbeat"})
-                    last_heartbeat = now
-                except Exception:
-                    break  # Connection dead
+                    redis_msg = await asyncio.wait_for(
+                        pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
+                        timeout=1.5,
+                    )
+                    if redis_msg and redis_msg["type"] == "message":
+                        data = json.loads(redis_msg["data"])
+                        await websocket.send_json(data)
+                except asyncio.TimeoutError:
+                    continue
+                except Exception as ex:
+                    logger.debug("[WS] Redis reader stopped for user %s: %s", user_id, ex)
+                    break
+
+        async def _client_reader():
+            last_heartbeat = asyncio.get_event_loop().time()
+            while True:
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+                    if data == "ping":
+                        await websocket.send_json({"type": "pong"})
+                except asyncio.TimeoutError:
+                    pass
+
+                now = asyncio.get_event_loop().time()
+                if now - last_heartbeat >= HEARTBEAT_INTERVAL:
+                    try:
+                        await websocket.send_json({"type": "heartbeat"})
+                        last_heartbeat = now
+                    except Exception:
+                        break
+
+        await asyncio.gather(_redis_reader(), _client_reader())
 
     except WebSocketDisconnect:
         logger.info("[WS] User %s disconnected normally", user_id)

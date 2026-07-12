@@ -1,6 +1,6 @@
 """
 legal_drafting.py
-=================
+----------------=
 Generates AI-drafted legal response documents for the workflow engine.
 
 Input: source document OCR text, document intelligence analysis, case metadata,
@@ -11,7 +11,6 @@ Output: A TipTap/ProseMirror JSON document stored as a LegalDraft row.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -19,14 +18,16 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.ai_router import AITask, ai_router
+from app.core.ai_router import AIIntent, AIRiskLevel, AITask, AITaskContext, ai_router
 from app.core.legal_workflow_constants import LegalDraftStatus
+from app.services.ai_quota import AIQuotaExceeded, enforce_ai_quota
 from app.services.ai_usage_logger import track_ai_call
 from app.crud.legal_workflow import legal_workflow_crud
 from app.db.models.case import Case as DBCase
 from app.db.models.document import Document as DBDocument
 from app.db.models.legal_workflow import LegalDraft as DBLegalDraft, LegalWorkflow as DBLegalWorkflow
 from app.schemas.legal_workflow import LegalDraftCreate
+from app.services.legal_evidence_pack import LegalEvidencePack, legal_evidence_pack_builder
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,7 @@ class DraftInputCollector:
             "case_description": "",
             "deadlines": [],
             "source_filename": "",
+            "source_document_id": workflow.source_document_id,
         }
 
         # Fetch case metadata
@@ -237,8 +239,8 @@ class LegalDraftingService:
     """
 
     def __init__(self):
-        self.provider = ai_router.provider_for(AITask.DRAFTING)
         self.collector = DraftInputCollector()
+        self.evidence_pack_builder = legal_evidence_pack_builder
 
     async def generate_draft(
         self,
@@ -256,6 +258,12 @@ class LegalDraftingService:
         # 2. Merge any instructions from call-site or workflow metadata
         if instructions is None:
             instructions = (workflow.metadata_json or {}).get("drafting_instructions")
+        evidence_pack = await self.evidence_pack_builder.build_for_workflow(
+            db,
+            workflow,
+            drafting_instructions=instructions,
+        )
+        context["evidence_pack"] = evidence_pack
 
         # 3. Generate draft text (AI or fallback)
         draft_text = await self._call_ai(db, context, instructions)
@@ -299,6 +307,9 @@ class LegalDraftingService:
         )
         return draft
 
+    def _has_hebrew(self, text: str) -> bool:
+        return any("֐" <= ch <= "׿" for ch in (text or "")[:4000])
+
     async def _call_ai(
         self,
         db: AsyncSession,
@@ -309,27 +320,46 @@ class LegalDraftingService:
         Call the AI provider with a structured legal drafting prompt.
         Returns raw text; falls back to a structured placeholder if AI is unavailable.
         """
-        if not self.provider or not getattr(self.provider, "active", False):
+        prompt = self._build_prompt(context, instructions)
+        provider = ai_router.provider_for(
+            AITask.DRAFTING,
+            AITaskContext(
+                task=AITask.DRAFTING,
+                feature="legal_workflow_drafting",
+                intent=AIIntent.DRAFTING,
+                language="he" if self._has_hebrew(prompt) else "",
+                input_chars=len(prompt or ""),
+                risk_level=AIRiskLevel.HIGH,
+                requires_citations=True,
+            ),
+        )
+        if not provider or not getattr(provider, "active", False):
             logger.warning("AI provider inactive – returning structured placeholder draft.")
             return self._placeholder_draft(context)
 
-        prompt = self._build_prompt(context, instructions)
-
         try:
+            await enforce_ai_quota(
+                db,
+                organization_id=context.get("organization_id"),
+                task_type="drafting.legal_response",
+                input_chars=len(prompt or ""),
+            )
             async with track_ai_call(
                 db,
                 organization_id=context.get("organization_id"),
                 task_type="drafting.legal_response",
-                provider=self.provider,
+                provider=provider,
                 input_text=prompt,
             ) as usage:
                 result = await asyncio.wait_for(
-                    self.provider.generate_text(prompt),
+                    provider.generate_text(prompt),
                     timeout=120.0,
                 )
                 usage["output_chars"] = len(result or "")
             if result:
                 return result.strip()
+        except AIQuotaExceeded:
+            raise
         except asyncio.TimeoutError:
             logger.error("AI draft generation timed out for workflow %s.", context.get("case_id"))
         except Exception as exc:
@@ -343,79 +373,90 @@ class LegalDraftingService:
         instructions: Optional[str],
     ) -> str:
         """
-        Construct the legal drafting prompt from gathered context.
+        Construct the legal drafting prompt from a compact evidence pack.
         """
         jurisdiction = context.get("workflow_metadata", {}).get("jurisdiction", "")
         court_profile = context.get("workflow_metadata", {}).get("court_profile", {})
-        analysis = context.get("document_analysis", {})
-        deadlines = context.get("deadlines", [])
+        evidence_pack = context.get("evidence_pack")
+        if isinstance(evidence_pack, LegalEvidencePack):
+            pack = evidence_pack
+        else:
+            pack = self._fallback_evidence_pack(context, instructions)
 
-        # Summarize analysis fields
-        parties = analysis.get("parties", [])
-        party_names = ", ".join(
-            p.get("name", "") for p in parties if isinstance(p, dict)
-        ) if parties else "Unknown parties"
-
-        doc_type = analysis.get("document_type", "Legal Document")
-        doc_summary = analysis.get("summary", "")
-        obligations = analysis.get("obligations", [])
-        risks = analysis.get("risks", [])
-
-        # Format deadlines
-        deadline_lines = "\n".join(
-            f"  - {d.get('date', 'TBD')}: {d.get('description', d.get('type', ''))}"
-            for d in deadlines[:5]
-        ) if deadlines else "  (none specified)"
-
-        # Format obligations
-        obligation_lines = "\n".join(
-            f"  - {o.get('party', '')}: {o.get('obligation', '')}"
-            for o in obligations[:5]
-        ) if obligations else "  (none identified)"
-
-        # Format risks
-        risk_lines = "\n".join(f"  - {r}" for r in risks[:5]) if risks else "  (none identified)"
-
-        ocr_excerpt = (context.get("ocr_text") or "")[:3000]
+        source_doc = pack.source_document
+        doc_type = source_doc.get("document_type") or "Legal Document"
+        doc_summary = source_doc.get("summary") or "No summary available."
+        parties = self._format_list(pack.parties)
+        claims = self._format_list(pack.claims)
+        key_facts = self._format_list(pack.key_facts)
+        dates = self._format_list(pack.dates)
+        amounts = self._format_list(pack.amounts)
+        obligations = self._format_list(pack.obligations)
+        risks = self._format_list(pack.risks)
+        missing_items = self._format_list(pack.missing_items)
+        excerpts = self._format_source_excerpts(pack.source_excerpts)
 
         extra_instructions = ""
-        if instructions:
-            extra_instructions = f"\n\nAdditional Instructions from the supervising lawyer:\n{instructions}\n"
+        if pack.drafting_instructions or instructions:
+            extra_instructions = (
+                "\n\nAdditional Instructions from the supervising lawyer:\n"
+                f"{pack.drafting_instructions or instructions}\n"
+            )
 
         prompt = f"""You are a senior Israeli litigation attorney drafting a formal legal response document.
 
 CASE INFORMATION
-================
-Case Title: {context.get('case_title', 'Unknown Case')}
-Case Description: {context.get('case_description', '')}
+----------------
+Case Title: {pack.case.get('title') or context.get('case_title', 'Unknown Case')}
+Case Description: {pack.case.get('description') or context.get('case_description', '')}
 Source Document Type: {doc_type}
-Parties: {party_names}
 Jurisdiction: {jurisdiction or 'Israel'}
+Court Profile: {court_profile or {}}
 
 DOCUMENT SUMMARY
-================
-{doc_summary or 'No summary available.'}
+----------------
+{doc_summary}
 
-KEY DEADLINES
-=============
-{deadline_lines}
+PARTIES
+-------
+{parties}
+
+CLAIMS / ALLEGATIONS
+----------------====
+{claims}
+
+KEY FACTS
+-------==
+{key_facts}
+
+DATES / DEADLINES
+----------------=
+{dates}
+
+AMOUNTS
+-------
+{amounts}
 
 OBLIGATIONS
-===========
-{obligation_lines}
+-------====
+{obligations}
 
 IDENTIFIED RISKS
-================
-{risk_lines}
+----------------
+{risks}
 
-SOURCE DOCUMENT TEXT (first 3000 chars)
-========================================
-{ocr_excerpt or '(no OCR text available)'}
+MISSING OR WEAK EVIDENCE
+-----------------------=
+{missing_items}
+
+SOURCE EXCERPTS WITH REFERENCES
+------------------------------=
+{excerpts}
 
 {extra_instructions}
 
 DRAFTING INSTRUCTIONS
-=====================
+----------------=====
 Draft a complete, professional legal response document with the following structure:
 
 # [Document Title — e.g., "Statement of Defense" or "Response to Claim"]
@@ -440,10 +481,76 @@ REQUIREMENTS:
 - Write in formal legal Hebrew if the source document is in Hebrew, otherwise in English.
 - Use markdown headings (# ## ###) to structure the document.
 - Be thorough and professional.
+- Ground factual assertions in the provided evidence pack and source excerpts.
+- Do not invent facts, parties, dates, amounts, laws, or procedural history.
+- If evidence is missing or weak, draft cautiously and phrase the point as subject to lawyer review.
+- Use the source excerpt references internally to stay grounded, but do not output raw citation labels unless useful to the document.
 - Do not include placeholder instructions; write the actual substantive content.
 - Output ONLY the document text, no preamble or explanation.
 """
         return prompt
+
+    def _fallback_evidence_pack(
+        self,
+        context: Dict[str, Any],
+        instructions: Optional[str],
+    ) -> LegalEvidencePack:
+        analysis = context.get("document_analysis") or {}
+        return LegalEvidencePack(
+            case={
+                "id": context.get("case_id"),
+                "title": context.get("case_title", ""),
+                "description": context.get("case_description", ""),
+            },
+            source_document={
+                "id": context.get("source_document_id"),
+                "filename": context.get("source_filename", ""),
+                "document_type": analysis.get("document_type") or analysis.get("classification") or "Legal Document",
+                "summary": analysis.get("summary") or "",
+            },
+            parties=analysis.get("parties") or [],
+            claims=analysis.get("claims") or analysis.get("allegations") or [],
+            key_facts=analysis.get("key_facts") or analysis.get("facts") or [],
+            dates=analysis.get("key_dates") or context.get("deadlines") or [],
+            amounts=analysis.get("financial_terms") or analysis.get("amounts") or [],
+            obligations=analysis.get("obligations") or [],
+            risks=analysis.get("risks") or [],
+            missing_items=analysis.get("missing_items") or analysis.get("missing_documents") or [],
+            drafting_instructions=instructions,
+        )
+
+    def _format_list(self, items: List[Any]) -> str:
+        if not items:
+            return "  (none identified)"
+        lines = []
+        for item in items[:12]:
+            if isinstance(item, dict):
+                details = ", ".join(
+                    f"{key}: {value}"
+                    for key, value in item.items()
+                    if value not in (None, "", [])
+                )
+                lines.append(f"  - {details or item}")
+            else:
+                lines.append(f"  - {item}")
+        return "\n".join(lines)
+
+    def _format_source_excerpts(self, excerpts: List[Any]) -> str:
+        if not excerpts:
+            return "  (no source excerpts available)"
+        lines = []
+        for index, excerpt in enumerate(excerpts, start=1):
+            data = excerpt if isinstance(excerpt, dict) else excerpt.to_dict()
+            reference = (
+                f"doc={data.get('document_id')}, "
+                f"page={data.get('page_number') or 'n/a'}, "
+                f"chunk={data.get('chunk_index') if data.get('chunk_index') is not None else 'n/a'}"
+            )
+            lines.append(
+                f"[E{index}] {reference}; reason: {data.get('reason')}\n"
+                f"{data.get('text')}"
+            )
+        return "\n\n".join(lines)
 
     def _placeholder_draft(self, context: Dict[str, Any]) -> str:
         """

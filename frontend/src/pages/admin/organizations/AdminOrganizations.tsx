@@ -13,8 +13,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Building2, Plus, X, Loader2 } from "lucide-react";
-import { adminService, TenantStats } from "../../../services/adminService";
+import { Building2, Plus, X, Loader2, Shield, Save, Search } from "lucide-react";
+import { adminService, AdminOrganizationQuotaResponse, TenantStats } from "../../../services/adminService";
 import { useSnackbar } from "../../../context/SnackbarContext";
 
 export default function AdminOrganizations() {
@@ -24,6 +24,15 @@ export default function AdminOrganizations() {
   const [tenantStats, setTenantStats] = useState<TenantStats | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [quotaOrgId, setQuotaOrgId] = useState("");
+  const [quotaData, setQuotaData] = useState<AdminOrganizationQuotaResponse | null>(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [quotaSaving, setQuotaSaving] = useState(false);
+  const [quotaForm, setQuotaForm] = useState({
+    ai_daily_call_limit: "",
+    ai_monthly_drafting_limit: "",
+    ai_monthly_token_limit: "",
+  });
   const [formData, setFormData] = useState({
     organization_name: "",
     admin_name: "",
@@ -43,6 +52,60 @@ export default function AdminOrganizations() {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  const hydrateQuotaForm = (data: AdminOrganizationQuotaResponse) => {
+    setQuotaForm({
+      ai_daily_call_limit: data.ai_quotas.ai_daily_call_limit?.toString() ?? "",
+      ai_monthly_drafting_limit: data.ai_quotas.ai_monthly_drafting_limit?.toString() ?? "",
+      ai_monthly_token_limit: data.ai_quotas.ai_monthly_token_limit?.toString() ?? "",
+    });
+  };
+
+  const parseQuotaValue = (value: string): number | null => {
+    if (value.trim() === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const loadQuotaSettings = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const organizationId = Number(quotaOrgId);
+    if (!Number.isInteger(organizationId) || organizationId <= 0) {
+      showSnackbar("Enter a valid organization ID", { type: "error" });
+      return;
+    }
+
+    setQuotaLoading(true);
+    try {
+      const data = await adminService.getOrganizationAIQuotas(organizationId);
+      setQuotaData(data);
+      hydrateQuotaForm(data);
+    } catch (err: any) {
+      setQuotaData(null);
+      showSnackbar(err.response?.data?.detail ?? "Failed to load AI quota settings", { type: "error" });
+    } finally {
+      setQuotaLoading(false);
+    }
+  };
+
+  const saveQuotaSettings = async () => {
+    if (!quotaData) return;
+    setQuotaSaving(true);
+    try {
+      const data = await adminService.updateOrganizationAIQuotas(quotaData.organization.id, {
+        ai_daily_call_limit: parseQuotaValue(quotaForm.ai_daily_call_limit),
+        ai_monthly_drafting_limit: parseQuotaValue(quotaForm.ai_monthly_drafting_limit),
+        ai_monthly_token_limit: parseQuotaValue(quotaForm.ai_monthly_token_limit),
+      });
+      setQuotaData(data);
+      hydrateQuotaForm(data);
+      showSnackbar("AI quota settings updated", { type: "success" });
+    } catch (err: any) {
+      showSnackbar(err.response?.data?.detail ?? "Failed to update AI quota settings", { type: "error" });
+    } finally {
+      setQuotaSaving(false);
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,6 +184,79 @@ export default function AdminOrganizations() {
           ))}
         </div>
       )}
+
+      {/* AI quota support workflow */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+        <div className="flex items-start gap-3 mb-5">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Shield className="h-5 w-5 text-blue-700" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">AI Quota Management</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Support workflow for a known tenant ID. This is intentionally not a tenant directory.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={loadQuotaSettings} className="flex flex-col sm:flex-row gap-3 mb-5">
+          <input
+            type="number"
+            min="1"
+            value={quotaOrgId}
+            onChange={(e) => setQuotaOrgId(e.target.value)}
+            placeholder="Organization ID"
+            className="w-full sm:max-w-xs px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
+          />
+          <button
+            type="submit"
+            disabled={quotaLoading}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-800 disabled:opacity-50 rounded-lg transition-colors"
+          >
+            {quotaLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Load Quotas
+          </button>
+        </form>
+
+        {quotaData && (
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+              <p className="text-sm font-semibold text-slate-800">{quotaData.organization.name}</p>
+              <p className="text-xs text-slate-500">ID {quotaData.organization.id} · {quotaData.organization.slug} · {quotaData.organization.is_active ? "Active" : "Inactive"}</p>
+            </div>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                ["Daily AI calls", "ai_daily_call_limit", "0 disables the limit"],
+                ["Monthly drafts", "ai_monthly_drafting_limit", "0 disables the limit"],
+                ["Monthly tokens", "ai_monthly_token_limit", "Blank means unlimited"],
+              ].map(([label, key, helper]) => (
+                <label key={key} className="block">
+                  <span className="text-sm font-medium text-slate-700">{label}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quotaForm[key as keyof typeof quotaForm]}
+                    onChange={(e) => setQuotaForm({ ...quotaForm, [key]: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
+                  />
+                  <span className="mt-1 block text-xs text-slate-400">{helper}</span>
+                </label>
+              ))}
+            </div>
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={saveQuotaSettings}
+                disabled={quotaSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-800 disabled:opacity-50 rounded-lg transition-colors"
+              >
+                {quotaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save Quotas
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Data boundary notice */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">

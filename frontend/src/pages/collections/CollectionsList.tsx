@@ -29,16 +29,20 @@ import {
   ChevronDown,
   X,
   Lock,
+  User,
+  Sparkles,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const CATEGORIES = [
   { key: "", label: "All" },
   { key: "client_id", label: "Client ID" },
+  { key: "person", label: "Person" },
   { key: "project", label: "Project" },
   { key: "organization", label: "Organization" },
   { key: "case_type", label: "Case Type" },
   { key: "document_type", label: "Document Type" },
+  { key: "ai_tag", label: "AI Tag" },
 ];
 
 // Global const categories — system-managed, not user-editable
@@ -223,10 +227,12 @@ export function CollectionsList() {
   const getCategoryIcon = (category?: string) => {
     switch (category) {
       case "client_id":    return <Hash className="h-5 w-5 text-emerald-500" />;
+      case "person":       return <User className="h-5 w-5 text-teal-500" />;
       case "project":      return <FolderGit2 className="h-5 w-5 text-indigo-500" />;
       case "organization": return <Building2 className="h-5 w-5 text-blue-500" />;
       case "case_type":    return <Scale className="h-5 w-5 text-purple-500" />;
       case "document_type":return <FileText className="h-5 w-5 text-orange-500" />;
+      case "ai_tag":       return <Sparkles className="h-5 w-5 text-amber-500" />;
       default:             return <TagIcon className="h-5 w-5 text-slate-400" />;
     }
   };
@@ -234,10 +240,12 @@ export function CollectionsList() {
   const getCategoryTheme = (category?: string) => {
     switch (category) {
       case "client_id":    return "bg-emerald-50 text-emerald-700 border-emerald-100";
+      case "person":       return "bg-teal-50 text-teal-700 border-teal-100";
       case "project":      return "bg-indigo-50 text-indigo-700 border-indigo-100";
       case "organization": return "bg-blue-50 text-blue-700 border-blue-100";
       case "case_type":    return "bg-purple-50 text-purple-700 border-purple-100";
       case "document_type":return "bg-orange-50 text-orange-700 border-orange-100";
+      case "ai_tag":       return "bg-amber-50 text-amber-700 border-amber-100";
       default:             return "bg-slate-50 text-slate-700 border-slate-200";
     }
   };

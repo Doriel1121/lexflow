@@ -72,3 +72,31 @@ async def create_org_notification(
         organization_id,
     )
     return len(org_user_ids)
+
+
+async def emit_document_status_update(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    document_id: int,
+    stage: str,
+    progress: float,
+    status: str = "processing",
+) -> None:
+    """Emit real-time WebSocket progress update without creating DB notification rows."""
+    try:
+        result = await db.execute(select(User.id).where(User.organization_id == organization_id))
+        org_user_ids = list(result.scalars().all())
+
+        ws_payload = {
+            "type": "DOCUMENT_STATUS_UPDATE",
+            "document_id": document_id,
+            "stage": stage,
+            "progress": round(float(progress), 1),
+            "status": status,
+        }
+        publish_notification_for_users(org_user_ids, ws_payload)
+        logger.debug("[Doc %s] Emitted WebSocket status update: stage=%s, progress=%s%%", document_id, stage, progress)
+    except Exception as e:
+        logger.warning("[Doc %s] Failed to emit WebSocket status update: %s", document_id, e)
+

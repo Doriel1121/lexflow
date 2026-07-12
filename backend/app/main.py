@@ -142,6 +142,7 @@ async def startup_event():
 
 app.include_router(api_router)
 app.include_router(ws_notifications_router, prefix="/api/v1/ws/notifications", tags=["websockets"])
+app.include_router(ws_notifications_router, prefix="/v1/ws/notifications", tags=["websockets"])
 
 
 @app.post("/token", response_model=Token)

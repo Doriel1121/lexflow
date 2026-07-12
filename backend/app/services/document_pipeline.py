@@ -22,7 +22,7 @@ from app.services.ai_utils import valid_embedding
 from app.services.collections_analysis import classification_from_analysis
 from app.services.document_chunker import document_chunker
 from app.services.document_intelligence import document_intelligence_service
-from app.services.document_notifications import create_org_notification
+from app.services.document_notifications import create_org_notification, emit_document_status_update
 from app.services.processing_telemetry import track_stage, record_processing_error, emit_stage
 from app.services.llm import llm_service
 from app.services.ocr import ocr_service
@@ -79,6 +79,7 @@ async def run_document_pipeline(
         doc.processing_progress = 2.0
         await db.commit()
         logger.info(f"[Doc {document_id}] Status set to PROCESSING.")
+        await emit_document_status_update(db, organization_id=organization_id, document_id=document_id, stage="processing_ocr", progress=2.0, status="processing")
 
     # ── STEP 2: OCR ─────────────────────────────────────────────────
     try:
@@ -197,6 +198,7 @@ async def run_document_pipeline(
             chunk_ids.append(db_chunk.id)
 
         await db.commit()
+        await emit_document_status_update(db, organization_id=organization_id, document_id=document_id, stage="chunking_completed", progress=12.0, status="processing")
 
     # ── STEP 4: AI analysis (single-pass or chunked map-reduce) ─────
     use_chunked = document_intelligence_service.should_use_chunked_analysis(
@@ -219,6 +221,7 @@ async def run_document_pipeline(
             doc.processing_stage = "ai_analysis"
             doc.processing_progress = 35.0
             await db.commit()
+            await emit_document_status_update(db, organization_id=organization_id, document_id=document_id, stage="ai_analysis", progress=35.0, status="processing")
 
         input_text = normalized_text
         if battery_save and not use_chunked and len(normalized_text) > 25000:
@@ -581,6 +584,7 @@ async def run_document_pipeline(
                 doc.processing_progress = 57.0
                 _set_ai_health(doc, embedding="in_progress")
                 await db.commit()
+                await emit_document_status_update(db, organization_id=organization_id, document_id=document_id, stage="embedding", progress=57.0, status="processing")
 
         try:
             batch_size = settings.EMBEDDING_BATCH_SIZE
@@ -676,6 +680,8 @@ async def _embed_chunks_inline(
                         )
                         doc.processing_stage = "embedding"
                     await db.commit()
+                    if doc:
+                        await emit_document_status_update(db, organization_id=organization_id, document_id=document_id, stage="embedding", progress=doc.processing_progress, status="processing")
                     success = True
 
             except Exception as e:

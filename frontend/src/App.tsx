@@ -56,6 +56,7 @@ import CaseDetailPage from "./pages/CaseDetailPage";
 import { DocumentViewer } from "./components/documents/DocumentViewer";
 import Settings from "./pages/settings/Settings";
 import OrgAuditLogs from "./pages/settings/OrgAuditLogs";
+import OrgAIUsage from "./pages/settings/ai-usage/OrgAIUsage";
 import TeamSettings from "./pages/settings/TeamSettings";
 import SearchPage from "./pages/SearchPage";
 import { CollectionsList } from "./pages/collections/CollectionsList";
@@ -69,6 +70,7 @@ import AdminDashboard from "./pages/admin/dashboard/AdminDashboard";
 import AdminOrganizations from "./pages/admin/organizations/AdminOrganizations";
 import AdminUsers from "./pages/admin/users/AdminUsers";
 import AdminAuditLogs from "./pages/admin/audit/AdminAuditLogs";
+import AdminAIUsage from "./pages/admin/ai-usage/AdminAIUsage";
 
 // ── Providers ────────────────────────────────────────────────────────────
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -154,6 +156,7 @@ function AppRoutes() {
         <Route index element={<AdminDashboard />} />
         <Route path="organizations" element={<AdminOrganizations />} />
         <Route path="users" element={<AdminUsers />} />
+        <Route path="ai-usage" element={<AdminAIUsage />} />
         <Route path="audit-logs" element={<AdminAuditLogs />} />
       </Route>
 
@@ -276,6 +279,14 @@ function AppRoutes() {
           element={
             <RoleGuard allowed={["org_admin"]} fallback="/">
               <TeamSettings />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="settings/ai-usage"
+          element={
+            <RoleGuard allowed={["org_admin"]} fallback="/settings">
+              <OrgAIUsage />
             </RoleGuard>
           }
         />

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 import logging
 import os
@@ -45,7 +45,7 @@ class BaseAIProvider(ABC):
 class GeminiProvider(BaseAIProvider):
     """Concrete implementation for Google Gemini API."""
 
-    EMBEDDING_DIMENSION = 768  # text-embedding-004
+    EMBEDDING_DIMENSION = 768  # pgvector-compatible embedding dimension
     MAX_RETRIES = 10
     INITIAL_BACKOFF = 15  # seconds - much more patient for Free Tier
 
@@ -56,6 +56,12 @@ class GeminiProvider(BaseAIProvider):
         api_key = os.getenv("GEMINI_API_KEY")
         self.active = False
         self.model = None
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+        self.embedding_model = (
+            os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001").strip()
+            or "models/gemini-embedding-001"
+        )
+        self.embedding_dimension = int(os.getenv("GEMINI_EMBEDDING_DIM", str(self.EMBEDDING_DIMENSION)))
 
         if not api_key:
             logger.warning("GEMINI_API_KEY not set — AI Provider is inactive.")
@@ -63,11 +69,9 @@ class GeminiProvider(BaseAIProvider):
 
         try:
             genai.configure(api_key=api_key)
-            # Use gemini-2.0-flash which has separate quota
-            self.model = genai.GenerativeModel("gemini-2.0-flash")
-            self.embedding_model = "models/text-embedding-004"
+            self.model = genai.GenerativeModel(self.model_name)
             self.active = True
-            logger.info("Gemini AI Provider initialised successfully with gemini-2.0-flash.")
+            logger.info("Gemini AI Provider initialised successfully with %s.", self.model_name)
         except Exception as e:
             logger.error(f"Failed to initialise Gemini: {e}")
 
@@ -160,8 +164,14 @@ class GeminiProvider(BaseAIProvider):
                 model=self.embedding_model,
                 content=text,
                 task_type="retrieval_document",
+                output_dimensionality=self.embedding_dimension,
             )
-            return result["embedding"]
+            vector = result["embedding"]
+            if len(vector) > self.embedding_dimension:
+                vector = vector[: self.embedding_dimension]
+            elif len(vector) < self.embedding_dimension:
+                vector = vector + ([0.0] * (self.embedding_dimension - len(vector)))
+            return vector
         except Exception as e:
             logger.error(f"Gemini embedding error: {e}")
             # If embedding fails completely, return zero vector so pipeline continues
@@ -428,7 +438,7 @@ class CohereProvider(BaseAIProvider):
             logger.error("Cohere returned invalid JSON (first 300 chars): %s", content[:300])
             return None
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(self, text: str, input_type: str = "search_document") -> List[float]:
         if not self.active:
             logger.warning("Cohere Provider inactive — returning zero vector for embedding.")
             return [0.0] * self.embedding_dimension
@@ -442,7 +452,7 @@ class CohereProvider(BaseAIProvider):
         payload = {
             "model": self.embedding_model,
             "texts": [text],
-            "input_type": "search_document"  # Required for embedding models
+            "input_type": input_type or "search_document"
         }
         try:
             result = await self._post(url, payload)

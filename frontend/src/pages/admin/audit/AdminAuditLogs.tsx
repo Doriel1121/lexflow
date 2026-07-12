@@ -121,10 +121,10 @@ export default function AdminAuditLogs() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
-            {t("adminAudit.title", { defaultValue: "Audit Logs" })}
+            {t("adminsuperAdminAuditAudit.title", { defaultValue: "Audit Logs" })}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
-            {t("adminAudit.subtitle", {
+            {t("superAdminAudit.subtitle", {
               defaultValue: "Anonymized system-wide activity log",
             })}
             {total > 0 && (

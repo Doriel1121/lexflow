@@ -1,12 +1,13 @@
-from typing import Dict, List, Any, Optional
+﻿from typing import Dict, List, Any, Optional
 import asyncio
 import logging
 
 from app.core.config import settings
-from app.core.ai_router import AITask, ai_router
+from app.core.ai_router import AIIntent, AIRiskLevel, AITask, AITaskContext, ai_router
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.analysis_merge import merge_analyses
+from app.services.ai_quota import enforce_ai_quota
 from app.services.ai_usage_logger import track_ai_call
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,31 @@ CHUNK_PARTIAL_SCHEMA = """
 
 class DocumentIntelligenceService:
     def __init__(self):
-        self.provider = ai_router.provider_for(AITask.READER)
-    
+        pass
+
+    def _reader_provider(
+        self,
+        *,
+        feature: str,
+        intent: AIIntent,
+        language: Optional[str],
+        input_chars: int,
+        risk_level: AIRiskLevel = AIRiskLevel.MEDIUM,
+        requires_citations: bool = False,
+    ):
+        return ai_router.provider_for(
+            AITask.READER,
+            AITaskContext(
+                task=AITask.READER,
+                feature=feature,
+                intent=intent,
+                language=language or "",
+                input_chars=input_chars,
+                risk_level=risk_level,
+                requires_citations=requires_citations,
+            ),
+        )
+
     def _language_instruction(self, language: Optional[str], text: str) -> str:
         lang = (language or "").lower()
         if lang.startswith("he") or any("\u0590" <= ch <= "\u05FF" for ch in text[:2000]):
@@ -45,16 +69,16 @@ class DocumentIntelligenceService:
         if lang.startswith("fr"):
             return "You MUST answer in French."
         return "You MUST answer in the same language as the document."
-    
+
     def _clean_and_limit_tags(self, tags: Any) -> List[str]:
         """Clean, deduplicate, and limit tags to max 5-7 relevant ones."""
         if not tags:
             return []
-        
+
         # Ensure tags is a list
         if not isinstance(tags, list):
             return []
-        
+
         # Generic/low-quality tags to filter out
         generic_tags = {
             'document', 'legal', 'agreement', 'contract', 'file', 'page',
@@ -62,37 +86,37 @@ class DocumentIntelligenceService:
             'other', 'miscellaneous', 'general', 'unknown', 'todo',
             'document type', 'section', 'undefined', 'pending',
         }
-        
+
         cleaned = set()
         for tag in tags:
             if not isinstance(tag, str):
                 continue
-            
+
             tag = tag.strip()
             if not tag:  # Skip empty tags
                 continue
-            
+
             # Skip tags that are too short or too long
             if len(tag) < 3 or len(tag) > 50:
                 continue
-            
+
             # Skip generic tags (case-insensitive)
             if tag.lower() in generic_tags:
                 continue
-            
+
             # Skip tags that are only punctuation/numbers
             if not any(c.isalpha() for c in tag):
                 continue
-            
+
             cleaned.add(tag)
-        
+
         # Convert back to list and limit to 5-7 tags
         result = list(cleaned)
         max_tags = 7
         if len(result) > max_tags:
             # If we have too many, keep only the first max_tags (preserves AI priority ordering)
             result = result[:max_tags]
-        
+
         return sorted(result)  # Return sorted for consistency
 
     def should_use_chunked_analysis(self, text_length: int) -> bool:
@@ -112,7 +136,14 @@ class DocumentIntelligenceService:
         organization_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Extract structured data from a single document section."""
-        if not self.provider.active or not (chunk_text or "").strip():
+        provider = self._reader_provider(
+            feature="document_intelligence",
+            intent=AIIntent.DOCUMENT_ANALYSIS,
+            language=language,
+            input_chars=len(chunk_text or ""),
+            risk_level=AIRiskLevel.MEDIUM,
+        )
+        if not provider.active or not (chunk_text or "").strip():
             return {}
 
         lang_hint = self._language_instruction(language, chunk_text)
@@ -135,15 +166,21 @@ Return ONLY JSON."""
 
         timeout = float(settings.AI_CHUNK_ANALYSIS_TIMEOUT_SECONDS or 90)
         try:
+            await enforce_ai_quota(
+                db,
+                organization_id=organization_id,
+                task_type="reader.chunk_analysis",
+                input_chars=len(prompt or ""),
+            )
             async with track_ai_call(
                 db,
                 organization_id=organization_id,
                 task_type="reader.chunk_analysis",
-                provider=self.provider,
+                provider=provider,
                 input_text=prompt,
             ) as usage:
                 result = await asyncio.wait_for(
-                    self.provider.generate_json(prompt),
+                    provider.generate_json(prompt),
                     timeout=timeout,
                 )
                 usage["output_chars"] = len(str(result)) if result is not None else 0
@@ -225,13 +262,13 @@ Return ONLY JSON."""
         if len(chunks) > max_chunks:
             merged["chunks_truncated"] = True
         merged["_chunk_partials"] = partials
-        
+
         # Clean and limit tags after merge
         if "tags" in merged and merged["tags"]:
             merged["tags"] = self._clean_and_limit_tags(merged["tags"])
         else:
             merged["tags"] = []
-        
+
         return merged
 
     async def analyze_document(
@@ -287,7 +324,14 @@ Return ONLY JSON."""
         """
         Comprehensive legal document analysis extracting all critical information
         """
-        if not self.provider.active:
+        provider = self._reader_provider(
+            feature="document_intelligence",
+            intent=AIIntent.DOCUMENT_ANALYSIS,
+            language=language,
+            input_chars=len(text or ""),
+            risk_level=AIRiskLevel.MEDIUM,
+        )
+        if not provider.active:
             return self._fallback_analysis(text, filename)
         lang_hint = self._language_instruction(language, text)
         prompt = f"""Analyze this legal document and extract ALL relevant information in JSON format.
@@ -310,8 +354,8 @@ Extract and return ONLY valid JSON with this exact structure:
   ],
   "key_dates": [
     {{
-      "date": "YYYY-MM-DD", 
-      "description": "string (the semantic reason for this date, e.g., 'Last day to file response to motion')", 
+      "date": "YYYY-MM-DD",
+      "description": "string (the semantic reason for this date, e.g., 'Last day to file response to motion')",
       "type": "string (hearing, filing, response, appeal, statute_of_limitations, other)",
       "is_critical_deadline": "boolean (true if this is a date a lawyer must not miss)"
     }}
@@ -341,15 +385,21 @@ IMPORTANT:
 - Be thorough and extract ALL information found. If a field has no data, use empty array [] or empty string "" or null.
 Return ONLY the JSON, no other text."""
         try:
+            await enforce_ai_quota(
+                db,
+                organization_id=organization_id,
+                task_type="reader.document_analysis",
+                input_chars=len(prompt or ""),
+            )
             async with track_ai_call(
                 db,
                 organization_id=organization_id,
                 task_type="reader.document_analysis",
-                provider=self.provider,
+                provider=provider,
                 input_text=prompt,
             ) as usage:
                 result = await asyncio.wait_for(
-                    self.provider.generate_json(prompt),
+                    provider.generate_json(prompt),
                     timeout=float(settings.AI_ANALYSIS_TIMEOUT_SECONDS or 120),
                 )
                 usage["output_chars"] = len(str(result)) if result is not None else 0
@@ -363,7 +413,7 @@ Return ONLY the JSON, no other text."""
         if not result:
             # If it's literally empty, use fallback
             return self._fallback_analysis(text, filename)
-        
+
         # Ensure result is a dict (json.loads can return a string if JSON is a plain string)
         if not isinstance(result, dict):
             logger.warning(
@@ -371,15 +421,15 @@ Return ONLY the JSON, no other text."""
                 type(result).__name__,
             )
             return self._fallback_analysis(text, filename)
-        
+
         # Clean and limit tags
         if "tags" in result and result["tags"]:
             result["tags"] = self._clean_and_limit_tags(result["tags"])
         else:
             result["tags"] = []
-        
+
         return result
-    
+
     def _fallback_analysis(self, text: str, filename: str) -> Dict[str, Any]:
         """Fallback when AI is unavailable"""
         return {

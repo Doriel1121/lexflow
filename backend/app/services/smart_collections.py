@@ -6,11 +6,16 @@ based on the structured AI analysis result produced by DocumentIntelligenceServi
 
 Collection categories recognised
 ---------------------------------
-  client_id   – ISO / Israeli 9-digit IDs, passport numbers, tax IDs found on parties
-  project     – Explicit project / matter names from document text
-  organization – Company / firm names found in parties
-  case_type   – High-level document type  (Contract, Litigation, Real Estate …)
+  client_id     – ISO / Israeli 9-digit IDs, passport numbers, tax IDs found on parties
+  person        – Natural person names (non-company parties)
+  project       – Explicit project / matter names from document text
+  organization  – Company / firm names found in parties
+  case_type     – High-level document type  (Contract, Litigation, Real Estate …)
   document_type – Fine-grained document sub-type (NDA, Lease Agreement, Power of Attorney …)
+  ai_tag        – Free-form topic tags extracted by AI
+
+Per-category caps prevent tag flooding.  An overall budget of
+MAX_TAGS_PER_DOCUMENT (default 8) trims low-value tags first.
 """
 from __future__ import annotations
 
@@ -29,34 +34,81 @@ from app.crud.tag import crud_tag
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Constants & configuration
+# ---------------------------------------------------------------------------
+
+# Overall tag budget per document (across all categories)
+MAX_TAGS_PER_DOCUMENT = 8
+
+# Per-category caps: how many tags each category may contribute
+_CATEGORY_CAPS: Dict[str, int] = {
+    "client_id": 3,
+    "person": 3,
+    "organization": 2,
+    "project": 1,
+    "case_type": 1,
+    "document_type": 1,
+    "ai_tag": 4,
+}
+
+# Priority order for keeping tags when over budget (high → low value for
+# cross-document unification).  Tags from categories listed first survive.
+_CATEGORY_PRIORITY: List[str] = [
+    "client_id",
+    "person",
+    "organization",
+    "project",
+    "case_type",
+    "document_type",
+    "ai_tag",
+]
+
+# ---------------------------------------------------------------------------
 # Company-name suffixes (English + Hebrew) used to detect organisations
 # ---------------------------------------------------------------------------
 _COMPANY_SUFFIXES_RE = re.compile(
-    r"\b(?:Inc|LLC|Ltd|Corp|LLP|LP|Co|PLC|GmbH|S\.A|N\.V|בע\"מ|ב\.מ\.)\b",
+    r"""(?:Inc|LLC|Ltd|Corp|LLP|LP|Co|PLC|GmbH|S\.A|N\.V|בע"מ|ב\.מ\.)""",
     re.IGNORECASE | re.UNICODE,
 )
 
-# Minimum length to avoid tiny noise tokens
+# Minimum / maximum length to avoid tiny noise or excessively long tokens
 _MIN_TAG_LEN = 2
-# Maximum to keep sane collection names
 _MAX_TAG_LEN = 80
 
-# Strings Gemini sometimes returns instead of a real null / unknown value
+# ---------------------------------------------------------------------------
+# Junk value blocklist – strings AI / OCR return instead of real data
+# ---------------------------------------------------------------------------
 _JUNK_VALUES = frozenset({
+    # English
     "null", "none", "n/a", "na", "unknown", "unclassified",
     "not found", "not available", "not applicable", "n.a.", "—", "-",
+    # Hebrew placeholders
+    "לא צוין", "לא מצוין", "לא ידוע", "אין", "ריק",
+    "מספר", "page break",
 })
 
+# Regex patterns that indicate a placeholder / template value
+_JUNK_PATTERNS_RE = re.compile(
+    r"""
+      ^\[.*\]$                  # [ח.פ. מספר] style bracket templates
+    | לא\s+צוין                 # "לא צוין" anywhere in value
+    | לא\s+מצוין                # "לא מצוין" anywhere in value
+    | ^page\s*break$            # OCR artefact
+    """,
+    re.IGNORECASE | re.VERBOSE | re.UNICODE,
+)
 
-def _clean(value: str) -> Optional[str]:
-    """Strip whitespace and return None if too short, too long, or a junk Gemini value."""
-    v = (value or "").strip()
-    if v.lower() in _JUNK_VALUES:
-        return None
-    if _MIN_TAG_LEN <= len(v) <= _MAX_TAG_LEN:
-        return v
-    return None
+# Hebrew title prefixes to strip from person names
+_TITLE_PREFIXES_RE = re.compile(
+    r"""^(?:מר|גב'|גברת|עו"ד|ד"ר|פרופ'|פרופ|רו"ח|Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Prof\.?)\s+""",
+    re.IGNORECASE | re.UNICODE,
+)
 
+# Hebrew prefixes to strip from organization names (e.g. "חברת ...")
+_ORG_PREFIX_RE = re.compile(
+    r"^(?:חברת|חברה|עמותת)\s+",
+    re.UNICODE,
+)
 
 # Common noise tokens to exclude from AI tags
 _STOPWORDS = frozenset({
@@ -65,13 +117,66 @@ _STOPWORDS = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# Normalization helpers
+# ---------------------------------------------------------------------------
+
+def _clean(value: str) -> Optional[str]:
+    """Collapse whitespace, strip junk, and enforce length limits."""
+    v = (value or "")
+    # Collapse all whitespace (newlines, tabs, etc.) into single spaces
+    v = re.sub(r"\s+", " ", v).strip()
+    # Normalize quotation marks
+    v = v.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
+    if not v:
+        return None
+    if v.lower() in _JUNK_VALUES:
+        return None
+    if _JUNK_PATTERNS_RE.search(v):
+        return None
+    if _MIN_TAG_LEN <= len(v) <= _MAX_TAG_LEN:
+        return v
+    return None
+
+
+def _normalize_org_name(raw: str) -> Optional[str]:
+    """Normalize an organization name for consistent tag matching.
+
+    Strips Hebrew prefixes (חברת), collapses OCR whitespace, and
+    produces a canonical form.
+    """
+    v = _clean(raw)
+    if not v:
+        return None
+    # Strip Hebrew company prefix
+    v = _ORG_PREFIX_RE.sub("", v).strip()
+    if not v or len(v) < _MIN_TAG_LEN:
+        return None
+    return v
+
+
+def _normalize_person_name(raw: str) -> Optional[str]:
+    """Normalize a person name for consistent tag matching.
+
+    Strips title prefixes (מר, עו"ד, Dr., etc.) and collapses whitespace.
+    """
+    v = _clean(raw)
+    if not v:
+        return None
+    # Strip title prefixes
+    v = _TITLE_PREFIXES_RE.sub("", v).strip()
+    if not v or len(v) < _MIN_TAG_LEN:
+        return None
+    return v
+
+
 def _normalize_tag(value: str) -> Optional[str]:
     """Normalize AI tag text to a stable, UI-friendly form."""
     v = _clean(value)
     if not v:
         return None
     v = re.sub(r"[_\\-]+", " ", v)
-    v = re.sub(r"\\s+", " ", v).strip()
+    v = re.sub(r"\s+", " ", v).strip()
     if not v:
         return None
     if v.lower() in _STOPWORDS:
@@ -81,7 +186,20 @@ def _normalize_tag(value: str) -> Optional[str]:
 
 
 def _is_company(name: str) -> bool:
+    """Check if a party name looks like a company (has corporate suffix)."""
     return bool(_COMPANY_SUFFIXES_RE.search(name))
+
+
+def _trim_by_priority(tags_by_category: Dict[str, list], budget: int) -> list:
+    """Keep at most *budget* tags, preserving higher-priority categories first."""
+    result: list = []
+    for cat in _CATEGORY_PRIORITY:
+        cat_tags = tags_by_category.get(cat, [])
+        remaining = budget - len(result)
+        if remaining <= 0:
+            break
+        result.extend(cat_tags[:remaining])
+    return result
 
 
 class SmartCollectionsService:
@@ -103,27 +221,20 @@ class SmartCollectionsService:
         doc_id = getattr(document, "id", None)
         try:
             org_id = document.organization_id
-            tags_to_add = []
 
-            # 1. client_id — party id_numbers + regex routing_ids already
-            #    extracted by MetadataExtractionService (stored in ai_analysis
-            #    as routing_ids when passed through, or from parties).
-            tags_to_add += await self._tags_for_client_ids(db, ai_analysis, org_id)
+            # Collect tags per category (each method enforces its own cap)
+            tags_by_category: Dict[str, list] = {}
 
-            # 2. project — regex routing_projects
-            tags_to_add += await self._tags_for_projects(db, ai_analysis, org_id)
+            tags_by_category["client_id"] = await self._tags_for_client_ids(db, ai_analysis, org_id)
+            tags_by_category["person"] = await self._tags_for_persons(db, ai_analysis, org_id)
+            tags_by_category["organization"] = await self._tags_for_organizations(db, ai_analysis, org_id)
+            tags_by_category["project"] = await self._tags_for_projects(db, ai_analysis, org_id)
+            tags_by_category["case_type"] = await self._tags_for_case_type(db, ai_analysis, org_id)
+            tags_by_category["document_type"] = await self._tags_for_document_type(db, ai_analysis, org_id)
+            tags_by_category["ai_tag"] = await self._tags_for_ai_tags(db, ai_analysis, org_id)
 
-            # 3. organization — company party names
-            tags_to_add += await self._tags_for_organizations(db, ai_analysis, org_id)
-
-            # 4. case_type — document_type field
-            tags_to_add += await self._tags_for_case_type(db, ai_analysis, org_id)
-
-            # 5. document_type — document_subtype field
-            tags_to_add += await self._tags_for_document_type(db, ai_analysis, org_id)
-
-            # 6. AI tags — generic tags field from AI analysis
-            tags_to_add += await self._tags_for_ai_tags(db, ai_analysis, org_id)
+            # Apply overall budget with priority trimming
+            tags_to_add = _trim_by_priority(tags_by_category, MAX_TAGS_PER_DOCUMENT)
 
             if not tags_to_add:
                 return
@@ -175,6 +286,7 @@ class SmartCollectionsService:
         org_id: Optional[int],
     ) -> list:
         """Extract IDs from party records and from routing_ids (regex pass)."""
+        cap = _CATEGORY_CAPS.get("client_id", 3)
         seen: set[str] = set()
         tags = []
 
@@ -190,6 +302,8 @@ class SmartCollectionsService:
                     db, name=id_val, category="client_id", organization_id=org_id
                 )
                 tags.append(t)
+                if len(tags) >= cap:
+                    return tags
 
         # From regex routing_ids already in ai_analysis (passed through from
         # MetadataExtractionService when called earlier in the pipeline)
@@ -201,6 +315,45 @@ class SmartCollectionsService:
                     db, name=id_val, category="client_id", organization_id=org_id
                 )
                 tags.append(t)
+                if len(tags) >= cap:
+                    return tags
+
+        return tags
+
+    async def _tags_for_persons(
+        self,
+        db: AsyncSession,
+        ai_analysis: Dict[str, Any],
+        org_id: Optional[int],
+    ) -> list:
+        """Extract natural person names from party records (non-companies)."""
+        cap = _CATEGORY_CAPS.get("person", 3)
+        seen: set[str] = set()
+        tags = []
+
+        for party in ai_analysis.get("parties", []):
+            if not isinstance(party, dict):
+                continue
+            raw_name = (party.get("name") or "").strip()
+            if not raw_name:
+                continue
+            # Skip companies — those go to _tags_for_organizations
+            if _is_company(raw_name):
+                continue
+            name = _normalize_person_name(raw_name)
+            if not name:
+                continue
+            # Use lowered form for dedup but store the normalized display form
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            t = await crud_tag.find_or_create(
+                db, name=name, category="person", organization_id=org_id
+            )
+            tags.append(t)
+            if len(tags) >= cap:
+                return tags
 
         return tags
 
@@ -211,6 +364,7 @@ class SmartCollectionsService:
         org_id: Optional[int],
     ) -> list:
         """Extract project names from routing_projects (regex)."""
+        cap = _CATEGORY_CAPS.get("project", 1)
         seen: set[str] = set()
         tags = []
         for proj in ai_analysis.get("routing_projects", []):
@@ -221,6 +375,8 @@ class SmartCollectionsService:
                     db, name=name, category="project", organization_id=org_id
                 )
                 tags.append(t)
+                if len(tags) >= cap:
+                    return tags
         return tags
 
     async def _tags_for_organizations(
@@ -230,8 +386,10 @@ class SmartCollectionsService:
         org_id: Optional[int],
     ) -> list:
         """Extract company names from AI party records."""
+        cap = _CATEGORY_CAPS.get("organization", 2)
         seen: set[str] = set()
         tags = []
+
         for party in ai_analysis.get("parties", []):
             if not isinstance(party, dict):
                 continue
@@ -240,23 +398,35 @@ class SmartCollectionsService:
                 continue
             if not _is_company(raw_name):
                 continue
-            name = _clean(raw_name)
-            if name and name not in seen:
-                seen.add(name)
-                t = await crud_tag.find_or_create(
-                    db, name=name, category="organization", organization_id=org_id
-                )
-                tags.append(t)
+            name = _normalize_org_name(raw_name)
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            t = await crud_tag.find_or_create(
+                db, name=name, category="organization", organization_id=org_id
+            )
+            tags.append(t)
+            if len(tags) >= cap:
+                return tags
 
         # Also use routing_organizations if pre-extracted by MetadataExtractionService
         for org_name in ai_analysis.get("routing_organizations", []):
-            name = _clean(str(org_name))
-            if name and name not in seen:
-                seen.add(name)
-                t = await crud_tag.find_or_create(
-                    db, name=name, category="organization", organization_id=org_id
-                )
-                tags.append(t)
+            name = _normalize_org_name(str(org_name))
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            t = await crud_tag.find_or_create(
+                db, name=name, category="organization", organization_id=org_id
+            )
+            tags.append(t)
+            if len(tags) >= cap:
+                return tags
 
         return tags
 
@@ -297,6 +467,7 @@ class SmartCollectionsService:
         org_id: Optional[int],
     ) -> list:
         """Process the generic 'tags' list from AI analysis."""
+        cap = _CATEGORY_CAPS.get("ai_tag", 4)
         seen: set[str] = set()
         tags = []
 
@@ -320,7 +491,7 @@ class SmartCollectionsService:
             # Keep only above threshold
             min_conf = float(settings.AI_TAG_MIN_CONFIDENCE or 0.0)
             ranked = sorted(best.items(), key=lambda x: x[1], reverse=True)
-            for name, conf in ranked[: int(settings.AI_TAG_MAX_PER_DOCUMENT or 8)]:
+            for name, conf in ranked[:cap]:
                 if conf < min_conf:
                     continue
                 if name not in seen:
@@ -347,9 +518,10 @@ class SmartCollectionsService:
                     db, name=name, category="ai_tag", organization_id=org_id
                 )
                 tags.append(t)
+                if len(tags) >= cap:
+                    break
 
-        # Limit volume to avoid noisy tagging
-        return tags[: int(settings.AI_TAG_MAX_PER_DOCUMENT or 8)]
+        return tags[:cap]
 
 
 smart_collections_service = SmartCollectionsService()

@@ -2,6 +2,17 @@ import re
 from typing import List, Dict
 from datetime import datetime
 
+
+def _normalize_ocr_whitespace(text: str) -> str:
+    """Collapse OCR line breaks within Hebrew/English words into spaces.
+
+    Many Hebrew PDFs produce text like 'חברת\nמגדלי\nהעתיד\nבע"מ' where
+    newlines appear between words that should be on one line.
+    """
+    # Collapse any sequence of whitespace (including newlines) into a single space
+    return re.sub(r"\s+", " ", text).strip()
+
+
 class MetadataExtractionService:
     def __init__(self):
         # Date patterns for English and Hebrew formats
@@ -55,14 +66,16 @@ class MetadataExtractionService:
     async def extract_metadata(self, text: str, language: str = "en") -> Dict[str, List[str]]:
         """Extract metadata from text with error tolerance."""
         try:
+            # Pre-normalize OCR whitespace for better regex matching
+            normalized_text = _normalize_ocr_whitespace(text)
             metadata = {
-                "dates": await self._extract_dates(text),
-                "entities": await self._extract_entities(text, language),
-                "amounts": await self._extract_amounts(text),
-                "case_numbers": await self._extract_case_numbers(text),
-                "routing_ids": await self._extract_routing_ids(text),
-                "routing_projects": await self._extract_routing_projects(text),
-                "routing_organizations": await self._extract_routing_organizations(text),
+                "dates": await self._extract_dates(normalized_text),
+                "entities": await self._extract_entities(normalized_text, language),
+                "amounts": await self._extract_amounts(normalized_text),
+                "case_numbers": await self._extract_case_numbers(normalized_text),
+                "routing_ids": await self._extract_routing_ids(normalized_text),
+                "routing_projects": await self._extract_routing_projects(normalized_text),
+                "routing_organizations": await self._extract_routing_organizations(normalized_text),
             }
             return metadata
         except Exception as e:
@@ -95,11 +108,19 @@ class MetadataExtractionService:
                 matches = re.findall(pattern, text)
                 entities.extend(matches)
             
-            # Hebrew name pattern (basic)
-            if language == "he":
-                hebrew_pattern = r'[\u0590-\u05FF]+\s[\u0590-\u05FF]+'
-                hebrew_matches = re.findall(hebrew_pattern, text)
-                entities.extend(hebrew_matches)
+            # Hebrew name pattern: 2-4 Hebrew words (person or organization)
+            # This catches names like "דוריאל אבויה" or "יוסי כהן"
+            hebrew_name_pattern = r'[\u0590-\u05FF]+(?:\s+[\u0590-\u05FF]+){1,3}'
+            hebrew_matches = re.findall(hebrew_name_pattern, text)
+            # Filter out very short matches and common Hebrew stopwords
+            hebrew_stopwords = {'של', 'על', 'את', 'עם', 'לא', 'כי', 'גם', 'או', 'אם', 'זה', 'היא', 'הוא', 'אני', 'הם'}
+            for match in hebrew_matches:
+                words = match.split()
+                # Skip if first word is a stopword or match is too short
+                if words[0] in hebrew_stopwords:
+                    continue
+                if len(match) >= 4:  # At least 4 chars
+                    entities.append(match)
             
             return list(set(entities))[:30]  # Limit to 30 unique entities
         except:

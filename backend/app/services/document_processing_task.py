@@ -140,6 +140,7 @@ async def _update_status(
                             "document_id": document_id,
                             "stage": stage,
                             "progress": round(progress, 1),
+                            "status": status.value if hasattr(status, "value") else str(status),
                         }
                         for uid in user_ids:
                             await publish_notification(uid, ws_payload)

@@ -5,9 +5,17 @@ from typing import List, Optional
 
 
 def embedding_dimension() -> int:
-    from app.core.ai_provider import get_ai_provider
+    from app.core.ai_router import AITask, AITaskContext, AIIntent, AIRiskLevel, ai_router
 
-    provider = get_ai_provider()
+    provider = ai_router.provider_for(
+        AITask.EMBEDDING,
+        AITaskContext(
+            task=AITask.EMBEDDING,
+            feature="embedding",
+            intent=AIIntent.EMBEDDING,
+            risk_level=AIRiskLevel.LOW,
+        ),
+    )
     return int(getattr(provider, "embedding_dimension", None) or getattr(provider, "EMBEDDING_DIMENSION", 768))
 
 

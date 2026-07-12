@@ -36,6 +36,8 @@
         "systemOverview": "סקירת מערכת",
         "organizations": "ארגונים",
         "usersRoles": "משתמשים ותפקידים",
+        "aiUsage": "שימוש ב-AI",
+        "orgAIUsage": "שימוש AI בארגון",
         "signOut": "התנתק"
     },
     "header": {
@@ -278,7 +280,6 @@
         "deleteConfirm": "למחוק את האוסף הזה?",
         "deleteWarning": "פעולה זו תסיר את התגית מ-{{count}} מסמך/ים. לא ניתן לבטל פעולה זו.",
         "deleteSuccess": "האוסף נמחק בהצלחה",
-        "editCollection": "שנה שם",
         "editModalTitle": "שנה שם אוסף",
         "editNameLabel": "שם האוסף",
         "editNamePlaceholder": "לדוגמה: חברת אקמי",
@@ -286,13 +287,17 @@
         "nameConflict": "אוסף עם שם זה כבר קיים",
         "systemCollection": "לא ניתן לערוך או למחוק אוספי מערכת",
         "noDocumentsInCollection": "טרם סווגו מסמכים תחת אוסף זה.",
+        "personCategory": "אדם",
+        "aiTagCategory": "תגית AI",
         "categories": {
             "all": "הכל",
             "clientId": "מזהה לקוח",
+            "person": "אדם",
             "project": "פרויקט",
             "organization": "ארגון",
             "caseType": "סוג תיק",
             "documentType": "סוג מסמך",
+            "aiTag": "תגית AI",
             "general": "כללי"
         }
     },
@@ -364,7 +369,7 @@
         "created": "נוצר",
         "assignedTo": "מוקצה ל"
     },
-    "adminUsers": {
+    "Users": {
         "title": "משתמשים ותפקידים",
         "subtitle": "נהל גישה והרשאות מערכת גלובליות.",
         "inviteUser": "הזמן משתמש",
@@ -596,7 +601,7 @@
     "adminHeader": {
         "systemAdmin": "מסוף ניהול מערכת"
     },
-    "adminAudit": {
+    "superAdminAudit": {
         "title": "יומני ביקורת",
         "subtitle": "יומן פעילות אנונימי ברמת המערכת",
         "allEvents": "כל האירועים",

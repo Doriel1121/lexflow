@@ -62,7 +62,17 @@ class Settings(BaseSettings):
     AI_DRAFTING_PROVIDER: str = ""
     AI_EMBEDDING_PROVIDER: str = ""
     AI_FALLBACK_PROVIDER: str = ""
-
+    # Optional policy-level overrides. Empty values fall back to task-level routing above.
+    AI_LEGAL_REASONING_PROVIDER: str = ""
+    AI_LEGAL_DRAFTING_PROVIDER: str = ""
+    AI_LONG_CONTEXT_PROVIDER: str = ""
+    AI_CLASSIFICATION_PROVIDER: str = ""
+    AI_LOW_RISK_PROVIDER: str = ""
+    # Optional JSON pricing map used for telemetry cost estimates.
+    # Shape:
+    # {"gemini":{"gemini-2.0-flash":{"input_per_1m":0.1,"output_per_1m":0.4}}}
+    # Supports provider/model wildcards via "*". Missing prices are treated as unknown/0.
+    AI_COST_PRICING_JSON: str = "{}"
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
     # Above this character count, use per-chunk analysis + merge (sequential, no Celery chord)

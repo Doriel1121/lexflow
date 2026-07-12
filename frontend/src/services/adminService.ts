@@ -109,6 +109,85 @@ export interface ProvisionRequest {
   password?: string;
 }
 
+export interface AdminOrganizationQuotaResponse {
+  organization: {
+    id: number;
+    name: string;
+    slug: string;
+    is_active: boolean;
+  };
+  ai_quotas: {
+    ai_daily_call_limit: number | null;
+    ai_monthly_drafting_limit: number | null;
+    ai_monthly_token_limit: number | null;
+  };
+}
+
+export interface AdminOrganizationQuotaUpdate {
+  ai_daily_call_limit?: number | null;
+  ai_monthly_drafting_limit?: number | null;
+  ai_monthly_token_limit?: number | null;
+}
+
+export interface AIUsageSummary {
+  total_calls: number;
+  success_calls: number;
+  error_calls: number;
+  avg_latency_ms: number;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_total_cost_usd?: number;
+  pricing_configured?: boolean;
+}
+
+export interface AIQuotaBucket {
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  reset_at: string;
+}
+
+export interface AIUsageQuota {
+  daily_ai_calls?: AIQuotaBucket;
+  monthly_drafting_calls?: AIQuotaBucket;
+  monthly_ai_tokens?: AIQuotaBucket;
+}
+
+export interface AIUsageBreakdownRow {
+  task_type: string;
+  provider: string;
+  model: string | null;
+  status: string;
+  calls: number;
+  avg_latency_ms: number;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_input_cost_usd?: number;
+  estimated_output_cost_usd?: number;
+  estimated_total_cost_usd?: number;
+  pricing_configured?: boolean;
+  last_seen_at: string | null;
+}
+
+export interface AIUsageResponse {
+  window_days: number;
+  filters: {
+    task_type: string | null;
+    provider: string | null;
+    status: string | null;
+  };
+  quota?: AIUsageQuota;
+  summary: AIUsageSummary;
+  breakdown: AIUsageBreakdownRow[];
+}
+
+export interface AIUsageFilters {
+  days?: number;
+  task_type?: string;
+  provider?: string;
+  status?: string;
+}
+
 // ─── API calls ────────────────────────────────────────────────────────────
 
 export const adminService = {
@@ -124,6 +203,9 @@ export const adminService = {
   getSystemHealth: (): Promise<SystemHealthStatus> =>
     api.get('/v1/admin/system-health').then(r => r.data),
 
+  getAIUsage: (filters: AIUsageFilters = {}): Promise<AIUsageResponse> =>
+    api.get('/v1/admin/ai-usage', { params: filters }).then(r => r.data),
+
   getAuditLogs: (
     page = 1,
     pageSize = 50,
@@ -135,4 +217,10 @@ export const adminService = {
 
   provisionOrganization: (body: ProvisionRequest): Promise<unknown> =>
     api.post('/v1/admin/organizations', body).then(r => r.data),
+
+  getOrganizationAIQuotas: (organizationId: number): Promise<AdminOrganizationQuotaResponse> =>
+    api.get(`/v1/admin/organizations/${organizationId}/ai-quotas`).then(r => r.data),
+
+  updateOrganizationAIQuotas: (organizationId: number, body: AdminOrganizationQuotaUpdate): Promise<AdminOrganizationQuotaResponse> =>
+    api.patch(`/v1/admin/organizations/${organizationId}/ai-quotas`, body).then(r => r.data),
 };

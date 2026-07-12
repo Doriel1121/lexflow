@@ -44,6 +44,33 @@ interface Document {
   tags?: { id: number; name: string }[];
 }
 
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return "Unknown";
+  const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
+  const date = new Date(utcDateStr);
+  return date.toISOString().split("T")[0];
+};
+
+const getNormalizedStatus = (status: string | undefined | null) => {
+  if (!status) return "completed"; // Legacy documents default to completed
+  return status.toLowerCase();
+};
+
+const needsAIAnalysis = (doc: Document) => {
+  // Check if document is completed but classification indicates AI is pending
+  return (
+    getNormalizedStatus(doc.processing_status) === "completed" &&
+    (doc.classification === "Text Extracted (AI Pending)" ||
+      doc.classification === "Pending Analysis" ||
+      doc.processing_stage === "completed_without_ai")
+  );
+};
+
+const embeddingUnavailable = (doc: Document) =>
+  doc.processing_stage === "completed_embedding_partial" ||
+  (doc.embedding_failed_count ?? 0) > 0 ||
+  doc.ai_health?.embedding === "partial";
+
 export function DocumentList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -104,12 +131,36 @@ export function DocumentList() {
   // WebSocket for real-time document updates (replaces polling)
   const { isConnected: wsConnected } = useDocumentWebSocket();
 
-  // Listen for WebSocket events
+  // Listen for WebSocket events (consolidated handler for both status updates and completion)
   useEffect(() => {
-    const handleDocumentProcessed = () => {
+    const handleDocumentProcessed = (event: Event) => {
       console.log("[DocumentList] Document processing complete via WebSocket");
-      fetchDocuments(); // Refresh full list when any document is done
       setUploading(false);
+
+      const customEvent = event as CustomEvent;
+      const { document_id } = customEvent.detail || {};
+
+      if (document_id) {
+        (async () => {
+          try {
+            const docRes = await api.get(`/v1/documents/${document_id}`);
+            setDocuments((prev) => {
+              const found = prev.find((d) => d.id === document_id);
+              if (!found) {
+                return [docRes.data, ...prev];
+              }
+              return prev.map((d) => (d.id === document_id ? docRes.data : d));
+            });
+          } catch (err) {
+            console.error(`[ERROR] Could not fetch document ${document_id}:`, err);
+          }
+        })();
+      }
+
+      // Ensure full list consistency after a short delay
+      setTimeout(() => {
+        fetchDocuments();
+      }, 500);
     };
 
     const handleStatusUpdate = (event: Event) => {
@@ -119,7 +170,6 @@ export function DocumentList() {
       const documentId = Number(detail.document_id);
       if (!documentId) return;
 
-      // Prefer in-place state update when payload includes stage/progress/status.
       if (
         detail.stage !== undefined ||
         detail.progress !== undefined ||
@@ -131,7 +181,12 @@ export function DocumentList() {
               ? d
               : {
                   ...d,
-                  processing_status: detail.status ?? d.processing_status,
+                  processing_status:
+                    detail.status ??
+                    ((detail.progress > 0 || detail.stage) &&
+                    (d.processing_status === "pending" || !d.processing_status)
+                      ? "processing"
+                      : d.processing_status),
                   processing_progress: detail.progress ?? d.processing_progress,
                   processing_stage: detail.stage ?? d.processing_stage,
                 },
@@ -140,7 +195,6 @@ export function DocumentList() {
         return;
       }
 
-      // Fallback: refresh list (older servers may only send document_id).
       fetchDocuments();
     };
 
@@ -151,7 +205,7 @@ export function DocumentList() {
       window.removeEventListener("document_processed", handleDocumentProcessed);
       window.removeEventListener("document_status_update", handleStatusUpdate);
     };
-  }, [uploading, t]);
+  }, []);
 
   // Close dropdown when clicking outside or scrolling
   useEffect(() => {
@@ -168,11 +222,12 @@ export function DocumentList() {
   useEffect(() => {
     fetchDocuments();
 
-    // Smart polling: Only poll when there are documents being processed AND WebSocket is disconnected
+    let tickCount = 0;
+    // Smart polling: Poll every 5s when disconnected, or every 15s when connected as a reliable backup
     const pollInterval = setInterval(async () => {
       try {
-        // Skip polling if WebSocket is connected (real-time updates)
-        if (wsConnected) {
+        tickCount++;
+        if (wsConnected && tickCount % 3 !== 0) {
           return;
         }
 
@@ -183,9 +238,8 @@ export function DocumentList() {
             getNormalizedStatus(d.processing_status) === "processing",
         );
 
-        // Only poll if there are pending documents
         if (pendingDocs.length === 0) {
-          return; // Skip polling if nothing is processing
+          return;
         }
 
         const statusUpdates: Record<
@@ -193,91 +247,45 @@ export function DocumentList() {
           { status: string; progress: number; stage: string }
         > = {};
         await Promise.allSettled(
-          pendingDocs.map(async (pDoc) => {
-            try {
-              const sRes = await api.get(`/v1/documents/${pDoc.id}/status`);
-              statusUpdates[pDoc.id] = sRes.data;
-            } catch (err) {
-              console.error(`Failed to fetch status for doc ${pDoc.id}:`, err);
+          pendingDocs.map(async (doc) => {
+            const res = await api.get(`/v1/documents/${doc.id}/status`);
+            const data = res.data;
+            if (
+              data.status &&
+              (data.status !== doc.processing_status ||
+                data.progress !== doc.processing_progress ||
+                data.stage !== doc.processing_stage)
+            ) {
+              statusUpdates[doc.id] = {
+                status: data.status,
+                progress: data.progress || 0,
+                stage: data.stage || "",
+              };
             }
           }),
         );
 
-        // Functional updater ensures we always operate on fresh state
-        setDocuments((prev) => {
-          let changed = false;
-          const next = prev.map((d) => {
-            const update = statusUpdates[d.id];
-            if (!update) return d;
-            if (
-              d.processing_status !== update.status ||
-              d.processing_progress !== update.progress ||
-              d.processing_stage !== update.stage
-            ) {
-              changed = true;
+        if (Object.keys(statusUpdates).length > 0) {
+          setDocuments((prev) =>
+            prev.map((d) => {
+              const update = statusUpdates[d.id];
+              if (!update) return d;
               return {
                 ...d,
                 processing_status: update.status,
                 processing_progress: update.progress,
                 processing_stage: update.stage,
               };
-            }
-            return d;
-          });
-          return changed ? next : prev;
-        });
+            }),
+          );
+        }
       } catch (err) {
         console.debug("Poll error (non-fatal):", err);
       }
-    }, 5000); // Poll every 5 seconds (only when needed)
-
-    // Listen for document processing updates
-    // When a document finishes processing, fetch its full updated data
-    const handleDocumentProcessed = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const { document_id } = customEvent.detail || {};
-
-      console.log(
-        `[EVENT] Document processed event received for ID: ${document_id}`,
-      );
-
-      if (!document_id) return;
-
-      // Fetch the FULL document data (not just status)
-      (async () => {
-        try {
-          console.log(`[API] Fetching document ${document_id}...`);
-          const docRes = await api.get(`/v1/documents/${document_id}`);
-          console.log(
-            `[UPDATE] Got document data, updating state:`,
-            docRes.data,
-          );
-          // Update just this one document in state with full data
-          setDocuments((prev) => {
-            const found = prev.find((d) => d.id === document_id);
-            if (!found) {
-              // Document not in current list, add it to the top
-              console.log(`[UPDATE] Document not found in list, adding to top`);
-              return [docRes.data, ...prev];
-            }
-            // Replace document with updated data
-            console.log(`[UPDATE] Replacing document in list`);
-            return prev.map((d) => (d.id === document_id ? docRes.data : d));
-          });
-        } catch (err) {
-          console.error(
-            `[ERROR] Could not fetch document ${document_id}:`,
-            err,
-          );
-          // Polling will catch it in 5 seconds
-        }
-      })();
-    };
-    window.addEventListener("document_processed", handleDocumentProcessed);
+    }, 5000);
 
     return () => {
       clearInterval(pollInterval);
-      window.removeEventListener("document_processed", handleDocumentProcessed);
     };
   }, [wsConnected]);
 
@@ -480,33 +488,6 @@ export function DocumentList() {
     filterDateFrom,
     filterDateTo,
   ]);
-
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "Unknown";
-    const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
-    const date = new Date(utcDateStr);
-    return date.toISOString().split("T")[0];
-  };
-
-  const getNormalizedStatus = (status: string | undefined | null) => {
-    if (!status) return "completed"; // Legacy documents default to completed
-    return status.toLowerCase();
-  };
-
-  const needsAIAnalysis = (doc: Document) => {
-    // Check if document is completed but classification indicates AI is pending
-    return (
-      getNormalizedStatus(doc.processing_status) === "completed" &&
-      (doc.classification === "Text Extracted (AI Pending)" ||
-        doc.classification === "Pending Analysis" ||
-        doc.processing_stage === "completed_without_ai")
-    );
-  };
-
-  const embeddingUnavailable = (doc: Document) =>
-    doc.processing_stage === "completed_embedding_partial" ||
-    (doc.embedding_failed_count ?? 0) > 0 ||
-    doc.ai_health?.embedding === "partial";
 
   const handleRetryAI = async (docId: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -749,7 +730,7 @@ export function DocumentList() {
                     {t("documentList.table.status")}
                   </th>
                   <th className="px-6 py-3.5 text-right text-xs uppercase text-start tracking-wider">
-                    {t("adminUsers.table.actions")}
+                    {t("Users.table.actions")}
                   </th>
                 </tr>
               </thead>

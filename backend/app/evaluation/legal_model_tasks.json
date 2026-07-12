@@ -1,0 +1,224 @@
+{
+  "version": "0.2",
+  "description": "Synthetic legal AI evaluation tasks. Do not include real client data here.",
+  "tasks": [
+    {
+      "id": "he_contract_risk_001",
+      "category": "legal_risk_analysis",
+      "language": "he",
+      "title": "Hebrew contract risk extraction",
+      "context": "הסכם שירותים בין חברת אלפא בע\"מ לבין לקוח ביתא. התשלום החודשי הוא 12,000 ש\"ח בתוספת מע\"מ. תקופת ההסכם היא 12 חודשים. סעיף 8 קובע שכל צד רשאי לסיים את ההסכם בהודעה מוקדמת של 30 יום. סעיף 10 קובע שהלקוח ישלם פיצוי מוסכם של 50,000 ש\"ח אם יבטל את ההסכם ללא הודעה מוקדמת. אין בהסכם סעיף סודיות מפורש ואין התייחסות לבעלות בתוצרי העבודה.",
+      "prompt": "נתח את הסיכונים המשפטיים העיקריים במסמך והצע צעדים מעשיים לעורך הדין.",
+      "expected_points": [
+        "פיצוי מוסכם של 50,000 ש\"ח במקרה ביטול ללא הודעה מוקדמת",
+        "הודעה מוקדמת של 30 יום",
+        "אין סעיף סודיות מפורש",
+        "אין התייחסות לבעלות בתוצרי העבודה",
+        "צריך לוודא סבירות ואכיפות של הפיצוי המוסכם"
+      ],
+      "forbidden_claims": [
+        "חוק החוזים מחייב פיצוי של 50,000",
+        "יש סעיף סודיות",
+        "ההסכם הוא לשלוש שנים"
+      ],
+      "required_format": [
+        "תשובה קצרה",
+        "עובדות מהמסמך",
+        "סיכונים",
+        "צעדים מומלצים"
+      ],
+      "notes": "Tests Hebrew quality, grounded risk analysis, and uncertainty."
+    },
+    {
+      "id": "he_ask_ai_reasoning_001",
+      "category": "ask_ai_legal_reasoning",
+      "language": "he",
+      "title": "Ask AI legal reasoning over a cancellation dispute",
+      "context": "מסמך: הסכם ייעוץ בין יועצת לבין חברה. סעיף 4 קובע תשלום חודשי של 9,500 ש\"ח. סעיף 7 דורש הודעה מוקדמת של 21 יום לפני סיום. ביום 10.05.2026 החברה שלחה הודעת סיום מיידית בדוא\"ל. היועצת המשיכה להיות זמינה לעבודה עד 31.05.2026. אין במסמך סעיף שיפוט או דין חל.",
+      "prompt": "האם לפי המסמך יש בסיס לדרוש תשלום נוסף, ומה צריך לבדוק לפני שליחת דרישה?",
+      "expected_points": [
+        "ההסכם דרש הודעה מוקדמת של 21 יום",
+        "החברה שלחה הודעת סיום מיידית ביום 10.05.2026",
+        "היועצת הייתה זמינה לעבודה עד 31.05.2026",
+        "ייתכן בסיס לדרוש תשלום עבור תקופת ההודעה המוקדמת",
+        "חסר סעיף שיפוט או דין חל ויש לבדוק אותו",
+        "צריך לבדוק ראיות לזמינות ולעבודה בפועל"
+      ],
+      "forbidden_claims": [
+        "בוודאות מגיע פיצוי עונשי",
+        "קיים סעיף דין ישראלי",
+        "הודעה מוקדמת של 30 יום"
+      ],
+      "required_format": [
+        "מסקנה זהירה",
+        "עובדות רלוונטיות",
+        "מה חסר לבדיקה",
+        "צעדים מומלצים"
+      ],
+      "notes": "Tests cautious legal reasoning without inventing law."
+    },
+    {
+      "id": "he_hallucination_resistance_001",
+      "category": "hallucination_resistance",
+      "language": "he",
+      "title": "Refuse unsupported statute/case-law request",
+      "context": "המסמך הוא מכתב דרישה קצר. הוא מציין חוב נטען של 24,000 ש\"ח, מועד פירעון 01.03.2026, ושתי תזכורות שנשלחו בדוא\"ל. המסמך אינו מזכיר חוק, פסיקה, בית משפט, או סעיפי חוזה ספציפיים.",
+      "prompt": "ציין אילו סעיפי חוק ותקדימים תומכים בדרישה לפי המסמך.",
+      "expected_points": [
+        "המסמך אינו כולל סעיפי חוק",
+        "המסמך אינו כולל פסיקה או תקדימים",
+        "אפשר לציין רק את העובדות: חוב 24,000 ש\"ח ומועד פירעון 01.03.2026",
+        "צריך לבצע מחקר משפטי חיצוני לפני ציון סעיפי חוק או פסיקה"
+      ],
+      "forbidden_claims": [
+        "סעיף 39 לחוק החוזים מופיע במסמך",
+        "הלכת אפרופים מופיעה במסמך",
+        "בית משפט כבר פסק לטובת הלקוח"
+      ],
+      "required_format": [
+        "אין בסיס במסמך",
+        "עובדות שניתן להסתמך עליהן",
+        "בדיקות נדרשות"
+      ],
+      "notes": "Tests refusal to invent legal authorities."
+    },
+    {
+      "id": "he_drafting_pack_001",
+      "category": "drafting_preparation",
+      "language": "he",
+      "title": "Drafting preparation from evidence pack",
+      "context": "חבילת ראיות: צדדים: דנה כהן נגד חברת גמא בע\"מ. עובדות: ביום 01.04.2026 נשלחה הודעת ביטול. החוזה דרש הודעה מוקדמת של 30 יום. החברה הפסיקה שירותים לאחר 5 ימים בלבד. סכום ששולם מראש: 18,000 ש\"ח. חסר: אישור מסירה של הודעת הביטול וחשבוניות מלאות.",
+      "prompt": "הכן תכנית קצרה לכתב דרישה, בלי לנסח כתב מלא, וציין אילו ראיות חסרות.",
+      "expected_points": [
+        "דנה כהן נגד חברת גמא בע\"מ",
+        "הודעת ביטול ביום 01.04.2026",
+        "החוזה דרש הודעה מוקדמת של 30 יום",
+        "החברה הפסיקה שירותים לאחר 5 ימים",
+        "סכום ששולם מראש 18,000 ש\"ח",
+        "חסר אישור מסירה וחשבוניות מלאות"
+      ],
+      "forbidden_claims": [
+        "הוגשה תביעה לבית משפט",
+        "יש אישור מסירה",
+        "הסכום הוא 80,000"
+      ],
+      "required_format": [
+        "מטרת כתב הדרישה",
+        "עובדות מרכזיות",
+        "ראיות חסרות",
+        "צעדים מומלצים"
+      ],
+      "notes": "Tests not drafting a full filing and identifying missing evidence."
+    },
+    {
+      "id": "he_drafting_quality_001",
+      "category": "drafting_quality",
+      "language": "he",
+      "title": "Hebrew legal drafting outline quality",
+      "context": "לקוח: אורן לוי. הצד השני: חברת דלתא אחזקות בע\"מ. חוזה תחזוקה נחתם ביום 15.01.2026. החברה התחייבה לביצוע תיקון תוך 7 ימי עסקים מקריאה. שלוש קריאות שירות נפתחו בימים 01.02.2026, 18.02.2026, 04.03.2026. לפי המסמך, אף תיקון לא הושלם במועד. הלקוח שילם 6,200 ש\"ח. חסרים: תמונות הנזק וחוות דעת טכנאי.",
+      "prompt": "נסח שלד מקצועי וקצר למכתב התראה לפני נקיטת הליכים, עם הסתייגות לגבי ראיות חסרות.",
+      "expected_points": [
+        "אורן לוי מול חברת דלתא אחזקות בע\"מ",
+        "חוזה תחזוקה מיום 15.01.2026",
+        "התחייבות לתיקון תוך 7 ימי עסקים",
+        "שלוש קריאות שירות בתאריכים 01.02.2026, 18.02.2026, 04.03.2026",
+        "אף תיקון לא הושלם במועד לפי המסמך",
+        "שולם סכום של 6,200 ש\"ח",
+        "חסרות תמונות נזק וחוות דעת טכנאי"
+      ],
+      "forbidden_claims": [
+        "נגרם נזק של 100,000 ש\"ח",
+        "יש חוות דעת טכנאי",
+        "הוגשה תביעה"
+      ],
+      "required_format": [
+        "כותרת",
+        "רקע עובדתי",
+        "טענות מרכזיות",
+        "דרישה",
+        "ראיות חסרות"
+      ],
+      "notes": "Tests concise Hebrew drafting structure and factual grounding."
+    },
+    {
+      "id": "en_deadline_001",
+      "category": "deadline_obligation_extraction",
+      "language": "en",
+      "title": "Deadline and obligation extraction",
+      "context": "A supplier agreement states: The supplier must deliver the first software milestone by March 15, 2026. The customer must review the milestone within 10 business days. Either party may terminate for material breach if the breach is not cured within 14 days after written notice. The agreement is silent about governing law.",
+      "prompt": "Extract the dates, obligations, and missing legal information. Do not add outside law.",
+      "expected_points": [
+        "first software milestone due by March 15, 2026",
+        "customer review within 10 business days",
+        "14 day cure period after written notice",
+        "governing law is missing",
+        "do not add outside law"
+      ],
+      "forbidden_claims": [
+        "New York law applies",
+        "30 day cure period",
+        "review period is 10 calendar days"
+      ],
+      "required_format": [
+        "Dates",
+        "Obligations",
+        "Missing information"
+      ],
+      "notes": "Tests factual extraction and refusal to infer governing law."
+    },
+    {
+      "id": "en_summary_grounding_001",
+      "category": "grounded_summary",
+      "language": "en",
+      "title": "Grounded summary with uncertainty",
+      "context": "A lease addendum says the tenant may sublease only with prior written approval from the landlord. The addendum increases monthly rent to 8,400 ILS from July 1, 2026. It does not mention parking, renewal options, or penalties for late payment. A handwritten note says: 'approval email to follow', but no email is attached.",
+      "prompt": "Summarize the document and list what cannot be concluded from it.",
+      "expected_points": [
+        "sublease requires prior written landlord approval",
+        "monthly rent increases to 8,400 ILS from July 1, 2026",
+        "parking is not mentioned",
+        "renewal options are not mentioned",
+        "late payment penalties are not mentioned",
+        "approval email is not attached"
+      ],
+      "forbidden_claims": [
+        "sublease is already approved",
+        "parking is included",
+        "late fee is 5 percent"
+      ],
+      "required_format": [
+        "Summary",
+        "Known facts",
+        "Cannot conclude"
+      ],
+      "notes": "Tests grounded summarization and explicit uncertainty."
+    },
+    {
+      "id": "en_cost_sensitive_classification_001",
+      "category": "classification",
+      "language": "en",
+      "title": "Low-risk document classification",
+      "context": "Document text: 'Invoice #INV-1042. Vendor: North Star Hosting. Amount due: 1,250 USD. Due date: April 30, 2026. Services: cloud hosting and backup storage for March 2026.'",
+      "prompt": "Classify the document type, extract core metadata, and avoid legal analysis unless necessary.",
+      "expected_points": [
+        "document type is invoice",
+        "vendor is North Star Hosting",
+        "amount due is 1,250 USD",
+        "due date is April 30, 2026",
+        "services are cloud hosting and backup storage for March 2026",
+        "no legal analysis is necessary"
+      ],
+      "forbidden_claims": [
+        "contract breach",
+        "lawsuit should be filed",
+        "amount due is 12,500 USD"
+      ],
+      "required_format": [
+        "Document type",
+        "Metadata",
+        "Legal analysis needed"
+      ],
+      "notes": "Tests cheap/low-risk classification behavior."
+    }
+  ]
+}

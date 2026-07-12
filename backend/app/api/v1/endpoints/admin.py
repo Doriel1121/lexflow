@@ -16,10 +16,12 @@ Kept / rewritten endpoints:
   ✅ GET  /admin/system-health      — health indicators
   ✅ GET  /admin/audit-logs         — anonymized logs (user_id hashed)
   ✅ POST /admin/organizations      — provision new tenant (legitimate write)
+  ✅ GET/PATCH /admin/organizations/{id}/ai-quotas — support workflow for known tenant ID
 
 Security:
   - Every endpoint requires UserRole.ADMIN
-  - No endpoint returns raw org/user data
+  - No directory endpoint returns raw org/user data
+  - AI quota management requires a known organization ID; it is an explicit support workflow
   - Audit log user_id is replaced with SHA-256[:12] hash
 """
 
@@ -54,6 +56,8 @@ from app.schemas.user import UserCreate
 from app.crud.organization import organization_crud
 from app.crud.user import user_crud
 from app.core.security import get_password_hash
+from app.services.audit import log_audit
+from app.services.ai_costs import estimate_ai_cost
 from app.services.system_analytics import (
     get_last_n_daily_metrics,
     get_growth_cohorts,
@@ -150,7 +154,6 @@ async def get_ai_usage(
                 AIUsageEvent.status,
             )
             .order_by(func.count(AIUsageEvent.id).desc())
-            .limit(100)
         )
     ).all()
 
@@ -158,6 +161,36 @@ async def get_ai_usage(
     success_calls = int(getattr(summary_row, "success_calls", 0) or 0) if summary_row else 0
     error_calls = int(getattr(summary_row, "error_calls", 0) or 0) if summary_row else 0
     avg_latency = float(getattr(summary_row, "avg_latency_ms", 0) or 0) if summary_row else 0.0
+
+    breakdown = []
+    estimated_total_cost_usd = 0.0
+    has_pricing = False
+    for row in breakdown_rows:
+        input_tokens = int(row.estimated_input_tokens or 0)
+        output_tokens = int(row.estimated_output_tokens or 0)
+        cost = estimate_ai_cost(
+            provider=row.provider,
+            model=row.model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        cost_fields = cost.as_float_dict()
+        estimated_total_cost_usd += float(cost_fields["estimated_total_cost_usd"])
+        has_pricing = has_pricing or bool(cost_fields["pricing_configured"])
+        breakdown.append(
+            {
+                "task_type": row.task_type,
+                "provider": row.provider,
+                "model": row.model,
+                "status": row.status,
+                "calls": int(row.calls or 0),
+                "avg_latency_ms": round(float(row.avg_latency_ms or 0), 1),
+                "estimated_input_tokens": input_tokens,
+                "estimated_output_tokens": output_tokens,
+                **cost_fields,
+                "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+            }
+        )
 
     return {
         "window_days": days,
@@ -173,23 +206,11 @@ async def get_ai_usage(
             "avg_latency_ms": round(avg_latency, 1),
             "estimated_input_tokens": int(getattr(summary_row, "estimated_input_tokens", 0) or 0) if summary_row else 0,
             "estimated_output_tokens": int(getattr(summary_row, "estimated_output_tokens", 0) or 0) if summary_row else 0,
+            "estimated_total_cost_usd": round(estimated_total_cost_usd, 6),
+            "pricing_configured": has_pricing,
         },
-        "breakdown": [
-            {
-                "task_type": row.task_type,
-                "provider": row.provider,
-                "model": row.model,
-                "status": row.status,
-                "calls": int(row.calls or 0),
-                "avg_latency_ms": round(float(row.avg_latency_ms or 0), 1),
-                "estimated_input_tokens": int(row.estimated_input_tokens or 0),
-                "estimated_output_tokens": int(row.estimated_output_tokens or 0),
-                "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
-            }
-            for row in breakdown_rows
-        ],
+        "breakdown": breakdown,
     }
-
 # ---------------------------------------------------------------------------
 # GET /admin/dashboard
 # ---------------------------------------------------------------------------
@@ -508,6 +529,28 @@ class AdminProvisionRequest(BaseModel):
     password: Optional[str] = None
 
 
+class AdminAIQuotaUpdate(BaseModel):
+    ai_daily_call_limit: Optional[int] = None
+    ai_monthly_drafting_limit: Optional[int] = None
+    ai_monthly_token_limit: Optional[int] = None
+
+
+def _serialize_org_ai_quotas(org: Organization) -> dict:
+    return {
+        "organization": {
+            "id": org.id,
+            "name": org.name,
+            "slug": org.slug,
+            "is_active": org.is_active,
+        },
+        "ai_quotas": {
+            "ai_daily_call_limit": org.ai_daily_call_limit,
+            "ai_monthly_drafting_limit": org.ai_monthly_drafting_limit,
+            "ai_monthly_token_limit": org.ai_monthly_token_limit,
+        },
+    }
+
+
 @router.post("/organizations", status_code=201)
 async def provision_organization(
     body: AdminProvisionRequest,
@@ -545,3 +588,67 @@ async def provision_organization(
             "temporary_password": initial_password if not body.password else "[provided]",
         },
     }
+
+
+@router.get("/organizations/{organization_id}/ai-quotas")
+async def get_organization_ai_quotas(
+    organization_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(_ADMIN_ONLY),
+):
+    """Return quota settings for a known tenant ID. This is not a tenant directory."""
+    org = await db.get(Organization, organization_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return _serialize_org_ai_quotas(org)
+
+
+@router.patch("/organizations/{organization_id}/ai-quotas")
+async def update_organization_ai_quotas(
+    organization_id: int,
+    body: AdminAIQuotaUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(_ADMIN_ONLY),
+):
+    """Update AI quota settings for a known tenant ID. Use 0 or negative values to disable a limit."""
+    org = await db.get(Organization, organization_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    values = body.model_dump(exclude_unset=True)
+    before = {
+        "ai_daily_call_limit": org.ai_daily_call_limit,
+        "ai_monthly_drafting_limit": org.ai_monthly_drafting_limit,
+        "ai_monthly_token_limit": org.ai_monthly_token_limit,
+    }
+    normalized_values = {}
+    for key, value in values.items():
+        if value is not None and value < 0:
+            value = 0
+        normalized_values[key] = value
+        setattr(org, key, value)
+
+    await db.flush()
+    after = {
+        "ai_daily_call_limit": org.ai_daily_call_limit,
+        "ai_monthly_drafting_limit": org.ai_monthly_drafting_limit,
+        "ai_monthly_token_limit": org.ai_monthly_token_limit,
+    }
+    await log_audit(
+        db,
+        event_type="admin.ai_quotas.updated",
+        organization_id=organization_id,
+        user_id=current_admin.id,
+        resource_type="organization_ai_quotas",
+        resource_id=str(organization_id),
+        http_method="PATCH",
+        path=f"/v1/admin/organizations/{organization_id}/ai-quotas",
+        status_code=200,
+        metadata_json={
+            "changed_fields": sorted(normalized_values.keys()),
+            "before": before,
+            "after": after,
+        },
+    )
+    await db.refresh(org)
+    return _serialize_org_ai_quotas(org)

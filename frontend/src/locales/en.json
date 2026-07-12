@@ -36,6 +36,8 @@
         "systemOverview": "System Overview",
         "organizations": "Organizations",
         "usersRoles": "Users & Roles",
+        "aiUsage": "AI Usage",
+        "orgAIUsage": "Organization AI Usage",
         "signOut": "Sign out"
     },
     "header": {
@@ -278,7 +280,6 @@
         "deleteConfirm": "Delete this collection?",
         "deleteWarning": "This will remove the tag from {{count}} document(s). This cannot be undone.",
         "deleteSuccess": "Collection deleted successfully",
-        "editCollection": "Rename",
         "editModalTitle": "Rename Collection",
         "editNameLabel": "Collection Name",
         "editNamePlaceholder": "e.g. Acme Corp",
@@ -286,13 +287,17 @@
         "nameConflict": "A collection with this name already exists",
         "systemCollection": "System collections cannot be edited or deleted",
         "noDocumentsInCollection": "No documents have been categorized under this collection yet.",
+        "personCategory": "Person",
+        "aiTagCategory": "AI Tag",
         "categories": {
             "all": "All",
             "clientId": "Client ID",
+            "person": "Person",
             "project": "Project",
             "organization": "Organization",
             "caseType": "Case Type",
             "documentType": "Document Type",
+            "aiTag": "AI Tag",
             "general": "General"
         }
     },
@@ -364,7 +369,7 @@
         "created": "Created",
         "assignedTo": "Assigned To"
     },
-    "adminUsers": {
+    "Users": {
         "title": "Users & Roles",
         "subtitle": "Manage global system access and permissions.",
         "inviteUser": "Invite User",
@@ -615,7 +620,7 @@
     "adminHeader": {
         "systemAdmin": "System Admin Console"
     },
-    "adminAudit": {
+    "superAdminAudit": {
         "title": "Audit Logs",
         "subtitle": "Anonymized system-wide activity log",
         "allEvents": "All events",

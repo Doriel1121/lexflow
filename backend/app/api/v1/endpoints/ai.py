@@ -1,6 +1,7 @@
 import json
 import logging
 import hashlib
+import re
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,10 +11,22 @@ from redis.asyncio import Redis
 
 from app.api import deps
 from app.db.models.document import Document, DocumentChunk
+from app.db.models.document_metadata import DocumentMetadata
 from app.db.models.case import Case
+from app.db.models.summary import Summary
 from app.db.models.user import User as DBUser, UserRole
 from app.schemas.ai import AskAIRequest, AskAIResponse, Citation
+from app.services.ai_quota import AIQuotaExceeded
+from app.services.ask_ai_prompting import (
+    AskAIIntent,
+    build_ask_ai_json_prompt,
+    build_ask_ai_prompt,
+    build_document_brief,
+    detect_ask_ai_intent,
+    render_ask_ai_answer,
+)
 from app.services.llm import llm_service
+from app.core.ai_router import AIIntent, AIRiskLevel
 from app.core.config import settings
 
 router = APIRouter()
@@ -22,6 +35,38 @@ logger = logging.getLogger(__name__)
 # Basic Redis setup for caching
 redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True) if hasattr(settings, "REDIS_URL") else None
 CACHE_TTL = 3600  # 1 hour
+
+
+def _routing_for_ask_ai_intent(intent: AskAIIntent) -> tuple[AIIntent, AIRiskLevel, bool]:
+    if intent in {
+        AskAIIntent.LEGAL_ANALYSIS,
+        AskAIIntent.RISK_ANALYSIS,
+        AskAIIntent.NEXT_STEPS,
+        AskAIIntent.DRAFTING_REQUEST,
+    }:
+        return AIIntent.LEGAL_REASONING, AIRiskLevel.HIGH, True
+    if intent == AskAIIntent.DEADLINES_OBLIGATIONS:
+        return AIIntent.DOCUMENT_ANALYSIS, AIRiskLevel.HIGH, True
+    if intent == AskAIIntent.SUMMARY:
+        return AIIntent.SUMMARIZATION, AIRiskLevel.LOW, True
+    return AIIntent.DOCUMENT_QA, AIRiskLevel.MEDIUM, True
+
+HEBREW_STOPWORDS = {
+    "איזה", "איזו", "אילו", "מה", "מי", "האם", "איך", "כיצד", "למה", "מדוע", "מתי",
+    "היכן", "איפה", "כמה", "של", "את", "על", "עם", "אל", "מ", "ב", "ל", "ה", "ו",
+    "זה", "זו", "אלו", "אלה", "הוא", "היא", "הם", "הן", "הזה", "הזאת", "כל", "או", "גם"
+}
+
+def _extract_query_keywords(question: str) -> List[str]:
+    raw_words = [re.sub(r'[^\wא-ת]+', '', w) for w in question.split()]
+    words = [w for w in raw_words if len(w) >= 2 and w not in HEBREW_STOPWORDS]
+    expanded = set(words)
+    for w in words:
+        if w in ('תוכנית', 'תכנית'):
+            expanded.update(['תוכנית', 'תכנית', 'תמל'])
+        elif w in ('מספר', 'מס'):
+            expanded.update(['מספר', 'מס'])
+    return list(expanded)
 
 async def get_cache(key: str) -> Optional[Dict[str, Any]]:
     if not redis_client:
@@ -43,15 +88,87 @@ async def set_cache(key: str, value: Dict[str, Any]):
         logger.warning(f"Cache set error: {e}")
 
 def generate_cache_key(request: AskAIRequest, org_id: Optional[int]) -> str:
-    # Stable hash of request parameters
-    req_data = f"{request.question}:{request.case_id}:{request.document_ids}:{request.top_k}:{org_id}"
+    # Stable hash of request parameters (versioned v4 for JSON-rendered legal prompting)
+    req_data = f"v4:{request.question}:{request.case_id}:{request.document_ids}:{request.top_k}:{org_id}"
     return f"rag:query:{hashlib.md5(req_data.encode()).hexdigest()}"
+
+
+def _quota_http_exception(exc: AIQuotaExceeded) -> HTTPException:
+    status_info = exc.status
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": "ai_quota_exceeded",
+            "limit_name": status_info.limit_name,
+            "used": status_info.used,
+            "limit": status_info.limit,
+            "reset_at": status_info.reset_at.isoformat(),
+        },
+    )
 
 def _is_hebrew(text: str) -> bool:
     for ch in text:
         if "\u0590" <= ch <= "\u05FF":
             return True
     return False
+
+async def _load_document_brief(
+    db: AsyncSession,
+    document_ids: List[int],
+    case_obj: Optional[Case],
+) -> str:
+    if not document_ids and not case_obj:
+        return ""
+
+    sections: List[str] = []
+    if case_obj:
+        sections.append(f"Case: {case_obj.title}")
+        if case_obj.description:
+            sections.append(f"Case description: {case_obj.description}")
+        sections.append("")
+
+    if not document_ids:
+        return "\n".join(sections).strip()
+
+    docs_res = await db.execute(select(Document).where(Document.id.in_(document_ids)))
+    documents = {doc.id: doc for doc in docs_res.scalars().all()}
+
+    summaries_res = await db.execute(select(Summary).where(Summary.document_id.in_(document_ids)))
+    summaries = {summary.document_id: summary for summary in summaries_res.scalars().all()}
+
+    metadata_res = await db.execute(
+        select(DocumentMetadata).where(DocumentMetadata.document_id.in_(document_ids))
+    )
+    metadata_by_doc = {metadata.document_id: metadata for metadata in metadata_res.scalars().all()}
+
+    items: List[Dict[str, Any]] = []
+    for doc_id in document_ids:
+        doc = documents.get(doc_id)
+        if not doc:
+            continue
+        summary = summaries.get(doc_id)
+        metadata = metadata_by_doc.get(doc_id)
+        items.append({
+            "id": doc.id,
+            "filename": doc.filename,
+            "classification": doc.classification,
+            "language": doc.language,
+            "page_count": doc.page_count,
+            "summary": summary.content if summary else None,
+            "parties": summary.parties if summary else None,
+            "key_dates": summary.key_dates if summary else None,
+            "missing_documents_suggestion": summary.missing_documents_suggestion if summary else None,
+            "dates": metadata.dates if metadata else None,
+            "entities": metadata.entities if metadata else None,
+            "amounts": metadata.amounts if metadata else None,
+            "case_numbers": metadata.case_numbers if metadata else None,
+            "keywords": metadata.extracted_keywords if metadata else None,
+        })
+
+    document_brief = build_document_brief(items)
+    if document_brief:
+        sections.append(document_brief)
+    return "\n".join(sections).strip()
 
 @router.post("/ask", response_model=AskAIResponse)
 async def ask_ai(
@@ -71,35 +188,40 @@ async def ask_ai(
         return AskAIResponse(**cached_res)
 
     # Validate Case Access if provided
+    case_obj = None
     if request.case_id:
-        case = await db.get(Case, request.case_id)
-        if not case:
+        case_obj = await db.get(Case, request.case_id)
+        if not case_obj:
             raise HTTPException(status_code=404, detail="Case not found")
-        deps.verify_resource_access(case, current_user)
+        deps.verify_resource_access(case_obj, current_user)
 
     # 2. Semantic Retrieval
     # Generate embedding for the question
     from app.services.ai_utils import valid_embedding
 
-    question_vector = await llm_service.generate_embedding(
-        request.question,
-        db=db,
-        organization_id=org_id,
-        task_type="embedding.rag_query",
-    )
+    try:
+        question_vector = await llm_service.generate_embedding(
+            request.question,
+            db=db,
+            organization_id=org_id,
+            task_type="embedding.rag_query",
+        )
+    except AIQuotaExceeded as exc:
+        raise _quota_http_exception(exc)
     if not valid_embedding(question_vector):
         raise HTTPException(
             status_code=503,
             detail="AI Q&A is temporarily unavailable (embedding service failed).",
         )
 
-    # Construct query with pgvector cosine distance
+    # Construct candidate query with pgvector cosine distance
     # We join with Document to ensure org/user isolation
     stmt = (
         select(
             DocumentChunk.text_content,
             DocumentChunk.document_id,
             DocumentChunk.page_number,
+            DocumentChunk.chunk_index,
             DocumentChunk.embedding.cosine_distance(question_vector).label("distance")
         )
         .join(Document, Document.id == DocumentChunk.document_id)
@@ -119,24 +241,71 @@ async def ask_ai(
     if request.document_ids:
         stmt = stmt.where(Document.id.in_(request.document_ids))
 
-    # Order by similarity and limit
-    stmt = stmt.order_by("distance").limit(request.top_k)
+    # Fetch a candidate pool for hybrid ranking
+    stmt = stmt.order_by("distance").limit(max(request.top_k * 18, 150))
     
     result = await db.execute(stmt)
-    hits = result.all()
+    candidate_rows = result.all()
 
-    if not hits:
+    # Fallback for unchunked documents that only have Document.content populated
+    fallback_rows = []
+    if not candidate_rows:
+        doc_stmt = select(Document.id, Document.content).where(Document.content.isnot(None))
+        if org_id is not None:
+            doc_stmt = doc_stmt.where(Document.organization_id == org_id)
+        else:
+            doc_stmt = doc_stmt.where(Document.uploaded_by_user_id == current_user.id)
+        if request.case_id:
+            doc_stmt = doc_stmt.where(Document.case_id == request.case_id)
+        if request.document_ids:
+            doc_stmt = doc_stmt.where(Document.id.in_(request.document_ids))
+        doc_res = await db.execute(doc_stmt.limit(10))
+        for doc_id, full_content in doc_res.all():
+            if full_content:
+                # Synthetic chunking of full document content
+                step = 1200
+                for idx, offset in enumerate(range(0, len(full_content), step)):
+                    snippet = full_content[offset:offset + step]
+                    fallback_rows.append((snippet, doc_id, idx + 1, idx, 0.5))
+
+    rows_to_rank = candidate_rows if candidate_rows else fallback_rows
+    if not rows_to_rank:
         return AskAIResponse(
             answer="Not found in documents. I don't have enough context to answer this question.",
             citations=[]
         )
 
+    # Hybrid RAG Ranking: combine Vector Cosine Similarity + Lexical Keyword Match + Title/Header Position Boost
+    keywords = _extract_query_keywords(request.question)
+    scored = []
+    for row in rows_to_rank:
+        text_content = row[0] or ""
+        doc_id = row[1]
+        page = row[2]
+        chunk_idx = row[3]
+        distance = row[4]
+        dist_val = distance if distance is not None else 1.0
+        vec_score = max(0.0, 1.0 - dist_val)
+
+        kw_hits = sum(1 for kw in keywords if kw in text_content)
+        kw_score = kw_hits / max(1, len(keywords)) if keywords else 0.0
+
+        pos_boost = 0.18 if (page and page <= 3) or (chunk_idx is not None and chunk_idx < 3) else 0.0
+
+        hybrid_score = (vec_score * 0.52) + (kw_score * 0.38) + pos_boost
+        scored.append((hybrid_score, text_content, doc_id, page, chunk_idx))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top_candidates = scored[:request.top_k]
+    # Sort selected snippets in logical document reading order
+    top_candidates.sort(key=lambda x: (x[2], x[3] or 0, x[4] or 0))
+
     # 3. Context Construction
     context_parts = []
     citations_map = {} # document_id -> set(pages)
 
-    for i, hit in enumerate(hits):
-        text_content, doc_id, page, distance = hit
+    for i, item in enumerate(top_candidates):
+        _, text_content, doc_id, page, _ = item
         context_parts.append(f"--- SOURCE {i+1} (Doc ID: {doc_id}, Page: {page or 'N/A'}) ---\n{text_content}")
         
         if doc_id not in citations_map:
@@ -147,39 +316,54 @@ async def ask_ai(
     context_str = "\n\n".join(context_parts)
 
     # 4. LLM Answer Generation
-    # We improve the prompt to be much stricter about formatting and quality
-    lang_hint = ""
-    if _is_hebrew(request.question):
-        lang_hint = "You MUST answer in Hebrew."
-    else:
-        lang_hint = "You MUST answer in the same language as the user's question."
-
-    prompt = f"""You are a professional legal analyst. Answer the user's QUESTION based strictly on the provided CONTEXT.
-
-CONTEXT:
-{context_str}
-
-USER QUESTION:
-{request.question}
-
-INSTRUCTIONS:
-1. Provide a clear, professional, and well-structured answer. {lang_hint}
-2. Use bullet points for lists of obligations, dates, or key facts.
-3. Do NOT include technical Source IDs (like "Source 1") or Document IDs in the middle of your sentences. 
-4. Do NOT repeat yourself or use unnecessary symbols/parentheses.
-5. If the context does not contain the answer, say: "I'm sorry, but I couldn't find the information regarding this in the provided documents."
-6. Ground every claim in the text. Do not hallucinate or add outside legal knowledge.
-"""
+    is_hebrew_question = _is_hebrew(request.question)
+    lang_hint = "You MUST answer in Hebrew." if is_hebrew_question else "You MUST answer in the same language as the user's question."
+    intent = detect_ask_ai_intent(request.question)
+    route_intent, route_risk, requires_citations = _routing_for_ask_ai_intent(intent)
+    document_ids = sorted({item[2] for item in top_candidates})
+    document_brief = await _load_document_brief(db, document_ids, case_obj)
+    json_prompt = build_ask_ai_json_prompt(
+        question=request.question,
+        retrieved_context=context_str,
+        document_brief=document_brief,
+        intent=intent,
+        lang_hint=lang_hint,
+    )
 
     try:
-        # We use summarize_text's underlying provider or just a generic call if available.
-        # LLMService doesn't have a generic 'ask' yet, so let's add one or use provider directly.
-        ai_response = await llm_service.generate_text(
-            prompt,
+        structured_response = await llm_service.generate_json(
+            json_prompt,
             db=db,
             organization_id=org_id,
-            task_type="reader.rag_answer",
+            task_type=f"reader.ask_ai.{intent.value}.json",
+            intent=route_intent,
+            feature="ask_ai",
+            language="he" if is_hebrew_question else "",
+            risk_level=route_risk,
+            requires_citations=requires_citations,
         )
+
+        if structured_response:
+            ai_response = render_ask_ai_answer(structured_response, hebrew=is_hebrew_question)
+        else:
+            fallback_prompt = build_ask_ai_prompt(
+                question=request.question,
+                retrieved_context=context_str,
+                document_brief=document_brief,
+                intent=intent,
+                lang_hint=lang_hint,
+            )
+            ai_response = await llm_service.generate_text(
+                fallback_prompt,
+                db=db,
+                organization_id=org_id,
+                task_type=f"reader.ask_ai.{intent.value}.text",
+                intent=route_intent,
+                feature="ask_ai",
+                language="he" if is_hebrew_question else "",
+                risk_level=route_risk,
+                requires_citations=requires_citations,
+            )
         
         if not ai_response:
             return AskAIResponse(answer="AI service is currently unavailable.", citations=[])
@@ -206,6 +390,8 @@ INSTRUCTIONS:
 
         return response_obj
 
+    except AIQuotaExceeded as exc:
+        raise _quota_http_exception(exc)
     except Exception as e:
         logger.error(f"RAG error: {e}")
         raise HTTPException(status_code=500, detail="Error generating AI answer")

@@ -87,6 +87,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/collections', allowedRoles: ['org_admin', 'lawyer', 'assistant', 'viewer'], redirectTo: '/admin' },
   { path: '/team',      allowedRoles: ['org_admin', 'admin'], redirectTo: '/' },
   { path: '/settings/audit-logs', allowedRoles: ['org_admin', 'admin'], redirectTo: '/' },
+  { path: '/settings/ai-usage', allowedRoles: ['org_admin'], redirectTo: '/' },
 
   // ── All authenticated users ───────────────────────────────────────────
   { path: '/settings',  allowedRoles: ['admin', 'org_admin', 'lawyer', 'assistant', 'viewer'], redirectTo: '/login' },
@@ -169,6 +170,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
     groupRoles: ['org_admin', 'lawyer', 'assistant', 'viewer'],
     items: [
       { labelKey: 'nav.team',       path: '/team',                 icon: 'Users',      allowedRoles: ['org_admin'] },
+      { labelKey: 'nav.orgAIUsage', path: '/settings/ai-usage',   icon: 'Activity',    allowedRoles: ['org_admin'] },
       { labelKey: 'nav.auditLogs',  path: '/settings/audit-logs',  icon: 'ShieldCheck', allowedRoles: ['org_admin'] },
       { labelKey: 'nav.settings',   path: '/settings',             icon: 'Settings',   allowedRoles: ['org_admin', 'lawyer', 'assistant', 'viewer'] },
     ],
@@ -182,6 +184,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { labelKey: 'nav.systemOverview',  path: '/admin',                icon: 'Activity',      allowedRoles: ['admin'], end: true },
       { labelKey: 'nav.organizations',   path: '/admin/organizations',  icon: 'Building2',     allowedRoles: ['admin'] },
       { labelKey: 'nav.usersRoles',      path: '/admin/users',          icon: 'Users',         allowedRoles: ['admin'] },
+      { labelKey: 'nav.aiUsage',         path: '/admin/ai-usage',       icon: 'Activity',      allowedRoles: ['admin'] },
       { labelKey: 'nav.auditLogs',       path: '/admin/audit-logs',     icon: 'ClipboardList', allowedRoles: ['admin'] },
     ],
   },
