@@ -106,34 +106,35 @@ function KPICard({
 }
 
 function HealthBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map = {
     healthy: {
       bg: "bg-emerald-100",
       text: "text-emerald-700",
       dot: "bg-emerald-500",
       icon: CheckCircle2,
-      label: "Healthy",
+      label: t("adminDashboard.healthStatus.healthy", { defaultValue: "Healthy" }),
     },
     degraded: {
       bg: "bg-amber-100",
       text: "text-amber-700",
       dot: "bg-amber-500",
       icon: AlertTriangle,
-      label: "Degraded",
+      label: t("adminDashboard.healthStatus.degraded", { defaultValue: "Degraded" }),
     },
     critical: {
       bg: "bg-red-100",
       text: "text-red-700",
       dot: "bg-red-500",
       icon: AlertCircle,
-      label: "Critical",
+      label: t("adminDashboard.healthStatus.critical", { defaultValue: "Critical" }),
     },
     unknown: {
       bg: "bg-slate-100",
       text: "text-slate-500",
       dot: "bg-slate-400",
       icon: Clock,
-      label: "Unknown",
+      label: t("adminDashboard.healthStatus.unknown", { defaultValue: "Unknown" }),
     },
   };
   const cfg = map[status as keyof typeof map] ?? map.unknown;
@@ -187,9 +188,14 @@ const FEATURE_LABELS: Record<string, string> = {
   search: "Search",
 };
 
-const formatFeature = (key: string) =>
-  FEATURE_LABELS[key] ??
-  key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const formatFeature = (key: string, t?: any) => {
+  const defaultLabel =
+    FEATURE_LABELS[key] ??
+    key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return t
+    ? t(`adminDashboard.features.${key}`, { defaultValue: defaultLabel })
+    : defaultLabel;
+};
 
 // ─── Main Component ────────────────────────────────────────────────────────
 
@@ -276,7 +282,7 @@ export default function AdminDashboard() {
   }));
 
   const featureData = data.feature_usage.map((f) => ({
-    name: formatFeature(f.feature),
+    name: formatFeature(f.feature, t),
     calls: f.call_count,
   }));
 
@@ -464,7 +470,7 @@ export default function AdminDashboard() {
                   border: "1px solid #e2e8f0",
                   fontSize: 12,
                 }}
-                formatter={(v: number) => [v.toLocaleString(), "Requests"]}
+                formatter={(v: number) => [v.toLocaleString(), t("adminDashboard.requests", { defaultValue: "Requests" })]}
               />
               <Area
                 type="monotone"
@@ -519,7 +525,7 @@ export default function AdminDashboard() {
                   border: "1px solid #e2e8f0",
                   fontSize: 12,
                 }}
-                formatter={(v: number) => [`${v.toFixed(2)}%`, "Error Rate"]}
+                formatter={(v: number) => [`${v.toFixed(2)}%`, t("adminDashboard.errorRate", { defaultValue: "Error Rate" })]}
               />
               <Area
                 type="monotone"
@@ -571,13 +577,13 @@ export default function AdminDashboard() {
                 <Legend wrapperStyle={{ fontSize: 12, color: "#64748b" }} />
                 <Bar
                   dataKey="new"
-                  name="New"
+                  name={t("adminDashboard.new", { defaultValue: "New" })}
                   fill={CHART_COLORS.primary}
                   radius={[3, 3, 0, 0]}
                 />
                 <Bar
                   dataKey="active"
-                  name="Active"
+                  name={t("status.active", { defaultValue: "Active" })}
                   fill={CHART_COLORS.success}
                   radius={[3, 3, 0, 0]}
                 />
@@ -593,7 +599,7 @@ export default function AdminDashboard() {
           />
           {featureData.length === 0 ? (
             <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-              No feature usage data yet
+              {t("adminDashboard.noFeatureUsageData", { defaultValue: "No feature usage data yet" })}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
@@ -626,7 +632,7 @@ export default function AdminDashboard() {
                     border: "1px solid #e2e8f0",
                     fontSize: 12,
                   }}
-                  formatter={(v: number) => [v.toLocaleString(), "Calls"]}
+                  formatter={(v: number) => [v.toLocaleString(), t("adminDashboard.calls", { defaultValue: "Calls" })]}
                 />
                 <Bar
                   dataKey="calls"
@@ -669,14 +675,16 @@ export default function AdminDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-primary-200 text-sm font-medium">
-              New Tenants This Month
+              {t("adminDashboard.newTenantsThisMonth", { defaultValue: "New Tenants This Month" })}
             </p>
             <h3 className="text-4xl font-bold mt-1 tabular-nums">
               {tenant_stats.new_tenants_this_month}
             </h3>
             <p className="text-primary-200 text-sm mt-2">
-              {tenant_stats.active_tenants} tenants currently active on the
-              platform
+              {t("adminDashboard.tenantsActivePlatform", {
+                count: tenant_stats.active_tenants,
+                defaultValue: "{{count}} tenants currently active on the platform",
+              })}
             </p>
           </div>
           <TrendingUp className="h-16 w-16 text-secondary-300 opacity-60" />

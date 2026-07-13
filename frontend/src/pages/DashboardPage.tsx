@@ -49,7 +49,7 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div className="p-4">
-      <h1 className="text-3xl font-bold mb-4">{t("dashboardPage.title")}</h1>
+      <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight mb-4">{t("dashboardPage.title")}</h1>
       <p className="mb-6">{t("dashboardPage.subtitle")}</p>
 
       {/* Stats Cards */}

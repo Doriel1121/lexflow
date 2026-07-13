@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Activity,
   AlertTriangle,
@@ -109,6 +110,7 @@ function StatCard({
 }
 
 export default function AdminAIUsage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<AIUsageResponse | null>(null);
   const [days, setDays] = useState(7);
   const [provider, setProvider] = useState("");
@@ -130,7 +132,7 @@ export default function AdminAIUsage() {
       setData(result);
     } catch (err) {
       console.error("Failed to load AI usage", err);
-      setError("Failed to load AI usage telemetry.");
+      setError(t("adminAIUsage.loadError", { defaultValue: "Failed to load AI usage telemetry." }));
     } finally {
       setLoading(false);
     }
@@ -160,10 +162,13 @@ export default function AdminAIUsage() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
-            AI Usage
+            {t("adminAIUsage.title", { defaultValue: "AI Usage" })}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
-            Aggregated provider, task, latency, token, and estimated cost telemetry. No prompts or responses are stored.
+            {t("adminAIUsage.subtitle", {
+              defaultValue:
+                "Aggregated provider, task, latency, token, and estimated cost telemetry. No prompts or responses are stored.",
+            })}
           </p>
         </div>
         <button
@@ -172,21 +177,24 @@ export default function AdminAIUsage() {
           className="inline-flex items-center gap-2 rounded-lg bg-primary-800 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-900 disabled:opacity-60"
         >
           <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
-          Refresh
+          {t("common.refresh", { defaultValue: "Refresh" })}
         </button>
       </div>
 
       <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
         <Bot className="h-4 w-4 text-blue-700 shrink-0" />
         <p className="text-xs text-blue-800 font-medium">
-          This view is safe for system admins: it shows aggregate usage only, not tenant names, user data, document content, prompts, or outputs.
+          {t("adminAIUsage.safetyBanner", {
+            defaultValue:
+              "This view is safe for system admins: it shows aggregate usage only, not tenant names, user data, document content, prompts, or outputs.",
+          })}
         </p>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
         <div className="flex items-center gap-2 mb-4 text-sm font-semibold text-slate-700">
           <SlidersHorizontal className="h-4 w-4 text-slate-400" />
-          Filters
+          {t("common.filters", { defaultValue: "Filters" })}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select
@@ -195,7 +203,12 @@ export default function AdminAIUsage() {
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
             {DAY_OPTIONS.map((option) => (
-              <option key={option} value={option}>Last {option} day{option > 1 ? "s" : ""}</option>
+              <option key={option} value={option}>
+                {t("adminAIUsage.lastDays", {
+                  count: option,
+                  defaultValue: `Last ${option} days`,
+                })}
+              </option>
             ))}
           </select>
           <select
@@ -203,26 +216,34 @@ export default function AdminAIUsage() {
             onChange={(event) => setProvider(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All providers</option>
-            {providers.map((item) => <option key={item} value={item}>{item}</option>)}
+            <option value="">{t("adminAIUsage.allProviders", { defaultValue: "All providers" })}</option>
+            {providers.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
           <select
             value={taskType}
             onChange={(event) => setTaskType(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All tasks</option>
-            {taskTypes.map((item) => <option key={item} value={item}>{item}</option>)}
+            <option value="">{t("adminAIUsage.allTasks", { defaultValue: "All tasks" })}</option>
+            {taskTypes.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All statuses</option>
-            <option value="success">Success</option>
-            <option value="error">Error</option>
-            <option value="timeout">Timeout</option>
+            <option value="">{t("adminAIUsage.allStatuses", { defaultValue: "All statuses" })}</option>
+            <option value="success">{t("adminAIUsage.statusSuccess", { defaultValue: "Success" })}</option>
+            <option value="error">{t("adminAIUsage.statusError", { defaultValue: "Error" })}</option>
+            <option value="timeout">{t("adminAIUsage.statusTimeout", { defaultValue: "Timeout" })}</option>
           </select>
         </div>
       </div>
@@ -235,39 +256,93 @@ export default function AdminAIUsage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Total calls" value={formatNumber(summary?.total_calls)} subtext={`Last ${days} day${days > 1 ? "s" : ""}`} icon={Activity} tone="blue" />
-        <StatCard label="Success rate" value={`${successRate}%`} subtext={`${formatNumber(summary?.success_calls)} successful calls`} icon={CheckCircle2} tone="emerald" />
-        <StatCard label="Errors" value={formatNumber(summary?.error_calls)} subtext="Failed AI calls" icon={AlertTriangle} tone={summary?.error_calls ? "red" : "slate"} />
-        <StatCard label="Avg latency" value={formatLatency(summary?.avg_latency_ms)} subtext="Across matching calls" icon={Clock3} tone="violet" />
+        <StatCard
+          label={t("adminAIUsage.totalCalls", { defaultValue: "Total calls" })}
+          value={formatNumber(summary?.total_calls)}
+          subtext={t("adminAIUsage.lastDays", {
+            count: days,
+            defaultValue: `Last ${days} days`,
+          })}
+          icon={Activity}
+          tone="blue"
+        />
+        <StatCard
+          label={t("adminAIUsage.successRate", { defaultValue: "Success rate" })}
+          value={`${successRate}%`}
+          subtext={t("adminAIUsage.successfulCalls", {
+            count: summary?.success_calls || 0,
+            defaultValue: `${formatNumber(summary?.success_calls)} successful calls`,
+          })}
+          icon={CheckCircle2}
+          tone="emerald"
+        />
+        <StatCard
+          label={t("adminAIUsage.errors", { defaultValue: "Errors" })}
+          value={formatNumber(summary?.error_calls)}
+          subtext={t("adminAIUsage.failedAICalls", { defaultValue: "Failed AI calls" })}
+          icon={AlertTriangle}
+          tone={summary?.error_calls ? "red" : "slate"}
+        />
+        <StatCard
+          label={t("adminAIUsage.avgLatency", { defaultValue: "Avg latency" })}
+          value={formatLatency(summary?.avg_latency_ms)}
+          subtext={t("adminAIUsage.acrossMatchingCalls", { defaultValue: "Across matching calls" })}
+          icon={Clock3}
+          tone="violet"
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Estimated input tokens" value={formatNumber(summary?.estimated_input_tokens)} icon={Zap} tone="slate" />
-        <StatCard label="Estimated output tokens" value={formatNumber(summary?.estimated_output_tokens)} icon={Zap} tone="slate" />
-        <StatCard label="Estimated AI cost" value={formatUsd(summary?.estimated_total_cost_usd)} subtext={summary?.pricing_configured ? "Based on configured model pricing" : "Pricing not configured"} icon={DollarSign} tone={summary?.pricing_configured ? "emerald" : "slate"} />
+        <StatCard
+          label={t("adminAIUsage.estimatedInputTokens", { defaultValue: "Estimated input tokens" })}
+          value={formatNumber(summary?.estimated_input_tokens)}
+          icon={Zap}
+          tone="slate"
+        />
+        <StatCard
+          label={t("adminAIUsage.estimatedOutputTokens", { defaultValue: "Estimated output tokens" })}
+          value={formatNumber(summary?.estimated_output_tokens)}
+          icon={Zap}
+          tone="slate"
+        />
+        <StatCard
+          label={t("adminAIUsage.estimatedAICost", { defaultValue: "Estimated AI cost" })}
+          value={formatUsd(summary?.estimated_total_cost_usd)}
+          subtext={
+            summary?.pricing_configured
+              ? t("adminAIUsage.pricingConfigured", { defaultValue: "Based on configured model pricing" })
+              : t("adminAIUsage.pricingNotConfigured", { defaultValue: "Pricing not configured" })
+          }
+          icon={DollarSign}
+          tone={summary?.pricing_configured ? "emerald" : "slate"}
+        />
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Breakdown</h2>
-            <p className="text-xs text-slate-500 mt-1">Grouped by task, provider, model, and status.</p>
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+              {t("adminAIUsage.breakdown", { defaultValue: "Breakdown" })}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {t("adminAIUsage.breakdownDesc", { defaultValue: "Grouped by task, provider, model, and status." })}
+            </p>
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-start">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
               <tr>
-                <th className="px-5 py-3 text-start">Task</th>
-                <th className="px-5 py-3 text-start">Provider</th>
-                <th className="px-5 py-3 text-start">Model</th>
-                <th className="px-5 py-3 text-start">Status</th>
-                <th className="px-5 py-3 text-end">Calls</th>
-                <th className="px-5 py-3 text-end">Avg latency</th>
-                <th className="px-5 py-3 text-end">Input tokens</th>
-                <th className="px-5 py-3 text-end">Output tokens</th>
-                <th className="px-5 py-3 text-end">Cost</th>
-                <th className="px-5 py-3 text-start">Last seen</th>
+                <th className="px-5 py-3 text-start">{t("adminAIUsage.thTask", { defaultValue: "Task" })}</th>
+                <th className="px-5 py-3 text-start">{t("adminAIUsage.thProvider", { defaultValue: "Provider" })}</th>
+                <th className="px-5 py-3 text-start">{t("adminAIUsage.thModel", { defaultValue: "Model" })}</th>
+                <th className="px-5 py-3 text-start">{t("adminAIUsage.thStatus", { defaultValue: "Status" })}</th>
+                <th className="px-5 py-3 text-end">{t("adminAIUsage.thCalls", { defaultValue: "Calls" })}</th>
+                <th className="px-5 py-3 text-end">{t("adminAIUsage.thAvgLatency", { defaultValue: "Avg latency" })}</th>
+                <th className="px-5 py-3 text-end">{t("adminAIUsage.thInputTokens", { defaultValue: "Input tokens" })}</th>
+                <th className="px-5 py-3 text-end">{t("adminAIUsage.thOutputTokens", { defaultValue: "Output tokens" })}</th>
+                <th className="px-5 py-3 text-end">{t("adminAIUsage.thCost", { defaultValue: "Cost" })}</th>
+                <th className="px-5 py-3 text-start">{t("adminAIUsage.thLastSeen", { defaultValue: "Last seen" })}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -276,7 +351,7 @@ export default function AdminAIUsage() {
                   <td colSpan={10} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-3">
                       <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-primary-700 animate-spin" />
-                      Loading AI usage…
+                      {t("adminAIUsage.loading", { defaultValue: "Loading AI usage…" })}
                     </div>
                   </td>
                 </tr>
@@ -284,7 +359,7 @@ export default function AdminAIUsage() {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
-                    No AI usage events found for the selected filters.
+                    {t("adminAIUsage.noEvents", { defaultValue: "No AI usage events found for the selected filters." })}
                   </td>
                 </tr>
               )}

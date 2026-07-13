@@ -154,8 +154,7 @@ const AskAI: React.FC<AskAIProps> = ({
                   style={
                     msg.role === "assistant" && isHebrewText(msg.content)
                       ? {
-                          fontFamily:
-                            "'Noto Sans Hebrew', 'Open Sans Hebrew', 'Segoe UI', system-ui, sans-serif",
+                          fontFamily: "var(--font-hebrew)",
                           fontSize: "0.95rem",
                           fontWeight: 500,
                           lineHeight: "1.6",
@@ -243,9 +242,7 @@ const AskAI: React.FC<AskAIProps> = ({
                 handleAsk(e);
               }
             }}
-            placeholder=""
-            rows={isFocused || hasHistory ? 2 : 1}
-            className={`w-full ps-4 pe-12 py-3 bg-slate-50/50 border-none rounded-xl focus:bg-white focus:ring-0 outline-none resize-none transition-all text-sm font-medium ${isHebrewText(question) ? 'font-["Noto Sans Hebrew", "Open Sans Hebrew", "Arial", sans-serif]' : ""} ${isFocused || hasHistory ? "min-h-[60px]" : "min-h-[48px]"}`}
+            className={`w-full ps-4 pe-12 py-3 bg-slate-50/50 border-none rounded-xl focus:bg-white focus:ring-0 outline-none resize-none transition-all text-sm font-medium ${isFocused || hasHistory ? "min-h-[60px]" : "min-h-[48px]"}`}
             disabled={isLoading}
           />
 

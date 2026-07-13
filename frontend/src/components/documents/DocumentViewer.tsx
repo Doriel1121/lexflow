@@ -306,7 +306,7 @@ export function DocumentViewer() {
                   lang={i18n.language}
                   style={{
                     fontFamily: isRTL
-                      ? "'Noto Sans Hebrew', 'Open Sans Hebrew', 'Assistant', system-ui, sans-serif"
+                      ? "var(--font-hebrew)"
                       : "var(--font-english)",
                   }}
                 >
@@ -376,7 +376,7 @@ export function DocumentViewer() {
                               lang={i18n.language}
                               style={{
                                 fontFamily: isRTL
-                                  ? "'Noto Sans Hebrew', 'Open Sans Hebrew', 'Assistant', system-ui, sans-serif"
+                                  ? "var(--font-hebrew)"
                                   : "var(--font-english)",
                               }}
                             >

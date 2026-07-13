@@ -10,7 +10,7 @@ export default function Documents() {
           {t("documents.title")}
         </h1>
         <p className="text-muted-foreground">
-          Manage, search, and analyze your legal files.
+          {t("documents.subTitle")}
         </p>
       </div>
       <DocumentList />

@@ -141,7 +141,7 @@ export function Sidebar() {
         {isAdmin && (
           <div className="mt-3 px-2 py-1 rounded-md bg-purple-500/20 border border-purple-500/30">
             <p className="text-xs text-purple-300 font-semibold text-center tracking-wide">
-              ⚙ System Admin Mode
+              {t("sidebar.systemAdminMode", { defaultValue: "⚙ System Admin Mode" })}
             </p>
           </div>
         )}

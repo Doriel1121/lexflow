@@ -25,17 +25,25 @@ i18n
     },
   });
 
-// Apply RTL direction whenever language changes
+// Apply RTL direction and language attributes whenever language changes
 i18n.on('languageChanged', (lng) => {
   const dir = lng === 'he' ? 'rtl' : 'ltr';
   document.documentElement.dir = dir;
   document.documentElement.lang = lng;
+  if (document.body) {
+    document.body.dir = dir;
+    document.body.lang = lng;
+  }
 });
 
-// Set initial direction
+// Set initial direction and language
 const savedLang = localStorage.getItem('lexflow_lang') || navigator.language.split('-')[0];
 const initialDir = savedLang === 'he' ? 'rtl' : 'ltr';
 document.documentElement.dir = initialDir;
 document.documentElement.lang = savedLang;
+if (document.body) {
+  document.body.dir = initialDir;
+  document.body.lang = savedLang;
+}
 
 export default i18n;

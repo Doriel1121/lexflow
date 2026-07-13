@@ -31,6 +31,22 @@
   font-family: 'Merriweather', Georgia, serif;
 }
 
+/* Ensure consistent Hebrew font rendering across all pages and elements when in Hebrew mode */
+html[lang="he"]:not(.font-mono),
+html[lang="he"] *:not(.font-mono),
+html[lang="he"] .font-serif,
+html[lang="he"] .font-sans,
+[lang="he"]:not(.font-mono),
+[lang="he"] *:not(.font-mono),
+[lang="he"] .font-serif,
+[lang="he"] .font-sans,
+[dir="rtl"]:not(.font-mono),
+[dir="rtl"] *:not(.font-mono),
+[dir="rtl"] .font-serif,
+[dir="rtl"] .font-sans {
+  font-family: var(--font-hebrew) !important;
+}
+
 /* ─── TipTap / ProseMirror editor styles ─────────────────────────────────── */
 .ProseMirror {
   outline: none;

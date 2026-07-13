@@ -71,7 +71,7 @@ export default function AdminOrganizations() {
     e?.preventDefault();
     const organizationId = Number(quotaOrgId);
     if (!Number.isInteger(organizationId) || organizationId <= 0) {
-      showSnackbar("Enter a valid organization ID", { type: "error" });
+      showSnackbar(t("adminOrganizations.enterValidOrgId", { defaultValue: "Enter a valid organization ID" }), { type: "error" });
       return;
     }
 
@@ -82,7 +82,7 @@ export default function AdminOrganizations() {
       hydrateQuotaForm(data);
     } catch (err: any) {
       setQuotaData(null);
-      showSnackbar(err.response?.data?.detail ?? "Failed to load AI quota settings", { type: "error" });
+      showSnackbar(err.response?.data?.detail ?? t("adminOrganizations.failedLoadQuotas", { defaultValue: "Failed to load AI quota settings" }), { type: "error" });
     } finally {
       setQuotaLoading(false);
     }
@@ -99,9 +99,9 @@ export default function AdminOrganizations() {
       });
       setQuotaData(data);
       hydrateQuotaForm(data);
-      showSnackbar("AI quota settings updated", { type: "success" });
+      showSnackbar(t("adminOrganizations.quotasUpdated", { defaultValue: "AI quota settings updated" }), { type: "success" });
     } catch (err: any) {
-      showSnackbar(err.response?.data?.detail ?? "Failed to update AI quota settings", { type: "error" });
+      showSnackbar(err.response?.data?.detail ?? t("adminOrganizations.failedUpdateQuotas", { defaultValue: "Failed to update AI quota settings" }), { type: "error" });
     } finally {
       setQuotaSaving(false);
     }
@@ -124,10 +124,10 @@ export default function AdminOrganizations() {
         admin_email: "",
         password: "",
       });
-      showSnackbar("Tenant provisioned successfully", { type: "success" });
+      showSnackbar(t("adminOrganizations.tenantProvisionedSuccess", { defaultValue: "Tenant provisioned successfully" }), { type: "success" });
       loadStats();
     } catch (err: any) {
-      showSnackbar(err.response?.data?.detail ?? "Failed to provision tenant", {
+      showSnackbar(err.response?.data?.detail ?? t("adminOrganizations.tenantProvisionFailed", { defaultValue: "Failed to provision tenant" }), {
         type: "error",
       });
     } finally {
@@ -141,11 +141,13 @@ export default function AdminOrganizations() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
-            Tenant Management
+            {t("adminOrganizations.title", { defaultValue: "Tenant Management" })}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
-            Provision new tenants · Aggregated stats only · No tenant
-            identifiers displayed
+            {t("adminOrganizations.subtitle", {
+              defaultValue:
+                "Provision new tenants · Aggregated stats only · No tenant identifiers displayed",
+            })}
           </p>
         </div>
         <button
@@ -153,7 +155,7 @@ export default function AdminOrganizations() {
           className="flex items-center gap-2 bg-primary hover:bg-primary-800 text-white px-4 py-2 rounded-lg font-medium transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Provision Tenant
+          {t("adminOrganizations.provisionTenant", { defaultValue: "Provision Tenant" })}
         </button>
       </div>
 
@@ -161,11 +163,11 @@ export default function AdminOrganizations() {
       {tenantStats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Total Tenants", value: tenantStats.total_tenants },
-            { label: "Active Tenants", value: tenantStats.active_tenants },
-            { label: "Inactive Tenants", value: tenantStats.inactive_tenants },
+            { label: t("adminOrganizations.totalTenants", { defaultValue: "Total Tenants" }), value: tenantStats.total_tenants },
+            { label: t("adminOrganizations.activeTenants", { defaultValue: "Active Tenants" }), value: tenantStats.active_tenants },
+            { label: t("adminOrganizations.inactiveTenants", { defaultValue: "Inactive Tenants" }), value: tenantStats.inactive_tenants },
             {
-              label: "New This Month",
+              label: t("adminOrganizations.newThisMonth", { defaultValue: "New This Month" }),
               value: tenantStats.new_tenants_this_month,
             },
           ].map(({ label, value }) => (
@@ -192,9 +194,14 @@ export default function AdminOrganizations() {
             <Shield className="h-5 w-5 text-blue-700" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-800">AI Quota Management</h2>
+            <h2 className="text-lg font-semibold text-slate-800">
+              {t("adminOrganizations.aiQuotaManagement", { defaultValue: "AI Quota Management" })}
+            </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Support workflow for a known tenant ID. This is intentionally not a tenant directory.
+              {t("adminOrganizations.aiQuotaDesc", {
+                defaultValue:
+                  "Support workflow for a known tenant ID. This is intentionally not a tenant directory.",
+              })}
             </p>
           </div>
         </div>
@@ -205,7 +212,7 @@ export default function AdminOrganizations() {
             min="1"
             value={quotaOrgId}
             onChange={(e) => setQuotaOrgId(e.target.value)}
-            placeholder="Organization ID"
+            placeholder={t("adminOrganizations.orgIdPlaceholder", { defaultValue: "Organization ID" })}
             className="w-full sm:max-w-xs px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700"
           />
           <button
@@ -214,7 +221,7 @@ export default function AdminOrganizations() {
             className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-800 disabled:opacity-50 rounded-lg transition-colors"
           >
             {quotaLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            Load Quotas
+            {t("adminOrganizations.loadQuotas", { defaultValue: "Load Quotas" })}
           </button>
         </form>
 
@@ -222,13 +229,13 @@ export default function AdminOrganizations() {
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
               <p className="text-sm font-semibold text-slate-800">{quotaData.organization.name}</p>
-              <p className="text-xs text-slate-500">ID {quotaData.organization.id} · {quotaData.organization.slug} · {quotaData.organization.is_active ? "Active" : "Inactive"}</p>
+              <p className="text-xs text-slate-500">ID {quotaData.organization.id} · {quotaData.organization.slug} · {quotaData.organization.is_active ? t("status.active", { defaultValue: "Active" }) : t("status.inactive", { defaultValue: "Inactive" })}</p>
             </div>
             <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                ["Daily AI calls", "ai_daily_call_limit", "0 disables the limit"],
-                ["Monthly drafts", "ai_monthly_drafting_limit", "0 disables the limit"],
-                ["Monthly tokens", "ai_monthly_token_limit", "Blank means unlimited"],
+                [t("adminOrganizations.dailyAiCalls", { defaultValue: "Daily AI calls" }), "ai_daily_call_limit", t("adminOrganizations.dailyAiCallsHelper", { defaultValue: "0 disables the limit" })],
+                [t("adminOrganizations.monthlyDrafts", { defaultValue: "Monthly drafts" }), "ai_monthly_drafting_limit", t("adminOrganizations.monthlyDraftsHelper", { defaultValue: "0 disables the limit" })],
+                [t("adminOrganizations.monthlyTokens", { defaultValue: "Monthly tokens" }), "ai_monthly_token_limit", t("adminOrganizations.monthlyTokensHelper", { defaultValue: "Blank means unlimited" })],
               ].map(([label, key, helper]) => (
                 <label key={key} className="block">
                   <span className="text-sm font-medium text-slate-700">{label}</span>
@@ -251,7 +258,7 @@ export default function AdminOrganizations() {
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-800 disabled:opacity-50 rounded-lg transition-colors"
               >
                 {quotaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save Quotas
+                {t("adminOrganizations.saveQuotas", { defaultValue: "Save Quotas" })}
               </button>
             </div>
           </div>
@@ -266,13 +273,13 @@ export default function AdminOrganizations() {
           </div>
           <div>
             <h3 className="font-semibold text-amber-800 text-sm">
-              Data Isolation Policy
+              {t("adminOrganizations.isolationPolicy", { defaultValue: "Data Isolation Policy" })}
             </h3>
             <p className="text-amber-700 text-sm mt-1 leading-relaxed">
-              Individual tenant records (names, slugs, member lists) are not
-              accessible from the system admin panel. This enforces multi-tenant
-              data isolation. To manage a specific tenant's settings, use the
-              Org Admin role within that organization.
+              {t("adminOrganizations.isolationDesc", {
+                defaultValue:
+                  "Individual tenant records (names, slugs, member lists) are not accessible from the system admin panel. This enforces multi-tenant data isolation. To manage a specific tenant's settings, use the Org Admin role within that organization.",
+              })}
             </p>
           </div>
         </div>
@@ -284,7 +291,7 @@ export default function AdminOrganizations() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
               <h3 className="font-semibold text-lg text-slate-800">
-                Provision New Tenant
+                {t("adminOrganizations.provisionNewTenantModalTitle", { defaultValue: "Provision New Tenant" })}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -318,12 +325,12 @@ export default function AdminOrganizations() {
 
               <div className="pt-2 border-t border-slate-100">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                  First Admin User
+                  {t("adminOrganizations.firstAdminUser")}
                 </p>
                 <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Full Name
+                      {t("adminOrganizations.fullName")}
                     </label>
                     <input
                       type="text"
@@ -340,7 +347,7 @@ export default function AdminOrganizations() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Email
+                      {t("adminOrganizations.email")}
                     </label>
                     <input
                       type="email"
@@ -358,9 +365,9 @@ export default function AdminOrganizations() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Password{" "}
+                      {t("adminOrganizations.password")}{" "}
                       <span className="text-slate-400 font-normal">
-                        (leave blank to auto-generate)
+                        {t("adminOrganizations.leaveBlank", { defaultValue: "(leave blank to auto-generate)" })}
                       </span>
                     </label>
                     <input
@@ -382,7 +389,7 @@ export default function AdminOrganizations() {
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                 >
-                  Cancel
+                  {t("adminOrganizations.cancel")}
                 </button>
                 <button
                   type="submit"
@@ -391,10 +398,10 @@ export default function AdminOrganizations() {
                 >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Provisioning…
+                      <Loader2 className="h-4 w-4 animate-spin" /> {t("adminOrganizations.provisioning")}
                     </>
                   ) : (
-                    "Provision Tenant"
+                    t("adminOrganizations.provisionTenant")
                   )}
                 </button>
               </div>

@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Users, UserCheck, UserPlus, Activity, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { adminService, UserStats, AuditLogEntry } from '../../../services/adminService';
@@ -39,6 +40,7 @@ function StatCard({ label, value, icon: Icon, color }: {
 }
 
 export default function AdminUsers() {
+  const { t } = useTranslation();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,7 @@ export default function AdminUsers() {
       setUserStats(dashData.user_stats);
       setAuditLogs(logsData.logs);
     } catch (err: any) {
-      setError(err?.response?.data?.detail ?? 'Failed to load user metrics.');
+      setError(err?.response?.data?.detail ?? t('adminUsers.loadError', { defaultValue: 'Failed to load user metrics.' }));
     } finally {
       setLoading(false);
     }
@@ -74,14 +76,14 @@ export default function AdminUsers() {
   if (error || !userStats) {
     return (
       <div className="p-8 text-center text-red-500 font-medium">
-        {error ?? 'An error occurred.'}{' '}
-        <button onClick={load} className="underline ml-2">Retry</button>
+        {error ?? t('adminUsers.error', { defaultValue: 'An error occurred.' })}{' '}
+        <button onClick={load} className="underline ml-2">{t('adminUsers.retry', { defaultValue: 'Retry' })}</button>
       </div>
     );
   }
 
   const roleChartData = Object.entries(userStats.users_by_role).map(([role, count]) => ({
-    name: role.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    name: t(`roles.${role}`, { defaultValue: role.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) }),
     count,
   }));
 
@@ -92,32 +94,32 @@ export default function AdminUsers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
-            User Analytics
+            {t('adminUsers.title', { defaultValue: 'User Analytics' })}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
-            Aggregated user statistics · No personal data displayed
+            {t('adminUsers.subtitle', { defaultValue: 'Aggregated user statistics · No personal data displayed' })}
           </p>
         </div>
         <button
           onClick={load}
           className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
         >
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          <RefreshCw className="h-3.5 w-3.5" /> {t('common.refresh', { defaultValue: 'Refresh' })}
         </button>
       </div>
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Users"        value={userStats.total_users.toLocaleString()}     icon={Users}      color="text-blue-600" />
-        <StatCard label="Active Today"        value={userStats.active_users_today.toLocaleString()} icon={UserCheck} color="text-emerald-600" />
-        <StatCard label="New Today"           value={userStats.new_users_today.toLocaleString()}  icon={UserPlus}  color="text-primary-700" />
-        <StatCard label="Avg Users / Tenant" value={userStats.avg_users_per_tenant}               icon={Activity}  color="text-amber-600" />
+        <StatCard label={t('adminUsers.totalUsers', { defaultValue: 'Total Users' })}        value={userStats.total_users.toLocaleString()}     icon={Users}      color="text-blue-600" />
+        <StatCard label={t('adminUsers.activeToday', { defaultValue: 'Active Today' })}        value={userStats.active_users_today.toLocaleString()} icon={UserCheck} color="text-emerald-600" />
+        <StatCard label={t('adminUsers.newToday', { defaultValue: 'New Today' })}           value={userStats.new_users_today.toLocaleString()}  icon={UserPlus}  color="text-primary-700" />
+        <StatCard label={t('adminUsers.avgUsersPerTenant', { defaultValue: 'Avg Users / Tenant' })} value={userStats.avg_users_per_tenant}               icon={Activity}  color="text-amber-600" />
       </div>
 
       {/* Role distribution chart */}
       <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-800 mb-1">Role Distribution</h2>
-        <p className="text-sm text-slate-500 mb-5">System-wide user count per role type</p>
+        <h2 className="text-lg font-semibold text-slate-800 mb-1">{t('adminUsers.roleDistribution', { defaultValue: 'Role Distribution' })}</h2>
+        <p className="text-sm text-slate-500 mb-5">{t('adminUsers.roleDesc', { defaultValue: 'System-wide user count per role type' })}</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {roleChartData.map(({ name, count }) => (
             <div
@@ -139,7 +141,7 @@ export default function AdminUsers() {
             <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
             <Tooltip
               contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}
-              formatter={(v: number) => [v.toLocaleString(), 'Users']}
+              formatter={(v: number) => [v.toLocaleString(), t('adminUsers.users', { defaultValue: 'Users' })]}
             />
             <Bar dataKey="count" fill="#334e68" radius={[4,4,0,0]} />
           </BarChart>
@@ -149,28 +151,28 @@ export default function AdminUsers() {
       {/* Recent system activity (anonymized) */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-semibold text-slate-800">Recent System Activity</h2>
+          <h2 className="text-lg font-semibold text-slate-800">{t('adminUsers.recentActivity', { defaultValue: 'Recent System Activity' })}</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            User IDs are hashed · No personal data is shown
+            {t('adminUsers.recentActivityDesc', { defaultValue: 'User IDs are hashed · No personal data is shown' })}
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
               <tr>
-                <th className="px-6 py-3 text-start">Timestamp</th>
-                <th className="px-6 py-3 text-start">User (hashed)</th>
-                <th className="px-6 py-3 text-start">Event</th>
-                <th className="px-6 py-3 text-start">Method</th>
-                <th className="px-6 py-3 text-start">Path</th>
-                <th className="px-6 py-3 text-start">Status</th>
+                <th className="px-6 py-3 text-start">{t('adminUsers.timestamp', { defaultValue: 'Timestamp' })}</th>
+                <th className="px-6 py-3 text-start">{t('adminUsers.userHashed', { defaultValue: 'User (hashed)' })}</th>
+                <th className="px-6 py-3 text-start">{t('adminUsers.event', { defaultValue: 'Event' })}</th>
+                <th className="px-6 py-3 text-start">{t('adminUsers.method', { defaultValue: 'Method' })}</th>
+                <th className="px-6 py-3 text-start">{t('adminUsers.path', { defaultValue: 'Path' })}</th>
+                <th className="px-6 py-3 text-start">{t('adminUsers.status', { defaultValue: 'Status' })}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {auditLogs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
-                    No audit events recorded yet
+                    {t('adminUsers.noEvents', { defaultValue: 'No audit events recorded yet' })}
                   </td>
                 </tr>
               ) : auditLogs.map(log => (

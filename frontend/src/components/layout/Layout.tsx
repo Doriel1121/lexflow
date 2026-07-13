@@ -8,7 +8,7 @@ export function Layout() {
   const isRTL = i18n.language === 'he';
 
   return (
-    <div className="min-h-screen bg-slate-50 flex" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-slate-50 flex" dir={isRTL ? 'rtl' : 'ltr'} lang={i18n.language}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-h-screen ps-60">
         <Header />

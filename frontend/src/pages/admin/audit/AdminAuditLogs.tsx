@@ -121,7 +121,7 @@ export default function AdminAuditLogs() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
-            {t("adminsuperAdminAuditAudit.title", { defaultValue: "Audit Logs" })}
+            {t("superAdminAudit.title", { defaultValue: "Audit Logs" })}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
             {t("superAdminAudit.subtitle", {
@@ -129,7 +129,10 @@ export default function AdminAuditLogs() {
             })}
             {total > 0 && (
               <span className="ml-2 text-slate-400">
-                · {total.toLocaleString()} total records
+                {t("superAdminAudit.totalRecords", {
+                  count: total,
+                  defaultValue: `· ${total.toLocaleString()} total records`,
+                })}
               </span>
             )}
           </p>
@@ -145,7 +148,7 @@ export default function AdminAuditLogs() {
             }}
             className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All events</option>
+            <option value="">{t("superAdminAudit.allEvents", { defaultValue: "All events" })}</option>
             <option value="POST">POST</option>
             <option value="PUT">PUT / PATCH</option>
             <option value="DELETE">DELETE</option>
@@ -157,8 +160,10 @@ export default function AdminAuditLogs() {
       <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg shrink-0">
         <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
         <p className="text-xs text-amber-700 font-medium">
-          User IDs are replaced with 12-character SHA-256 hashes. No personal
-          data is exposed in this view.
+          {t("superAdminAudit.privacyNotice", {
+            defaultValue:
+              "User IDs are replaced with 12-character SHA-256 hashes. No personal data is exposed in this view.",
+          })}
         </p>
       </div>
 
@@ -170,7 +175,7 @@ export default function AdminAuditLogs() {
             <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder={t("auditLogs.admin.searchPlaceholder")}
+              placeholder={t("superAdminAudit.searchPlaceholder", { defaultValue: "Search event, resource, path or IP..." })}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full ps-9 pe-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-700 transition-all"
@@ -183,13 +188,13 @@ export default function AdminAuditLogs() {
           <table className="w-full text-sm text-start">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0 z-10">
               <tr>
-                <th className="px-5 py-3 text-start">Timestamp</th>
-                <th className="px-5 py-3 text-start">User (hashed)</th>
-                <th className="px-5 py-3 text-start">Event</th>
-                <th className="px-5 py-3 text-start">Method</th>
-                <th className="px-5 py-3 text-start">Path</th>
-                <th className="px-5 py-3 text-start">Status</th>
-                <th className="px-5 py-3 text-start">IP</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.timestamp", { defaultValue: "Timestamp" })}</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.userHashed", { defaultValue: "User (hashed)" })}</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.event", { defaultValue: "Event" })}</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.method", { defaultValue: "Method" })}</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.path", { defaultValue: "Path" })}</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.status", { defaultValue: "Status" })}</th>
+                <th className="px-5 py-3 text-start">{t("superAdminAudit.ip", { defaultValue: "IP" })}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -202,7 +207,7 @@ export default function AdminAuditLogs() {
                   >
                     <div className="flex flex-col items-center gap-3">
                       <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-primary-700 animate-spin" />
-                      Loading audit logs…
+                      {t("superAdminAudit.loading", { defaultValue: "Loading audit logs…" })}
                     </div>
                   </td>
                 </tr>
@@ -292,11 +297,11 @@ export default function AdminAuditLogs() {
             <div ref={observerTarget} className="py-4 text-center">
               {fetchingMore && (
                 <span className="text-sm text-slate-400 animate-pulse">
-                  Loading more…
+                  {t("superAdminAudit.loadingMore", { defaultValue: "Loading more…" })}
                 </span>
               )}
               {!hasMore && logs.length > 0 && (
-                <span className="text-xs text-slate-300">End of records</span>
+                <span className="text-xs text-slate-300">{t("superAdminAudit.endOfRecords", { defaultValue: "End of records" })}</span>
               )}
             </div>
           )}

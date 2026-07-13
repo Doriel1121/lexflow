@@ -68,7 +68,7 @@ const SearchPage: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+        <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight flex items-center gap-2">
           <FileSearch className="h-6 w-6 text-primary" />
           {t("searchPage.title")}
         </h1>

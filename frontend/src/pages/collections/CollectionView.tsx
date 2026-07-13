@@ -107,7 +107,7 @@ export function CollectionView() {
             >
               {getCategoryIcon(tag.category)}
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
               {tag.name}
             </h1>
           </div>

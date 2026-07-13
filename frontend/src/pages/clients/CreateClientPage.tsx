@@ -83,7 +83,7 @@ export const CreateClientPage: React.FC = () => {
       </div>
 
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">
+        <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
           Onboard New Client
         </h1>
         <p className="text-slate-500 mt-2">

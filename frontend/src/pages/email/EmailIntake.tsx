@@ -199,7 +199,7 @@ export default function EmailIntake() {
             <Zap className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-800 leading-tight">
+            <h1 className="text-2xl font-serif font-bold text-slate-800 tracking-tight">
               {t("emailIntake.title")}
             </h1>
             <p className="text-xs text-gray-500">{t("emailIntake.subtitle")}</p>

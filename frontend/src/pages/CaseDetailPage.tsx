@@ -470,7 +470,7 @@ const CaseDetailPage: React.FC = () => {
                   {caseData.status}
                 </span>
               </div>
-              <h1 className="text-2xl font-serif font-bold text-slate-900">
+              <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
                 {caseData.title}
               </h1>
             </div>

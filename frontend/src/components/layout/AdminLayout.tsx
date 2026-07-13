@@ -21,7 +21,7 @@ export function AdminLayout() {
   const isRTL = i18n.language === 'he';
 
   return (
-    <div className="flex min-h-screen bg-slate-50" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="flex min-h-screen bg-slate-50" dir={isRTL ? 'rtl' : 'ltr'} lang={i18n.language}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-h-screen ps-60">
         <AdminHeader />
