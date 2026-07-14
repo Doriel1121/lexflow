@@ -1,10 +1,5 @@
 /**
  * pages/email/EmailIntake.tsx  —  AI Intake Center
- * ==================================================
- * Layout matches the Angular reference:
- *  - Topbar with title, summary stats, refresh button
- *  - Left list (380px) with tab filters + item cards
- *  - Right detail panel (flex-1) with full AI analysis
  */
 import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -18,6 +13,12 @@ import {
   CheckCircle2,
   Link2,
   Settings,
+  SlidersHorizontal,
+  X,
+  ArrowRight,
+  FileCheck2,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import {
@@ -30,67 +31,82 @@ import { IntakeItemRow } from "../../components/intake/IntakeItemRow";
 import { IntakeDetailPanel } from "../../components/intake/IntakeDetailPanel";
 import { useSnackbar } from "../../context/SnackbarContext";
 
-// ── Tab definitions ───────────────────────────────────────────────────────
-
 const TABS: {
   key: IntakeStatus | "all";
-  label: string;
+  labelKey: string;
+  descriptionKey: string;
   icon: React.ElementType;
   summaryKey?: keyof IntakeSummary;
 }[] = [
-  { key: "all", label: "All", icon: Inbox },
+  {
+    key: "all",
+    labelKey: "all",
+    descriptionKey: "allDesc",
+    icon: Inbox,
+  },
   {
     key: "needs_review",
-    label: "Needs Review",
+    labelKey: "needsReview",
+    descriptionKey: "needsReviewDesc",
     icon: Clock,
     summaryKey: "needs_review",
   },
   {
     key: "requires_action",
-    label: "Requires Action",
+    labelKey: "requiresAction",
+    descriptionKey: "requiresActionDesc",
     icon: AlertTriangle,
     summaryKey: "requires_action",
   },
   {
     key: "auto_processed",
-    label: "Auto Processed",
+    labelKey: "autoProcessed",
+    descriptionKey: "autoProcessedDesc",
     icon: Zap,
     summaryKey: "auto_processed",
   },
   {
     key: "completed",
-    label: "Completed",
+    labelKey: "completed",
+    descriptionKey: "completedDesc",
     icon: CheckCircle2,
     summaryKey: "completed",
   },
 ];
 
-// ── Empty state ───────────────────────────────────────────────────────────
+function getTabCount(
+  summary: IntakeSummary | null,
+  tab: (typeof TABS)[number],
+): number {
+  if (!summary) return 0;
+  if (tab.key === "all") return summary.total;
+  return tab.summaryKey ? summary[tab.summaryKey] : 0;
+}
 
 function EmptyState({ onConnect }: { onConnect: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
-      <div className="h-20 w-20 rounded-2xl bg-indigo-100 flex items-center justify-center mb-6">
-        <Zap className="h-10 w-10 text-indigo-500" />
+    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <div className="h-16 w-16 rounded-2xl bg-primary-50 border border-primary-100 flex items-center justify-center mb-5">
+        <Mail className="h-8 w-8 text-primary-700" />
       </div>
-      <h3 className="text-lg font-bold text-gray-800 mb-2">
+      <h3 className="text-lg font-bold text-slate-800 mb-2">
         {t("emailIntake.noItems")}
       </h3>
-      <p className="text-gray-500 text-sm max-w-xs leading-relaxed mb-8">
+      <p className="text-slate-500 text-sm max-w-sm leading-relaxed mb-7">
         {t("emailIntake.connectEmail")}
       </p>
       <div className="flex flex-col gap-3 w-full max-w-xs">
         <button
           onClick={onConnect}
-          className="flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors"
+          className="flex items-center justify-center gap-2 px-5 py-3 bg-primary-800 hover:bg-primary-900 text-white font-semibold rounded-lg transition-colors"
         >
           <Link2 className="h-4 w-4" />
           {t("emailIntake.connectEmailBtn")}
         </button>
         <button
           onClick={onConnect}
-          className="flex items-center justify-center gap-2 px-5 py-3 border border-gray-200 hover:bg-gray-50 text-gray-700 font-medium rounded-xl transition-colors text-sm"
+          className="flex items-center justify-center gap-2 px-5 py-3 border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium rounded-lg transition-colors text-sm"
         >
           <Settings className="h-4 w-4" />
           {t("emailIntake.configureInbound")}
@@ -100,7 +116,47 @@ function EmptyState({ onConnect }: { onConnect: () => void }) {
   );
 }
 
-// ── Spinner ───────────────────────────────────────────────────────────────
+function MetricCard({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  icon: React.ElementType;
+  tone: "blue" | "orange" | "emerald" | "slate";
+}) {
+  const toneClass = {
+    blue: "bg-blue-50 text-blue-700 border-blue-100",
+    orange: "bg-orange-50 text-orange-700 border-orange-100",
+    emerald: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    slate: "bg-slate-50 text-slate-700 border-slate-100",
+  }[tone];
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {label}
+          </p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+            {value}
+          </p>
+        </div>
+        <div
+          className={cn(
+            "h-10 w-10 rounded-lg border flex items-center justify-center",
+            toneClass,
+          )}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Spinner({ className }: { className?: string }) {
   return (
@@ -127,8 +183,6 @@ function Spinner({ className }: { className?: string }) {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────
-
 export default function EmailIntake() {
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
@@ -138,6 +192,7 @@ export default function EmailIntake() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<IntakeStatus | "all">("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [showFilters, setShowFilters] = useState(true);
 
   const load = useCallback(
     async (silent = false) => {
@@ -156,17 +211,16 @@ export default function EmailIntake() {
         setRefreshing(false);
       }
     },
-    [activeTab],
+    [activeTab, showSnackbar],
   );
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // auto-refresh every 30 s
   useEffect(() => {
-    const t = setInterval(() => load(true), 30_000);
-    return () => clearInterval(t);
+    const refreshTimer = setInterval(() => load(true), 30_000);
+    return () => clearInterval(refreshTimer);
   }, [load]);
 
   const handleQuickApprove = async (item: IntakeItem) => {
@@ -180,77 +234,99 @@ export default function EmailIntake() {
         type: "success",
       });
       load(true);
-      if (selectedId === item.id) setSelectedId(null);
+      if (selectedId === item.id) {
+        setSelectedId(null);
+        setShowFilters(true);
+      }
     } catch {
       showSnackbar("Failed to approve item", { type: "error" });
     }
   };
 
   const showEmpty = !loading && items.length === 0;
+  const activeTabMeta = TABS.find((tab) => tab.key === activeTab) ?? TABS[0];
+  const isReviewing = selectedId !== null;
 
   return (
-    /* Stretch to full viewport height, no outer padding */
-    <div className="h-full flex flex-col -mx-8 -my-6 bg-white">
-      {/* ── Topbar ──────────────────────────────────────────────────── */}
-      <header className="h-16 border-b border-gray-200 flex items-center justify-between px-6 shrink-0 bg-white z-10">
-        {/* Left: icon + title + stats */}
-        <div className="flex items-center gap-4">
-          <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
-            <Zap className="w-5 h-5" />
-          </div>
+    <div className="h-full flex flex-col gap-5">
+      <header className="flex flex-col gap-5">
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-serif font-bold text-slate-800 tracking-tight">
               {t("emailIntake.title")}
             </h1>
-            <p className="text-xs text-gray-500">{t("emailIntake.subtitle")}</p>
+            <p className="text-sm text-slate-500 mt-1">
+              {t("emailIntake.subtitle")}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden md:flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
+              <Sparkles className="h-4 w-4 shrink-0" />
+              {t("emailIntake.workflowHint")}
+            </div>
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm disabled:opacity-60"
+            >
+              <RefreshCw
+                className={cn("w-4 h-4", refreshing && "animate-spin")}
+              />
+              {t("emailIntake.refresh")}
+            </button>
           </div>
         </div>
 
-        {/* Right: summary counters + refresh */}
-        <div className="flex items-center gap-3">
-          {summary && (
-            <div className="flex items-center gap-4 mr-4 text-sm font-medium">
-              <span className="text-gray-600">
-                <strong className="text-gray-900">{summary.total}</strong>{" "}
-                {t("emailIntake.total")}
-              </span>
-              {summary.urgent > 0 && (
-                <span className="text-red-600 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-red-600 inline-block" />
-                  {summary.urgent} {t("emailIntake.urgent")}
-                </span>
-              )}
-              {summary.requires_action > 0 && (
-                <span className="text-orange-500 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />
-                  {summary.requires_action} {t("emailIntake.requireAction")}
-                </span>
-              )}
-            </div>
-          )}
-          <button
-            onClick={() => load(true)}
-            disabled={refreshing}
-            className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <RefreshCw
-              className={cn("w-4 h-4", refreshing && "animate-spin")}
-            />
-            {t("emailIntake.refresh")}
-          </button>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <MetricCard
+            label={t("emailIntake.total")}
+            value={summary?.total ?? 0}
+            icon={Inbox}
+            tone="slate"
+          />
+          <MetricCard
+            label={t("emailIntake.needsReview")}
+            value={summary?.needs_review ?? 0}
+            icon={Clock}
+            tone="blue"
+          />
+          <MetricCard
+            label={t("emailIntake.requiresAction")}
+            value={summary?.requires_action ?? 0}
+            icon={AlertTriangle}
+            tone="orange"
+          />
+          <MetricCard
+            label={t("emailIntake.completed")}
+            value={summary?.completed ?? 0}
+            icon={ShieldCheck}
+            tone="emerald"
+          />
         </div>
       </header>
 
-      {/* ── Split pane ──────────────────────────────────────────────── */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* ── LEFT: Master list (380px fixed) ─────────────────────── */}
-        <div className="w-[380px] shrink-0 border-r border-gray-200 bg-white flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-          {/* Tab strip */}
-          <div className="px-4 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto">
+      <div
+        className={cn(
+          "min-h-0 flex-1 grid grid-cols-1 gap-4 transition-all",
+          showFilters
+            ? "xl:grid-cols-[260px_minmax(320px,380px)_1fr]"
+            : isReviewing
+              ? "xl:grid-cols-[minmax(280px,340px)_1fr]"
+              : "xl:grid-cols-[minmax(340px,420px)_1fr]",
+        )}
+      >
+        {showFilters && (
+        <aside className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden xl:min-h-0">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t("emailIntake.queueStatus")}
+            </p>
+          </div>
+          <nav className="p-2 space-y-1">
             {TABS.map((tab) => {
               const Icon = tab.icon;
-              const count =
-                tab.summaryKey && summary ? summary[tab.summaryKey] : null;
+              const count = getTabCount(summary, tab);
               const isActive = activeTab === tab.key;
               return (
                 <button
@@ -260,43 +336,93 @@ export default function EmailIntake() {
                     setSelectedId(null);
                   }}
                   className={cn(
-                    "pb-3 border-b-2 font-medium text-sm flex items-center gap-1.5 whitespace-nowrap px-2 transition-colors",
+                    "w-full rounded-lg border px-3 py-3 text-left transition-colors",
                     isActive
-                      ? "border-indigo-600 text-indigo-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700",
+                      ? "border-primary-200 bg-primary-50 text-primary-900 shadow-sm"
+                      : "border-transparent text-slate-600 hover:bg-slate-50",
                   )}
                 >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                  {count !== null && count > 0 && (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <Icon
+                        className={cn(
+                          "mt-0.5 h-4 w-4 shrink-0",
+                          isActive ? "text-primary-700" : "text-slate-400",
+                        )}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">
+                          {t(`emailIntake.${tab.labelKey}`)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {t(`emailIntake.${tab.descriptionKey}`)}
+                        </p>
+                      </div>
+                    </div>
                     <span
                       className={cn(
-                        "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                        "text-xs font-bold px-2 py-0.5 rounded-full tabular-nums",
                         isActive
-                          ? "bg-indigo-100 text-indigo-700"
-                          : "bg-gray-100 text-gray-600",
+                          ? "bg-white text-primary-800"
+                          : "bg-slate-100 text-slate-600",
                       )}
                     >
                       {count}
                     </span>
-                  )}
+                  </div>
                 </button>
               );
             })}
+          </nav>
+        </aside>
+        )}
+
+        <section className={cn(
+          "rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[520px] xl:min-h-0 overflow-hidden",
+          isReviewing && !showFilters && "xl:max-w-[340px]",
+        )}>
+          <div className="border-b border-slate-200 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {!showFilters && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Filters
+                    </button>
+                  )}
+                  <h2 className="text-sm font-bold text-slate-800 truncate">
+                    {t(`emailIntake.${activeTabMeta.labelKey}`)}
+                  </h2>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {t(`emailIntake.${activeTabMeta.descriptionKey}`)}
+                </p>
+              </div>
+              {summary?.urgent ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {summary.urgent} {t("emailIntake.urgent")}
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          {/* Item list */}
-          <div className="flex-1 overflow-y-auto pt-3">
+          <div className="flex-1 overflow-y-auto py-3">
             {loading ? (
               <div className="flex items-center justify-center h-48">
-                <Spinner className="h-8 w-8 text-indigo-400" />
+                <Spinner className="h-8 w-8 text-primary-500" />
               </div>
             ) : showEmpty ? (
               <EmptyState
                 onConnect={() => (window.location.href = "/settings")}
               />
             ) : items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+              <div className="flex flex-col items-center justify-center h-48 text-slate-400">
                 <CheckCircle2 className="h-10 w-10 mb-3 text-emerald-400" />
                 <p className="text-sm font-medium">
                   {t("emailIntake.allClear")}
@@ -308,40 +434,91 @@ export default function EmailIntake() {
                   key={item.id}
                   item={item}
                   isSelected={selectedId === item.id}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setShowFilters(false);
+                  }}
                   onQuickApprove={handleQuickApprove}
                 />
               ))
             )}
           </div>
-        </div>
+        </section>
 
-        {/* ── RIGHT: Detail view ───────────────────────────────────── */}
-        <div className="flex-1 relative overflow-hidden">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm relative overflow-hidden min-h-[620px] xl:min-h-0">
           {selectedId ? (
-            <IntakeDetailPanel
+            <>
+              <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
+                {!showFilters && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(true)}
+                    className="hidden xl:inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Show filters
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(null);
+                    setShowFilters(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Close
+                </button>
+              </div>
+              <IntakeDetailPanel
               itemId={selectedId}
               onConfirmed={() => {
                 setSelectedId(null);
+                setShowFilters(true);
                 load(true);
               }}
               onDismissed={() => {
                 setSelectedId(null);
+                setShowFilters(true);
                 load(true);
               }}
-            />
+              />
+            </>
           ) : (
-            <div className="flex-1 h-full flex flex-col items-center justify-center text-gray-400 bg-slate-50">
-              <Mail className="h-12 w-12 mb-4 text-gray-300" />
-              <p className="text-sm font-medium text-gray-500">
+            <div className="h-full flex flex-col items-center justify-center text-center bg-slate-50 px-8">
+              <div className="h-16 w-16 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-5">
+                <FileCheck2 className="h-8 w-8 text-slate-400" />
+              </div>
+              <p className="text-base font-bold text-slate-700">
                 {t("emailIntake.selectItem")}
               </p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-sm text-slate-500 mt-2 max-w-sm">
                 {t("emailIntake.analysisWillAppear")}
               </p>
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 max-w-2xl w-full">
+                {[
+                  ["reviewStepInbox", Inbox],
+                  ["reviewStepAi", Sparkles],
+                  ["reviewStepRoute", ArrowRight],
+                ].map(([key, Icon]) => {
+                  const StepIcon = Icon as React.ElementType;
+                  return (
+                    <div
+                      key={key as string}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-left"
+                    >
+                      <StepIcon className="h-4 w-4 text-primary-700 mb-2" />
+                      <p className="text-xs font-semibold text-slate-700">
+                        {t(`emailIntake.${key}`)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

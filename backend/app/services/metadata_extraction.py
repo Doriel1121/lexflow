@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict
+from typing import List, Dict, Any
 from datetime import datetime
 
 
@@ -81,6 +81,61 @@ class MetadataExtractionService:
         except Exception as e:
             # Error tolerant - return empty metadata on failure
             return {"dates": [], "entities": [], "amounts": [], "case_numbers": [], "routing_ids": [], "routing_projects": [], "routing_organizations": []}
+
+    def classify_document(self, text: str, filename: str = "") -> str:
+        """Fast rule-based classification used when the LLM is slow or vague."""
+        haystack = f"{filename}\n{text or ''}".lower()
+        rules = [
+            ("Statement of Claim", ["statement of claim", "complaint", "plaintiff", "defendant"]),
+            ("Motion", ["motion", "application", "petition", "בקשה"]),
+            ("Court Decision", ["decision", "order", "judgment", "ruling", "פסק דין", "החלטה"]),
+            ("Contract", ["agreement", "contract", "terms and conditions", "הסכם", "חוזה"]),
+            ("Invoice", ["invoice", "tax invoice", "amount due", "חשבונית"]),
+            ("Legal Correspondence", ["dear counsel", "correspondence", "please review", "response deadline", "re:"]),
+            ("Power of Attorney", ["power of attorney", "ייפוי כוח"]),
+            ("Affidavit", ["affidavit", "sworn", "תצהיר"]),
+        ]
+        for label, needles in rules:
+            if any(needle in haystack for needle in needles):
+                return label
+
+        suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+        if suffix in {"jpg", "jpeg", "png", "tif", "tiff"}:
+            return "Scanned Image"
+        if suffix in {"pdf", "doc", "docx"}:
+            return "Legal Document"
+        return "Unknown"
+
+    def build_fast_summary(
+        self,
+        text: str,
+        filename: str,
+        *,
+        classification: str,
+        metadata: Dict[str, Any],
+    ) -> str:
+        """Generate an immediate useful summary without another AI call."""
+        parts = [classification or "Document"]
+
+        entities = metadata.get("entities") or []
+        if entities:
+            parts.append("Parties: " + ", ".join(str(e) for e in entities[:3]))
+
+        dates = metadata.get("dates") or []
+        if dates:
+            parts.append("Dates found: " + ", ".join(str(d) for d in dates[:3]))
+
+        amounts = metadata.get("amounts") or []
+        if amounts:
+            parts.append("Amounts: " + ", ".join(str(a) for a in amounts[:3]))
+
+        if len(parts) > 1:
+            return ". ".join(parts) + "."
+
+        clean_text = _normalize_ocr_whitespace(text or "")
+        if clean_text:
+            return clean_text[:280] + ("..." if len(clean_text) > 280 else "")
+        return f"Document received: {filename}"
 
     async def _extract_dates(self, text: str) -> List[str]:
         """Extract dates from text."""

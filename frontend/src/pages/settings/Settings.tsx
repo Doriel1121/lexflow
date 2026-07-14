@@ -276,7 +276,7 @@ const SettingsPage: React.FC = () => {
             className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition"
           >
             <Plus className="h-3.5 w-3.5" />
-            {t("settingsPage.addEmail")}
+            {t("settingsPage.createIntakeAddress")}
           </button>
         </div>
 
@@ -293,6 +293,9 @@ const SettingsPage: React.FC = () => {
             <label className="block text-sm font-medium text-slate-600 mb-1.5">
               {t("settingsPage.addForm.label")}
             </label>
+            <p className="text-xs text-slate-400 mb-3">
+              {t("settingsPage.addForm.help")}
+            </p>
             <div className="flex gap-2">
               <input
                 type="email"
@@ -348,9 +351,14 @@ const SettingsPage: React.FC = () => {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <Mail className="h-4 w-4 text-slate-400 shrink-0" />
-                        <span className="text-sm font-semibold text-slate-700 truncate">
-                          {cfg.email_address}
-                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">
+                            {t("settingsPage.sourceMailbox")}
+                          </p>
+                          <span className="text-sm font-semibold text-slate-700 truncate block">
+                            {cfg.email_address}
+                          </span>
+                        </div>
                         {cfg.ingestion_enabled ? (
                           <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                             {t("status.active")}
@@ -362,14 +370,18 @@ const SettingsPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Inbound address with copy button */}
+                      {/* Generated receiving address */}
                       {inboundAddress && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 flex-1 min-w-0">
-                            <span className="text-xs text-slate-500 font-mono truncate">
-                              {inboundAddress}
-                            </span>
-                          </div>
+                        <div className="mt-3">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-1">
+                            {t("settingsPage.generatedAddress")}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 flex-1 min-w-0">
+                              <span className="text-xs text-slate-700 font-mono truncate">
+                                {inboundAddress}
+                              </span>
+                            </div>
                           <button
                             onClick={() =>
                               copyToClipboard(cfg.id, cfg.inbound_slug!)
@@ -386,6 +398,7 @@ const SettingsPage: React.FC = () => {
                               ? t("settingsPage.copied")
                               : t("settingsPage.copy")}
                           </button>
+                          </div>
                         </div>
                       )}
 

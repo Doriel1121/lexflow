@@ -27,6 +27,7 @@ from app.services.processing_telemetry import track_stage, record_processing_err
 from app.services.llm import llm_service
 from app.services.ocr import ocr_service
 from app.services.text_normalization import text_normalization_service
+from app.services.metadata_extraction import metadata_extraction_service
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,64 @@ async def run_document_pipeline(
     except Exception as e:
         logger.error(f"[Doc {document_id}] Initial Deadline extraction failed: {e}")
 
+    # ── STEP 2.6: Fast provisional metadata ──────────────────────────
+    # Persist useful results before the slower LLM stage so the UI is not empty
+    # while AI analysis is still running or degraded.
+    try:
+        provisional_meta = await metadata_extraction_service.extract_metadata(
+            normalized_text,
+            ocr_result.get("language", "en"),
+        )
+        async with session_factory() as db:
+            doc = await document_crud.get(db, document_id)
+            if doc:
+                fast_classification = metadata_extraction_service.classify_document(
+                    normalized_text,
+                    doc.filename,
+                )
+                doc.classification = fast_classification
+                doc.processing_stage = "fast_metadata_ready"
+                doc.processing_progress = 10.0
+
+                await db.execute(delete(Summary).where(Summary.document_id == document_id))
+                await db.execute(delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id))
+                db.add(
+                    Summary(
+                        document_id=document_id,
+                        organization_id=organization_id,
+                        content=metadata_extraction_service.build_fast_summary(
+                            normalized_text,
+                            doc.filename,
+                            classification=fast_classification,
+                            metadata=provisional_meta,
+                        ),
+                        key_dates=provisional_meta.get("dates", []),
+                        parties=provisional_meta.get("entities", []),
+                    )
+                )
+                db.add(
+                    DocumentMetadata(
+                        document_id=document_id,
+                        dates=provisional_meta.get("dates", []),
+                        entities=[
+                            {"name": entity, "role": "Detected", "id_number": None, "contact": None, "firm": None, "bar_number": None}
+                            for entity in provisional_meta.get("entities", [])
+                        ],
+                        amounts=provisional_meta.get("amounts", []),
+                        case_numbers=provisional_meta.get("case_numbers", []),
+                    )
+                )
+                await db.commit()
+                await emit_document_status_update(
+                    db,
+                    organization_id=organization_id,
+                    document_id=document_id,
+                    stage="fast_metadata_ready",
+                    progress=10.0,
+                    status="processing",
+                )
+    except Exception as fast_meta_err:
+        logger.warning(f"[Doc {document_id}] Fast provisional metadata failed: {fast_meta_err}")
     # ── STEP 3: Chunk ────────────────────────────────────────────────
     async with track_stage(document_id, organization_id, "chunking"):
         logger.info(f"[Doc {document_id}] Chunking text...")
@@ -307,8 +366,16 @@ async def run_document_pipeline(
             if not ai_analysis.get("case_numbers"):
                 ai_analysis["case_numbers"] = regex_meta.get("case_numbers", [])
 
-            if not ai_analysis.get("classification"):
-                ai_analysis["classification"] = ai_analysis.get("document_type") or "Unknown Document"
+            fallback_classification = metadata_extraction_service.classify_document(
+                normalized_text,
+                doc.filename if doc else str(document_id),
+            )
+            current_doc_type = str(ai_analysis.get("document_type") or "").strip().lower()
+            current_classification = str(ai_analysis.get("classification") or "").strip().lower()
+            if current_doc_type in {"", "unknown", "unclassified", "unknown document"}:
+                ai_analysis["document_type"] = fallback_classification
+            if current_classification in {"", "unknown", "unclassified", "unknown document"}:
+                ai_analysis["classification"] = fallback_classification
 
             # Note: regex extractor doesn't currently detect "missing items"; keep AI value if present.
             if not ai_analysis.get("missing_documents") and ai_analysis.get("missing_items"):
@@ -432,21 +499,24 @@ async def run_document_pipeline(
             delete(DocumentMetadata).where(DocumentMetadata.document_id == document_id)
         )
 
-        # If the structured AI response omitted/emptied the summary, generate one with the
-        # simpler summarizer as a fallback.
+        # If the structured AI response omitted/emptied the summary, avoid a second
+        # expensive LLM call. Build an immediate deterministic summary from extracted data.
         summary_text = ai_analysis.get("summary")
         if not isinstance(summary_text, str) or not summary_text.strip():
-            try:
-                summary_text = await asyncio.wait_for(
-                    llm_service.summarize_text(
-                        input_text if isinstance(input_text, str) and input_text.strip() else normalized_text
-                    ),
-                    timeout=float(settings.AI_ANALYSIS_TIMEOUT_SECONDS or 120),
-                )
-            except Exception:
-                summary_text = None
-        if not isinstance(summary_text, str) or not summary_text.strip():
-            summary_text = "Summary unavailable."
+            summary_text = metadata_extraction_service.build_fast_summary(
+                normalized_text,
+                doc.filename if doc else str(document_id),
+                classification=classification_from_analysis(ai_analysis),
+                metadata={
+                    "entities": [
+                        p.get("name") if isinstance(p, dict) else p
+                        for p in parties
+                        if (p.get("name") if isinstance(p, dict) else p)
+                    ],
+                    "dates": dates,
+                    "amounts": amounts,
+                },
+            )
         party_names = _dedup_local(
             [
                 (p.get("name") if isinstance(p, dict) else p)
