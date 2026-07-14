@@ -798,6 +798,9 @@
         "classificationPlaceholder": "למשל, חוזה, חשבונית...",
         "searchDocuments": "חיפוש מסמכים לפי שם או תוכן...",
         "searchAI": "חיפוש AI: שאל שאלה משפטית...",
+        "searchConcepts": "חיפוש רעיוני: תאר משמעות, לא מילים מדויקות...",
+        "conceptSearch": "חיפוש רעיוני",
+        "conceptSearchHint": "למילים מדויקות, שמות, מספרים ותאריכים - החיפוש הרגיל מדויק יותר.",
         "upload": "העלה",
         "uploading": "מעלה...",
         "noDocumentsUploaded": "טרם הועלו מסמכים."

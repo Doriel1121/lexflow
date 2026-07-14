@@ -296,23 +296,42 @@ async def read_documents(
     documents = result.scalars().all()
     return documents
 
+
+def _dedupe_ranked_documents(rows, limit: int):
+    ranked_documents = []
+    seen_doc_ids = set()
+
+    for doc, _chunk_text, _distance in rows:
+        if doc.id in seen_doc_ids:
+            continue
+        seen_doc_ids.add(doc.id)
+        ranked_documents.append(doc)
+        if len(ranked_documents) >= limit:
+            break
+
+    return ranked_documents
+
 @router.get("/semantic-search", response_model=List[DocumentSchema])
 async def search_documents_semantic(
     query: str,
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker(list(UserRole))),
     limit: int = 10,
-    threshold: float = 0.5
+    threshold: float = 1.25
 ):
     """
     Perform a Semantic Search across all indexed document chunks.
     Routes to the PgVector similarity endpoint.
     """
-    from sqlalchemy import select
+    from sqlalchemy import case, select
     from app.db.models.document import DocumentChunk
     
     # 1. Generate an embedding vector for the user's search string
     from app.services.ai_utils import valid_embedding
+
+    user_org_id = current_user.organization_id
+    user_id = current_user.id
+    user_role = current_user.role.value if current_user.role else None
 
     query_vector = await llm_service.generate_embedding(
         query,
@@ -326,15 +345,24 @@ async def search_documents_semantic(
             detail="Semantic search is unavailable (embedding service inactive or failed).",
         )
         
-    # 2. Search Postgres using L2 Distance (Cosine Similarity via <->)
-    user_org_id = current_user.organization_id
-    user_id = current_user.id
-    user_role = current_user.role.value if current_user.role else None
+    # 2. Search Postgres using L2 Distance and keep each document's best chunk.
+    distance = DocumentChunk.embedding.l2_distance(query_vector)
+    safe_limit = max(1, min(limit, 100))
+    candidate_limit = max(safe_limit * 8, 50)
+    threshold = max(0.0, threshold)
+    search_pattern = f"%{query.strip()}%"
+    lexical_rank = case(
+        (DocumentChunk.text_content.ilike(search_pattern), 0),
+        (DBDocument.filename.ilike(search_pattern), 1),
+        (DBDocument.content.ilike(search_pattern), 2),
+        else_=3,
+    )
 
-    # Calculate L2 distance and sort
     stmt = (
-        select(DBDocument, DocumentChunk.text_content, DocumentChunk.embedding.l2_distance(query_vector).label('distance'))
+        select(DBDocument, DocumentChunk.text_content, distance.label("distance"))
         .join(DocumentChunk, DBDocument.id == DocumentChunk.document_id)
+        .where(DocumentChunk.embedding.isnot(None))
+        .where(distance <= threshold)
         .options(
             selectinload(DBDocument.tags),
             selectinload(DBDocument.summary),
@@ -343,22 +371,11 @@ async def search_documents_semantic(
     )
     
     stmt = apply_user_org_filter(stmt, DBDocument, user_id, user_org_id, user_role)
-    stmt = stmt.order_by('distance').limit(limit)
+    stmt = stmt.order_by(lexical_rank, distance).limit(candidate_limit)
     
     result = await db.execute(stmt)
-    rows = result.all()
-    
-    scored_documents = []
-    seen_doc_ids = set()
-    
-    for doc, chunk_text, distance in rows:
-        if doc.id not in seen_doc_ids: # Deduplicate if multiple chunks from same doc match
-            seen_doc_ids.add(doc.id)
-            # Optional: You could attach the relevant snippet back to the document schema, 
-            # or just return the base Document model as requested
-            scored_documents.append(doc)
-            
-    return scored_documents
+    return _dedupe_ranked_documents(result.all(), safe_limit)
+
 
 @router.get("/{document_id}", response_model=DocumentSchema)
 async def read_document_by_id(

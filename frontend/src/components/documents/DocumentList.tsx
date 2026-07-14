@@ -547,22 +547,29 @@ export function DocumentList() {
       <div className="bg-card border border-border-light rounded-lg shadow-legal flex flex-col flex-1 min-h-0">
         <div className="p-4 border-b border-border-light bg-background-secondary flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
-            <Search
-              className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${isSearching ? "text-primary-500 animate-pulse" : "text-neutral-400"}`}
-            />
-            <input
-              type="text"
-              placeholder={
-                semanticSearchActive
-                  ? t("documentsPage.searchAI")
-                  : t("documentsPage.searchDocuments")
-              }
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-              }}
-              className="w-full ps-10 pe-4 py-2.5 bg-white border border-border-light focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-100 rounded-lg text-sm outline-none transition-all duration-200"
-            />
+            <div className="relative">
+              <Search
+                className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 ${isSearching ? "text-primary-500 animate-pulse" : "text-neutral-400"}`}
+              />
+              <input
+                type="text"
+                placeholder={
+                  semanticSearchActive
+                    ? t("documentsPage.searchConcepts")
+                    : t("documentsPage.searchDocuments")
+                }
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                }}
+                className="w-full ps-10 pe-4 py-2.5 bg-white border border-border-light focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-100 rounded-lg text-sm outline-none transition-all duration-200"
+              />
+            </div>
+            {semanticSearchActive && (
+              <p className="mt-1 text-xs text-neutral-500">
+                {t("documentsPage.conceptSearchHint")}
+              </p>
+            )}
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -582,7 +589,7 @@ export function DocumentList() {
                   className={`relative inline-flex rounded-full h-2 w-2 ${semanticSearchActive ? "bg-primary-600" : "bg-neutral-400"}`}
                 ></span>
               </span>
-              <span>AI Search</span>
+              <span>{t("documentsPage.conceptSearch")}</span>
             </button>
             <button
               onClick={() => setShowFilterModal(true)}

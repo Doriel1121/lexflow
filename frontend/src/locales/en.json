@@ -817,6 +817,9 @@
         "classificationPlaceholder": "e.g., Contract, Invoice...",
         "searchDocuments": "Search documents by name or content...",
         "searchAI": "AI Search: Ask a legal question...",
+        "searchConcepts": "Concept search: describe meaning, not exact words...",
+        "conceptSearch": "Concept search",
+        "conceptSearchHint": "For exact words, names, IDs, and dates, regular search is more precise.",
         "upload": "Upload",
         "uploading": "Uploading...",
         "noDocumentsUploaded": "No documents uploaded yet."
