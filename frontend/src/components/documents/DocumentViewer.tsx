@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ArrowLeft,
   Download,
@@ -16,6 +16,54 @@ import AskAI from "../ai/AskAI";
 import { useSnackbar } from "../../context/SnackbarContext";
 import { useTranslation } from "react-i18next";
 
+type DocumentViewerPayload = {
+  document: any;
+  intelligence: any;
+};
+
+const detailInFlightRequests = new Map<string, Promise<DocumentViewerPayload>>();
+const DETAIL_REFRESH_STAGES = new Set([
+  "ocr_completed",
+  "fast_metadata_ready",
+  "ai_completed",
+  "metadata_saved",
+  "ai_analysis",
+  "embedding_completed",
+  "completed",
+  "completed_embedding_partial",
+  "completed_without_ai",
+]);
+
+const loadDocumentViewerPayload = async (
+  documentId: string,
+  forceRefresh = false,
+): Promise<DocumentViewerPayload> => {
+  const inFlight = detailInFlightRequests.get(documentId);
+  if (!forceRefresh && inFlight) {
+    return inFlight;
+  }
+
+  const request = Promise.all([
+    api.get(`/v1/documents/${documentId}`),
+    api
+      .get(`/v1/documents/${documentId}/intelligence`)
+      .catch(() => ({ data: null })),
+  ])
+    .then(([docResponse, intelligenceResponse]) => {
+      const payload = {
+        document: docResponse.data,
+        intelligence: intelligenceResponse.data,
+      };
+      return payload;
+    })
+    .finally(() => {
+      detailInFlightRequests.delete(documentId);
+    });
+
+  detailInFlightRequests.set(documentId, request);
+  return request;
+};
+
 export function DocumentViewer() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -26,6 +74,7 @@ export function DocumentViewer() {
   const [document, setDocument] = useState<any>(null);
   const [intelligence, setIntelligence] = useState<any>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Normalize OCR content: collapse single newlines into spaces, preserving paragraph breaks.
   const normalizeContent = (text: string | null | undefined): string => {
@@ -43,24 +92,57 @@ export function DocumentViewer() {
       fetchDocumentData();
     }
 
-    // Listen for WebSocket events
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+      refreshTimerRef.current = setTimeout(() => {
+        fetchDocumentDataSilent(true);
+        refreshTimerRef.current = null;
+      }, 500);
+    };
+
     const handleDocumentStatus = (event: Event) => {
       const customEvent = event as CustomEvent;
-      if (customEvent.detail.document_id === Number(id)) {
-        // Silent refresh to pick up new stages (OCR ready, AI ready)
-        fetchDocumentDataSilent();
+      const detail = customEvent.detail || {};
+      if (detail.document_id !== Number(id)) return;
+
+      const stage = detail.stage;
+      setDocument((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              processing_status: detail.status ?? prev.processing_status,
+              processing_stage: stage ?? prev.processing_stage,
+              processing_progress: detail.progress ?? prev.processing_progress,
+            }
+          : prev,
+      );
+
+      if (stage && DETAIL_REFRESH_STAGES.has(stage)) {
+        scheduleRefresh();
+      }
+    };
+
+    const handleDocumentProcessed = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail?.document_id === Number(id)) {
+        scheduleRefresh();
       }
     };
 
     window.addEventListener("document_status_update", handleDocumentStatus);
-    window.addEventListener("document_processed", handleDocumentStatus);
+    window.addEventListener("document_processed", handleDocumentProcessed);
 
     return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
       window.removeEventListener(
         "document_status_update",
         handleDocumentStatus,
       );
-      window.removeEventListener("document_processed", handleDocumentStatus);
+      window.removeEventListener("document_processed", handleDocumentProcessed);
     };
   }, [id]);
 
@@ -70,21 +152,17 @@ export function DocumentViewer() {
     setLoading(false);
   };
 
-  const fetchDocumentDataSilent = async () => {
+  const fetchDocumentDataSilent = async (forceRefresh = false) => {
+    if (!id) return;
+
     try {
-      const [docResponse, intelligenceResponse] = await Promise.all([
-        api.get(`/v1/documents/${id}`),
-        api
-          .get(`/v1/documents/${id}/intelligence`)
-          .catch(() => ({ data: null })),
-      ]);
-      setDocument(docResponse.data);
-      setIntelligence(intelligenceResponse.data);
+      const payload = await loadDocumentViewerPayload(id, forceRefresh);
+      setDocument(payload.document);
+      setIntelligence(payload.intelligence);
     } catch (error) {
       console.error("Failed to load document:", error);
     }
   };
-
   const handleDelete = async () => {
     try {
       await api.delete(`/v1/documents/${id}`);

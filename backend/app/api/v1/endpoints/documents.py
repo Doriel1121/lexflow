@@ -4,15 +4,15 @@ from pathlib import Path
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from sqlalchemy import select, desc, func
+from sqlalchemy.orm import load_only, selectinload
+from sqlalchemy import or_, select, desc, func
 
 from app.db.session import AsyncSessionLocal
 
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user, apply_user_org_filter, RoleChecker, verify_resource_access
 from app.db.models.user import User as DBUser, UserRole
-from app.schemas.document import DocumentCreate, DocumentUpdate, Document as DocumentSchema
+from app.schemas.document import DocumentCreate, DocumentUpdate, Document as DocumentSchema, DocumentListItem
 from app.schemas.tag import Tag as TagSchema, TagCreate
 from app.schemas.summary import SummaryCreate, Summary as SummarySchema # Import Summary Schemas
 from app.schemas.document_metadata import DocumentMetadata as DocumentMetadataSchema, DocumentMetadataCreate
@@ -265,13 +265,14 @@ async def get_document_status(
         "ai_health": document.ai_health or {},
     }
 
-@router.get("/", response_model=List[DocumentSchema])
+@router.get("/", response_model=List[DocumentListItem])
 async def read_documents(
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker(list(UserRole))),
     skip: int = 0,
     limit: int = 100,
-    tag: Optional[int] = None
+    tag: Optional[int] = None,
+    search: Optional[str] = None
 ):
     """
     Retrieve documents filtered by user/organization and optionally by tag.
@@ -281,21 +282,48 @@ async def read_documents(
     user_id = current_user.id
     user_role = current_user.role.value if current_user.role else None
     
+    safe_limit = max(1, min(limit, 100))
     query = select(DBDocument).options(
+        load_only(
+            DBDocument.id,
+            DBDocument.filename,
+            DBDocument.s3_url,
+            DBDocument.case_id,
+            DBDocument.classification,
+            DBDocument.language,
+            DBDocument.page_count,
+            DBDocument.processing_status,
+            DBDocument.processing_stage,
+            DBDocument.processing_progress,
+            DBDocument.processed_chunks,
+            DBDocument.total_chunks,
+            DBDocument.embedding_failed_count,
+            DBDocument.ai_health,
+            DBDocument.uploaded_by_user_id,
+            DBDocument.created_at,
+            DBDocument.updated_at,
+        ),
         selectinload(DBDocument.tags),
-        selectinload(DBDocument.summary),
-        selectinload(DBDocument.document_metadata)
-    ).offset(skip).limit(limit)
+    )
     
     if tag:
         query = query.join(DBDocument.tags).filter(DBTag.id == tag)
+    if search and search.strip():
+        search_pattern = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                DBDocument.filename.ilike(search_pattern),
+                DBDocument.classification.ilike(search_pattern),
+                DBDocument.content.ilike(search_pattern),
+            )
+        )
         
     query = apply_user_org_filter(query, DBDocument, user_id, user_org_id, user_role)
+    query = query.order_by(desc(DBDocument.created_at)).offset(skip).limit(safe_limit)
     
     result = await db.execute(query)
     documents = result.scalars().all()
     return documents
-
 
 def _dedupe_ranked_documents(rows, limit: int):
     ranked_documents = []
@@ -311,7 +339,7 @@ def _dedupe_ranked_documents(rows, limit: int):
 
     return ranked_documents
 
-@router.get("/semantic-search", response_model=List[DocumentSchema])
+@router.get("/semantic-search", response_model=List[DocumentListItem])
 async def search_documents_semantic(
     query: str,
     db: AsyncSession = Depends(get_db),
@@ -364,9 +392,26 @@ async def search_documents_semantic(
         .where(DocumentChunk.embedding.isnot(None))
         .where(distance <= threshold)
         .options(
+            load_only(
+                DBDocument.id,
+                DBDocument.filename,
+                DBDocument.s3_url,
+                DBDocument.case_id,
+                DBDocument.classification,
+                DBDocument.language,
+                DBDocument.page_count,
+                DBDocument.processing_status,
+                DBDocument.processing_stage,
+                DBDocument.processing_progress,
+                DBDocument.processed_chunks,
+                DBDocument.total_chunks,
+                DBDocument.embedding_failed_count,
+                DBDocument.ai_health,
+                DBDocument.uploaded_by_user_id,
+                DBDocument.created_at,
+                DBDocument.updated_at,
+            ),
             selectinload(DBDocument.tags),
-            selectinload(DBDocument.summary),
-            selectinload(DBDocument.document_metadata),
         )
     )
     

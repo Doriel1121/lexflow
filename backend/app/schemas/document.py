@@ -31,6 +31,29 @@ class DocumentUpdate(DocumentBase):
     s3_url: Optional[str] = None
     case_id: Optional[int] = None
 
+class DocumentListItem(BaseModel):
+    id: int
+    filename: str
+    s3_url: str
+    case_id: Optional[int] = None
+    classification: Optional[str] = None
+    language: Optional[str] = None
+    page_count: Optional[int] = None
+    processing_status: Optional[DocumentProcessingStatus] = None
+    processing_stage: Optional[str] = None
+    processing_progress: Optional[float] = None
+    processed_chunks: Optional[int] = None
+    total_chunks: Optional[int] = None
+    embedding_failed_count: Optional[int] = None
+    ai_health: Optional[Dict[str, Any]] = None
+    uploaded_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+    tags: List[Tag] = []
+
+    class Config:
+        from_attributes = True
+
 class Document(DocumentBase):
     id: int
     uploaded_by_user_id: int

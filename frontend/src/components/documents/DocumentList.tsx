@@ -122,11 +122,23 @@ export function DocumentList() {
   const [fetchingMore, setFetchingMore] = useState(false);
   const limit = 50;
   const observerTarget = React.useRef<HTMLDivElement>(null);
+  const listRefreshTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlightListRequestKeyRef = React.useRef<string | null>(null);
+  const latestSearchTermRef = React.useRef(searchTerm);
+  const latestSemanticSearchRef = React.useRef(semanticSearchActive);
 
   // Keep documentsRef in sync
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
+
+  useEffect(() => {
+    latestSearchTermRef.current = searchTerm;
+  }, [searchTerm]);
+
+  useEffect(() => {
+    latestSemanticSearchRef.current = semanticSearchActive;
+  }, [semanticSearchActive]);
 
   // WebSocket for real-time document updates (replaces polling)
   const { isConnected: wsConnected } = useDocumentWebSocket();
@@ -141,26 +153,21 @@ export function DocumentList() {
       const { document_id } = customEvent.detail || {};
 
       if (document_id) {
-        (async () => {
-          try {
-            const docRes = await api.get(`/v1/documents/${document_id}`);
-            setDocuments((prev) => {
-              const found = prev.find((d) => d.id === document_id);
-              if (!found) {
-                return [docRes.data, ...prev];
-              }
-              return prev.map((d) => (d.id === document_id ? docRes.data : d));
-            });
-          } catch (err) {
-            console.error(`[ERROR] Could not fetch document ${document_id}:`, err);
-          }
-        })();
+        setDocuments((prev) =>
+          prev.map((doc) =>
+            doc.id === document_id
+              ? {
+                  ...doc,
+                  processing_status: "completed",
+                  processing_stage: "completed",
+                  processing_progress: 100,
+                }
+              : doc,
+          ),
+        );
       }
 
-      // Ensure full list consistency after a short delay
-      setTimeout(() => {
-        fetchDocuments();
-      }, 500);
+      scheduleListRefresh();
     };
 
     const handleStatusUpdate = (event: Event) => {
@@ -195,7 +202,7 @@ export function DocumentList() {
         return;
       }
 
-      fetchDocuments();
+      scheduleListRefresh();
     };
 
     window.addEventListener("document_processed", handleDocumentProcessed);
@@ -221,7 +228,9 @@ export function DocumentList() {
 
   useEffect(() => {
     fetchDocuments();
+  }, []);
 
+  useEffect(() => {
     let tickCount = 0;
     // Smart polling: Poll every 5s when disconnected, or every 15s when connected as a reliable backup
     const pollInterval = setInterval(async () => {
@@ -289,7 +298,27 @@ export function DocumentList() {
     };
   }, [wsConnected]);
 
+  const scheduleListRefresh = () => {
+    if (listRefreshTimerRef.current) {
+      clearTimeout(listRefreshTimerRef.current);
+    }
+    listRefreshTimerRef.current = setTimeout(() => {
+      fetchDocuments(
+        latestSemanticSearchRef.current ? latestSearchTermRef.current : "",
+        0,
+      );
+      listRefreshTimerRef.current = null;
+    }, 500);
+  };
+
   const fetchDocuments = async (query?: string, targetPage: number = 0) => {
+    const trimmedQuery = query?.trim() ?? "";
+    const requestKey = `${semanticSearchActive ? "concept" : "list"}:${targetPage}:${trimmedQuery}`;
+    if (inFlightListRequestKeyRef.current === requestKey) {
+      return;
+    }
+    inFlightListRequestKeyRef.current = requestKey;
+
     try {
       const skip = targetPage * limit;
       if (targetPage === 0) {
@@ -299,16 +328,18 @@ export function DocumentList() {
       }
 
       let response;
-      if (query && query.trim().length > 2) {
+      if (trimmedQuery.length > 2 && semanticSearchActive) {
         setIsSearching(true);
-        // Semantic search isn't paginated the same way currently since chunking vectors handles it, but pass it if available
         response = await api.get("/v1/documents/semantic-search", {
-          params: { query: query.trim(), limit },
+          params: { query: trimmedQuery, limit },
         });
       } else {
-        // Normal fetch
         response = await api.get("/v1/documents/", {
-          params: { skip, limit },
+          params: {
+            skip,
+            limit,
+            ...(trimmedQuery.length > 0 ? { search: trimmedQuery } : {}),
+          },
         });
       }
 
@@ -336,6 +367,9 @@ export function DocumentList() {
       setLoading(false);
       setIsSearching(false);
       setFetchingMore(false);
+      if (inFlightListRequestKeyRef.current === requestKey) {
+        inFlightListRequestKeyRef.current = null;
+      }
     }
   };
 
@@ -432,19 +466,8 @@ export function DocumentList() {
   };
 
   const filteredDocs = React.useMemo(() => {
-    if (semanticSearchActive) return documents; // When semantic search is on, the backend does the filtering
-
     return documents.filter((doc) => {
-      // Search term filter
-      const term = searchTerm.toLowerCase();
-      const matchFilename = doc.filename.toLowerCase().includes(term);
-      const matchContent = doc.content?.toLowerCase().includes(term) ?? false;
-      const matchClassification =
-        doc.classification?.toLowerCase().includes(term) ?? false;
-      const matchesSearch =
-        matchFilename || matchContent || matchClassification;
-
-      if (!matchesSearch) return false;
+      // Text search is handled by the backend so list responses can stay lightweight.
 
       // Status filter
       if (filterStatus) {
@@ -764,7 +787,6 @@ export function DocumentList() {
                     const status = getNormalizedStatus(doc.processing_status);
                     const isViewable =
                       status === "completed" ||
-                      doc.content ||
                       doc.processing_stage === "ocr_completed" ||
                       doc.processing_stage === "ai_analysis" ||
                       doc.processing_stage === "embedding";
