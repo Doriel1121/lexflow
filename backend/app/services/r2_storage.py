@@ -2,6 +2,7 @@
 Cloudflare R2 Storage Service
 Provides S3-compatible interface for storing files in Cloudflare R2
 """
+import asyncio
 from typing import Optional, Tuple
 from fastapi import UploadFile, HTTPException
 from pathlib import Path
@@ -79,7 +80,8 @@ class R2StorageService:
         
         try:
             # Upload to R2
-            self.s3_client.put_object(
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=self.bucket_name,
                 Key=s3_key,
                 Body=content,
@@ -104,7 +106,8 @@ class R2StorageService:
         s3_key = f"{destination}/{filename}"
         
         try:
-            self.s3_client.put_object(
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=self.bucket_name,
                 Key=s3_key,
                 Body=content,
@@ -144,14 +147,16 @@ class R2StorageService:
         try:
             # Copy object
             copy_source = {'Bucket': self.bucket_name, 'Key': current_s3_key}
-            self.s3_client.copy_object(
+            await asyncio.to_thread(
+                self.s3_client.copy_object,
                 CopySource=copy_source,
                 Bucket=self.bucket_name,
                 Key=new_s3_key,
             )
             
             # Delete original
-            self.s3_client.delete_object(
+            await asyncio.to_thread(
+                self.s3_client.delete_object,
                 Bucket=self.bucket_name,
                 Key=current_s3_key,
             )
@@ -168,7 +173,8 @@ class R2StorageService:
     async def delete_file(self, s3_key: str) -> bool:
         """Delete a file from R2 by S3 key."""
         try:
-            self.s3_client.delete_object(
+            await asyncio.to_thread(
+                self.s3_client.delete_object,
                 Bucket=self.bucket_name,
                 Key=s3_key,
             )

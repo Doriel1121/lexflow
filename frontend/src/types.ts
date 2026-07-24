@@ -16,7 +16,7 @@ export interface Case {
   title: string;
   description?: string;
   status: "open" | "closed" | "pending";
-  client_id: number;
+  client_id: number | null;
   client_name?: string;
   created_by_user_id: number;
   assigned_lawyer_id?: number;
@@ -26,7 +26,9 @@ export interface Case {
   created_at: string;
   updated_at: string;
   notes: CaseNote[];
-  documents: Document[]; // Assuming documents are directly part of the case for display
+  documents?: Document[];
+  documents_count?: number;
+  notes_count?: number;
 }
 
 export interface CaseNote {

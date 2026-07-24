@@ -2,6 +2,7 @@
 Backblaze B2 Storage Service
 Provides S3-compatible interface for storing files in Backblaze B2
 """
+import asyncio
 from typing import Optional, Tuple
 from fastapi import UploadFile, HTTPException
 from pathlib import Path
@@ -92,7 +93,8 @@ class B2StorageService:
         
         try:
             # Upload to B2
-            self.s3_client.put_object(
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=self.bucket_name,
                 Key=b2_key,
                 Body=content,
@@ -117,7 +119,8 @@ class B2StorageService:
         b2_key = f"{destination}/{filename}"
         
         try:
-            self.s3_client.put_object(
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=self.bucket_name,
                 Key=b2_key,
                 Body=content,
@@ -157,14 +160,16 @@ class B2StorageService:
         try:
             # Copy object
             copy_source = {'Bucket': self.bucket_name, 'Key': current_b2_key}
-            self.s3_client.copy_object(
+            await asyncio.to_thread(
+                self.s3_client.copy_object,
                 CopySource=copy_source,
                 Bucket=self.bucket_name,
                 Key=new_b2_key,
             )
             
             # Delete original
-            self.s3_client.delete_object(
+            await asyncio.to_thread(
+                self.s3_client.delete_object,
                 Bucket=self.bucket_name,
                 Key=current_b2_key,
             )
@@ -178,7 +183,8 @@ class B2StorageService:
     async def delete_file(self, b2_key: str) -> bool:
         """Delete a file in B2 by its key. Returns True if deleted."""
         try:
-            self.s3_client.delete_object(
+            await asyncio.to_thread(
+                self.s3_client.delete_object,
                 Bucket=self.bucket_name,
                 Key=b2_key,
             )
@@ -211,8 +217,24 @@ class B2StorageService:
                         return False
                     b2_key = url[idx + len(marker):]
             else:
-                logger.error("B2_PUBLIC_URL not configured")
-                return False
+                from urllib.parse import urlparse, unquote
+
+                parsed = urlparse(url)
+                path = parsed.path.lstrip("/")
+                bucket_prefix = f"{self.bucket_name}/"
+                file_prefix = f"file/{self.bucket_name}/"
+                if path.startswith(file_prefix):
+                    b2_key = path[len(file_prefix):]
+                elif path.startswith(bucket_prefix):
+                    b2_key = path[len(bucket_prefix):]
+                else:
+                    marker = f"/file/{self.bucket_name}/"
+                    idx = url.find(marker)
+                    if idx == -1:
+                        logger.error(f"Cannot parse B2 URL: {url}")
+                        return False
+                    b2_key = url[idx + len(marker):].split("?", 1)[0]
+                b2_key = unquote(b2_key)
 
             return await self.delete_file(b2_key)
         except Exception as e:

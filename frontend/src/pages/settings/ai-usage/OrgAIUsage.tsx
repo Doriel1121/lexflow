@@ -15,7 +15,9 @@ import {
 
 import type { AIQuotaBucket, AIUsageBreakdownRow, AIUsageResponse } from "../../../services/adminService";
 import { orgAIUsageService } from "../../../services/orgAIUsageService";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../../lib/utils";
+import { formatDate } from "../../../lib/formatters";
 
 const DAY_OPTIONS = [1, 7, 30, 90];
 
@@ -29,14 +31,14 @@ function formatLatency(value: number | null | undefined): string {
   return `${ms.toFixed(0)}ms`;
 }
 
-function formatLimit(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "Unlimited";
+function formatLimit(value: number | null | undefined, unlimitedLabel: string): string {
+  if (value === null || value === undefined) return unlimitedLabel;
   return formatNumber(value);
 }
 
-function formatResetDate(value: string | null | undefined): string {
-  if (!value) return "No reset date";
-  return new Date(value).toLocaleString();
+function formatResetDate(value: string | null | undefined, noResetLabel: string): string {
+  if (!value) return noResetLabel;
+  return formatDate(value, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function quotaPercent(quota: AIQuotaBucket | undefined): number {
@@ -90,6 +92,7 @@ function QuotaCard({
   quota?: AIQuotaBucket;
   icon: React.ElementType;
 }) {
+  const { t } = useTranslation();
   const percent = quotaPercent(quota);
   const tone = quotaTone(percent);
   const barClass = {
@@ -123,20 +126,20 @@ function QuotaCard({
       <div className="mt-5 flex items-end justify-between gap-3">
         <div>
           <p className="text-2xl font-bold text-slate-900 tabular-nums">{formatNumber(quota?.used)}</p>
-          <p className="text-xs text-slate-500">used of {formatLimit(quota?.limit)}</p>
+          <p className="text-xs text-slate-500">{t("orgAIUsage.usedOf", { limit: formatLimit(quota?.limit, t("orgAIUsage.unlimited")) })}</p>
         </div>
         <div className="text-end">
           <p className={cn("text-sm font-bold tabular-nums", tone === "red" ? "text-red-700" : tone === "amber" ? "text-amber-700" : "text-slate-700")}>
-            {quota?.remaining === null || quota?.remaining === undefined ? "Unlimited" : `${formatNumber(quota.remaining)} left`}
+            {quota?.remaining === null || quota?.remaining === undefined ? t("orgAIUsage.unlimited") : t("orgAIUsage.remaining", { value: formatNumber(quota.remaining) })}
           </p>
-          <p className="text-xs text-slate-500">resets {formatResetDate(quota?.reset_at)}</p>
+          <p className="text-xs text-slate-500">{t("orgAIUsage.resets", { date: formatResetDate(quota?.reset_at, t("orgAIUsage.noResetDate")) })}</p>
         </div>
       </div>
 
       <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-100">
         <div className={cn("h-full rounded-full transition-all", barClass)} style={{ width: `${percent}%` }} />
       </div>
-      {quota?.limit ? <p className="mt-2 text-xs text-slate-500">{percent}% of limit used</p> : <p className="mt-2 text-xs text-slate-500">No limit configured</p>}
+      {quota?.limit ? <p className="mt-2 text-xs text-slate-500">{t("orgAIUsage.percentOfLimit", { percent })}</p> : <p className="mt-2 text-xs text-slate-500">{t("orgAIUsage.noLimitConfigured")}</p>}
     </div>
   );
 }
@@ -179,6 +182,7 @@ function StatCard({
 }
 
 export default function OrgAIUsage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<AIUsageResponse | null>(null);
   const [days, setDays] = useState(30);
   const [provider, setProvider] = useState("");
@@ -200,11 +204,11 @@ export default function OrgAIUsage() {
       setData(result);
     } catch (err) {
       console.error("Failed to load organization AI usage", err);
-      setError("Failed to load organization AI usage.");
+      setError(t("orgAIUsage.loadError"));
     } finally {
       setLoading(false);
     }
-  }, [days, provider, taskType, status]);
+  }, [days, provider, taskType, status, t]);
 
   useEffect(() => {
     loadUsage();
@@ -222,9 +226,9 @@ export default function OrgAIUsage() {
   const summary = data?.summary;
   const quota = data?.quota;
   const quotaWarnings = [
-    { label: "Daily AI calls", quota: quota?.daily_ai_calls },
-    { label: "Monthly drafting calls", quota: quota?.monthly_drafting_calls },
-    { label: "Monthly AI tokens", quota: quota?.monthly_ai_tokens },
+    { label: t("orgAIUsage.dailyCallsQuota"), quota: quota?.daily_ai_calls },
+    { label: t("orgAIUsage.monthlyDraftsQuota"), quota: quota?.monthly_drafting_calls },
+    { label: t("orgAIUsage.monthlyTokensQuota"), quota: quota?.monthly_ai_tokens },
   ].filter((item) => quotaPercent(item.quota) >= 80);
   const rows: AIUsageBreakdownRow[] = data?.breakdown || [];
   const successRate = summary?.total_calls
@@ -235,9 +239,9 @@ export default function OrgAIUsage() {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">AI Usage</h1>
+          <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">{t("orgAIUsage.title")}</h1>
           <p className="text-slate-500 mt-1 text-sm">
-            Organization-scoped AI usage for provider calls, latency, and estimated tokens.
+            {t("orgAIUsage.subtitle")}
           </p>
         </div>
         <button
@@ -246,14 +250,14 @@ export default function OrgAIUsage() {
           className="inline-flex items-center gap-2 rounded-lg bg-primary-800 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-900 disabled:opacity-60"
         >
           <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
-          Refresh
+          {t("orgAIUsage.refresh")}
         </button>
       </div>
 
       <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
         <Bot className="h-4 w-4 text-blue-700 shrink-0" />
         <p className="text-xs text-blue-800 font-medium">
-          This view only shows aggregate usage for your organization. It never shows prompts, responses, document content, or user-level activity.
+          {t("orgAIUsage.privacyNotice")}
         </p>
       </div>
 
@@ -266,9 +270,9 @@ export default function OrgAIUsage() {
         )}>
           <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold">AI quota attention needed</p>
+            <p className="text-sm font-bold">{t("orgAIUsage.quotaAttention")}</p>
             <p className="mt-1 text-xs">
-              {quotaWarnings.map((item) => `${item.label} is at ${quotaPercent(item.quota)}%`).join(" • ")}
+              {quotaWarnings.map((item) => t("orgAIUsage.quotaWarningItem", { label: item.label, percent: quotaPercent(item.quota) })).join(" • ")}
             </p>
           </div>
         </div>
@@ -276,20 +280,20 @@ export default function OrgAIUsage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <QuotaCard
-          title="Daily AI calls"
-          description="All AI provider requests in the rolling 24-hour window."
+          title={t("orgAIUsage.dailyCallsQuota")}
+          description={t("orgAIUsage.dailyCallsDesc")}
           quota={quota?.daily_ai_calls}
           icon={Gauge}
         />
         <QuotaCard
-          title="Monthly drafting"
-          description="AI-generated legal drafts in the current calendar month."
+          title={t("orgAIUsage.monthlyDraftsQuota")}
+          description={t("orgAIUsage.monthlyDraftsDesc")}
           quota={quota?.monthly_drafting_calls}
           icon={FileText}
         />
         <QuotaCard
-          title="Monthly tokens"
-          description="Estimated input and output token budget for this month."
+          title={t("orgAIUsage.monthlyTokensQuota")}
+          description={t("orgAIUsage.monthlyTokensDesc")}
           quota={quota?.monthly_ai_tokens}
           icon={Sparkles}
         />
@@ -298,7 +302,7 @@ export default function OrgAIUsage() {
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
         <div className="flex items-center gap-2 mb-4 text-sm font-semibold text-slate-700">
           <SlidersHorizontal className="h-4 w-4 text-slate-400" />
-          Filters
+          {t("orgAIUsage.filters")}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select
@@ -307,7 +311,7 @@ export default function OrgAIUsage() {
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
             {DAY_OPTIONS.map((option) => (
-              <option key={option} value={option}>Last {option} day{option > 1 ? "s" : ""}</option>
+              <option key={option} value={option}>{t("orgAIUsage.lastDays", { count: option })}</option>
             ))}
           </select>
           <select
@@ -315,7 +319,7 @@ export default function OrgAIUsage() {
             onChange={(event) => setProvider(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All providers</option>
+            <option value="">{t("orgAIUsage.allProviders")}</option>
             {providers.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <select
@@ -323,7 +327,7 @@ export default function OrgAIUsage() {
             onChange={(event) => setTaskType(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All tasks</option>
+            <option value="">{t("orgAIUsage.allTasks")}</option>
             {taskTypes.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
           <select
@@ -331,10 +335,10 @@ export default function OrgAIUsage() {
             onChange={(event) => setStatus(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
-            <option value="">All statuses</option>
-            <option value="success">Success</option>
-            <option value="error">Error</option>
-            <option value="timeout">Timeout</option>
+            <option value="">{t("orgAIUsage.allStatuses")}</option>
+            <option value="success">{t("orgAIUsage.statusSuccess")}</option>
+            <option value="error">{t("orgAIUsage.statusError")}</option>
+            <option value="timeout">{t("orgAIUsage.statusTimeout")}</option>
           </select>
         </div>
       </div>
@@ -347,35 +351,35 @@ export default function OrgAIUsage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Total calls" value={formatNumber(summary?.total_calls)} subtext={`Last ${days} day${days > 1 ? "s" : ""}`} icon={Activity} tone="blue" />
-        <StatCard label="Success rate" value={`${successRate}%`} subtext={`${formatNumber(summary?.success_calls)} successful calls`} icon={CheckCircle2} tone="emerald" />
-        <StatCard label="Errors" value={formatNumber(summary?.error_calls)} subtext="Failed AI calls" icon={AlertTriangle} tone={summary?.error_calls ? "red" : "slate"} />
-        <StatCard label="Avg latency" value={formatLatency(summary?.avg_latency_ms)} subtext="Across matching calls" icon={Clock3} tone="violet" />
+        <StatCard label={t("orgAIUsage.totalCalls")} value={formatNumber(summary?.total_calls)} subtext={t("orgAIUsage.lastDays", { count: days })} icon={Activity} tone="blue" />
+        <StatCard label={t("orgAIUsage.successRate")} value={`${successRate}%`} subtext={t("orgAIUsage.successfulCalls", { value: formatNumber(summary?.success_calls) })} icon={CheckCircle2} tone="emerald" />
+        <StatCard label={t("orgAIUsage.errors")} value={formatNumber(summary?.error_calls)} subtext={t("orgAIUsage.failedAICalls")} icon={AlertTriangle} tone={summary?.error_calls ? "red" : "slate"} />
+        <StatCard label={t("orgAIUsage.avgLatency")} value={formatLatency(summary?.avg_latency_ms)} subtext={t("orgAIUsage.acrossMatchingCalls")} icon={Clock3} tone="violet" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <StatCard label="Estimated input tokens" value={formatNumber(summary?.estimated_input_tokens)} icon={Zap} tone="slate" />
-        <StatCard label="Estimated output tokens" value={formatNumber(summary?.estimated_output_tokens)} icon={Zap} tone="slate" />
+        <StatCard label={t("orgAIUsage.estimatedInputTokens")} value={formatNumber(summary?.estimated_input_tokens)} icon={Zap} tone="slate" />
+        <StatCard label={t("orgAIUsage.estimatedOutputTokens")} value={formatNumber(summary?.estimated_output_tokens)} icon={Zap} tone="slate" />
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Breakdown</h2>
-          <p className="text-xs text-slate-500 mt-1">Grouped by task, provider, model, and status.</p>
+          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">{t("orgAIUsage.breakdown")}</h2>
+          <p className="text-xs text-slate-500 mt-1">{t("orgAIUsage.breakdownDesc")}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-start">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
               <tr>
-                <th className="px-5 py-3 text-start">Task</th>
-                <th className="px-5 py-3 text-start">Provider</th>
-                <th className="px-5 py-3 text-start">Model</th>
-                <th className="px-5 py-3 text-start">Status</th>
-                <th className="px-5 py-3 text-end">Calls</th>
-                <th className="px-5 py-3 text-end">Avg latency</th>
-                <th className="px-5 py-3 text-end">Input tokens</th>
-                <th className="px-5 py-3 text-end">Output tokens</th>
-                <th className="px-5 py-3 text-start">Last seen</th>
+                <th className="px-5 py-3 text-start">{t("orgAIUsage.thTask")}</th>
+                <th className="px-5 py-3 text-start">{t("orgAIUsage.thProvider")}</th>
+                <th className="px-5 py-3 text-start">{t("orgAIUsage.thModel")}</th>
+                <th className="px-5 py-3 text-start">{t("orgAIUsage.thStatus")}</th>
+                <th className="px-5 py-3 text-end">{t("orgAIUsage.thCalls")}</th>
+                <th className="px-5 py-3 text-end">{t("orgAIUsage.thAvgLatency")}</th>
+                <th className="px-5 py-3 text-end">{t("orgAIUsage.thInputTokens")}</th>
+                <th className="px-5 py-3 text-end">{t("orgAIUsage.thOutputTokens")}</th>
+                <th className="px-5 py-3 text-start">{t("orgAIUsage.thLastSeen")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -384,7 +388,7 @@ export default function OrgAIUsage() {
                   <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center gap-3">
                       <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-primary-700 animate-spin" />
-                      Loading AI usage…
+                      {t("orgAIUsage.loading")}
                     </div>
                   </td>
                 </tr>
@@ -392,7 +396,7 @@ export default function OrgAIUsage() {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
-                    No AI usage events found for the selected filters.
+                    {t("orgAIUsage.noEvents")}
                   </td>
                 </tr>
               )}
@@ -404,13 +408,13 @@ export default function OrgAIUsage() {
                   </td>
                   <td className="px-5 py-3 text-slate-600 max-w-[220px] truncate">{row.model || "—"}</td>
                   <td className="px-5 py-3">
-                    <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold", statusClasses(row.status))}>{row.status}</span>
+                    <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold", statusClasses(row.status))}>{t(`orgAIUsage.statuses.${row.status}`, { defaultValue: row.status })}</span>
                   </td>
                   <td className="px-5 py-3 text-end tabular-nums font-semibold text-slate-800">{formatNumber(row.calls)}</td>
                   <td className="px-5 py-3 text-end tabular-nums text-slate-600">{formatLatency(row.avg_latency_ms)}</td>
                   <td className="px-5 py-3 text-end tabular-nums text-slate-600">{formatNumber(row.estimated_input_tokens)}</td>
                   <td className="px-5 py-3 text-end tabular-nums text-slate-600">{formatNumber(row.estimated_output_tokens)}</td>
-                  <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{row.last_seen_at ? new Date(row.last_seen_at).toLocaleString() : "—"}</td>
+                  <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{row.last_seen_at ? formatDate(row.last_seen_at, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</td>
                 </tr>
               ))}
             </tbody>

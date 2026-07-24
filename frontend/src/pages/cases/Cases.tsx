@@ -30,6 +30,7 @@ import { useSnackbar } from "../../context/SnackbarContext";
 import { useConfirm } from "../../context/ConfirmContext";
 
 import { Case } from "../../types";
+import { formatDate } from "../../lib/formatters";
 
 interface Client {
   id: number;
@@ -46,6 +47,11 @@ export default function Cases() {
   const { confirm } = useConfirm();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [fetchingMore, setFetchingMore] = useState(false);
+  const listLimit = 50;
+  const observerTarget = React.useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(
     searchParams.get("newCase") === "true",
@@ -76,10 +82,31 @@ export default function Cases() {
   const [selectedLawyerId, setSelectedLawyerId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchCases();
     fetchClients();
     fetchTeamMembers();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => fetchCases(0), 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !fetchingMore) {
+          fetchCases(page + 1);
+        }
+      },
+      { threshold: 1 },
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, loading, fetchingMore, page]);
 
   useEffect(() => {
     if (searchParams.get("newCase") === "true") {
@@ -126,32 +153,36 @@ export default function Cases() {
   const role = useRole(context);
   const { getFloatingProps } = useInteractions([click, dismiss, role]);
 
-  const filteredCases = React.useMemo(() => {
-    return cases.filter((caseItem) => {
-      const matchesSearch =
-        caseItem.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        caseItem.description
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        caseItem.id.toString().includes(searchTerm);
-      const matchesStatus =
-        statusFilter === "all" || caseItem.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [cases, searchTerm, statusFilter]);
+  const filteredCases = cases;
 
-  const fetchCases = async () => {
-    setLoading(true);
+  const fetchCases = async (targetPage = 0) => {
     setError(null);
+    if (targetPage === 0) {
+      setLoading(true);
+    } else {
+      setFetchingMore(true);
+    }
+
     try {
-      const response = await api.get("/v1/cases/");
-      setCases(response.data);
+      const response = await api.get("/v1/cases/", {
+        params: {
+          skip: targetPage * listLimit,
+          limit: listLimit,
+          ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}),
+          ...(statusFilter !== "all" ? { status_filter: statusFilter } : {}),
+        },
+      });
+      const incomingCases: Case[] = response.data;
+      setCases((prev) => targetPage === 0 ? incomingCases : [...prev, ...incomingCases]);
+      setHasMore(incomingCases.length === listLimit);
+      setPage(targetPage);
     } catch (err: any) {
       setError(
-        err.response?.data?.detail || "Failed to load cases. Please try again.",
+        err.response?.data?.detail || t("casesPage.loadFailed"),
       );
     } finally {
       setLoading(false);
+      setFetchingMore(false);
     }
   };
 
@@ -171,11 +202,10 @@ export default function Cases() {
       await api.post("/v1/cases/", formData);
       setShowCreateModal(false);
       setFormData({ title: "", description: "", client_id: null });
-      fetchCases();
+      fetchCases(0);
     } catch (err: any) {
       showSnackbar(
-        err.response?.data?.detail ||
-          "Failed to create case. Please try again.",
+        err.response?.data?.detail || t("casesPage.createFailed"),
         { type: "error" },
       );
     } finally {
@@ -202,9 +232,9 @@ export default function Cases() {
       setShowAssignClientModal(false);
       setSelectedCaseForAssignment(null);
       setSelectedClientId(null);
-      fetchCases();
+      fetchCases(0);
     } catch (err: any) {
-      showSnackbar(err.response?.data?.detail || "Failed to assign client", {
+      showSnackbar(err.response?.data?.detail || t("casesPage.assignClientFailed"), {
         type: "error",
       });
     } finally {
@@ -233,18 +263,13 @@ export default function Cases() {
         `/v1/cases/${selectedCaseForLawyerAssignment}/assign-lawyer`,
         { lawyer_id: lawyerId },
       );
-      showSnackbar(
-        t("casesPage.lawyerAssigned", {
-          defaultValue: "Lawyer assigned successfully",
-        }),
-        { type: "success" },
-      );
+      showSnackbar(t("casesPage.lawyerAssigned"), { type: "success" });
       setShowAssignLawyerModal(false);
       setSelectedCaseForLawyerAssignment(null);
       setSelectedLawyerId(null);
-      fetchCases();
+      fetchCases(0);
     } catch (err: any) {
-      showSnackbar(err.response?.data?.detail || "Failed to assign lawyer", {
+      showSnackbar(err.response?.data?.detail || t("casesPage.assignLawyerFailed"), {
         type: "error",
       });
     } finally {
@@ -282,9 +307,10 @@ export default function Cases() {
     }
   };
 
-  const getClientName = (clientId: number) => {
-    const client = clients.find((c) => c.id === clientId);
-    return client ? client.name : `Client #${clientId}`;
+  const getClientName = (caseItem: Case) => {
+    if (caseItem.client_name) return caseItem.client_name;
+    const client = clients.find((c) => c.id === caseItem.client_id);
+    return client ? client.name : t("casesPage.clientFallback", { id: caseItem.client_id });
   };
 
   return (
@@ -321,7 +347,7 @@ export default function Cases() {
             <span>{error}</span>
           </div>
           <button
-            onClick={fetchCases}
+            onClick={() => fetchCases(0)}
             className="px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors"
           >
             {t("casesPage.tryAgain")}
@@ -446,7 +472,7 @@ export default function Cases() {
                       </td>
                       <td className="px-2 py-2.5 text-sm text-slate-700">
                         {caseItem.client_id
-                          ? getClientName(caseItem.client_id)
+                          ? getClientName(caseItem)
                           : t("casesPage.noClient")}
                       </td>
                       <td className="px-2 py-2.5 text-sm">
@@ -468,16 +494,13 @@ export default function Cases() {
                         )}
                       </td>
                       <td className="px-2 py-2.5 text-xs text-slate-600">
-                        {new Date(caseItem.created_at).toLocaleDateString(
-                          "en-US",
-                          { month: "short", day: "numeric", year: "numeric" },
-                        )}
+                        {formatDate(caseItem.created_at)}
                       </td>
                       <td className="px-2 py-2.5 text-center text-sm text-slate-600">
-                        {caseItem.documents?.length || 0}
+                        {caseItem.documents_count ?? caseItem.documents?.length ?? 0}
                       </td>
                       <td className="px-2 py-2.5 text-center text-sm text-slate-600">
-                        {caseItem.notes?.length || 0}
+                        {caseItem.notes_count ?? caseItem.notes?.length ?? 0}
                       </td>
                       <td className="px-2 py-2.5 text-right relative">
                         <button
@@ -504,6 +527,9 @@ export default function Cases() {
                 </tbody>
               </table>
             )}
+            <div ref={observerTarget} className="py-4 text-center text-xs text-slate-400">
+              {fetchingMore ? t("casesPage.loadingMore") : hasMore ? "" : t("casesPage.endOfRecords")}
+            </div>
           </div>
         </div>
       )}
@@ -595,7 +621,7 @@ export default function Cases() {
                     description: prev.description
                       ? prev.description
                       : details.address
-                        ? `Entity Address: ${details.address}`
+                        ? `${t("casesPage.entityAddress")}: ${details.address}`
                         : "",
                   }));
                 }}

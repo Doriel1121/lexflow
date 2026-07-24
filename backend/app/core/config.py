@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # WebSocket: max concurrent connections per user
     WS_MAX_CONNECTIONS_PER_USER: int = 5
 
+    # API/runtime hardening
+    # 0 disables global request timeout; use reverse-proxy timeouts in production too.
+    API_REQUEST_TIMEOUT_SECONDS: float = 0
+    METRICS_CELERY_QUEUES: str = "default,documents,ai,celery"
+    ENABLE_TEST_UPLOAD_BYPASS: bool = False
+
     # Embedding: chunks per Celery task when using fan-out
     EMBEDDING_BATCH_SIZE: int = 10
 

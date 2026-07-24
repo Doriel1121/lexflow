@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Users, ArrowUpDown, TrendingUp, TrendingDown } from "lucide-react";
 import api from "../../services/api";
+import { formatDate } from "../../lib/formatters";
 import type { EmployeeStats } from "../../types";
 
 type SortKey =
@@ -65,7 +66,7 @@ export function EmployeeTable() {
     sortField: SortKey;
   }) => (
     <th
-      className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700 select-none"
+      className="px-4 py-3 text-start text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700 select-none"
       onClick={() => toggleSort(sortField)}
     >
       <span className="flex items-center gap-1">
@@ -134,7 +135,7 @@ export function EmployeeTable() {
                 label={t("dashboardPage.overdue")}
                 sortField="overdue_deadlines"
               />
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-start text-xs font-bold text-slate-500 uppercase tracking-wider">
                 {t("dashboardPage.lastActive")}
               </th>
             </tr>
@@ -199,10 +200,7 @@ export function EmployeeTable() {
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-400">
                   {emp.last_activity
-                    ? new Date(emp.last_activity).toLocaleDateString(
-                        undefined,
-                        { month: "short", day: "numeric" },
-                      )
+                    ? formatDate(emp.last_activity, { month: "short", day: "numeric" })
                     : t("dashboardPage.never")}
                 </td>
               </tr>

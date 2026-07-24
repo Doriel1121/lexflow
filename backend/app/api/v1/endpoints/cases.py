@@ -2,12 +2,12 @@ from typing import List, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, String
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, get_current_active_user, get_current_org, apply_user_org_filter, RoleChecker, verify_resource_access
 
-from app.schemas.case import CaseCreate, CaseUpdate, Case as CaseSchema, CaseNoteCreate, CaseNote, CaseNoteUpdate
+from app.schemas.case import CaseCreate, CaseUpdate, Case as CaseSchema, CaseListItem, CaseNoteCreate, CaseNote, CaseNoteUpdate
 from app.crud.case import case_crud
 from app.crud.user import user_crud
 from app.db.models.user import User as DBUser, UserRole
@@ -95,44 +95,77 @@ async def create_case(
         "deadlines": []
     }
 
-@router.get("/", response_model=List[CaseSchema])
+@router.get("/", response_model=List[CaseListItem])
 async def read_cases(
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker(list(UserRole))),
     org_id: int = Depends(get_current_org),
     skip: int = 0,
-    limit: int = 100
+    limit: int = 50,
+    search: str | None = None,
+    status_filter: str | None = None,
 ):
     """
-    Retrieve cases.
+    Retrieve lightweight case rows for list views.
     """
+    from app.db.models.client import Client as DBClient
+    from app.db.models.document import Document as DBDocument
+
     user_id = current_user.id
     user_role = current_user.role.value if current_user.role else None
-    query = select(DBCase).options(
-        selectinload(DBCase.assigned_lawyer),
-        selectinload(DBCase.notes),
-        selectinload(DBCase.documents),
-        selectinload(DBCase.deadlines)
-    ).offset(skip).limit(limit)
+    safe_limit = max(1, min(limit, 100))
+
+    documents_count = (
+        select(func.count(DBDocument.id))
+        .where(DBDocument.case_id == DBCase.id)
+        .correlate(DBCase)
+        .scalar_subquery()
+    )
+    notes_count = (
+        select(func.count(DBCaseNote.id))
+        .where(DBCaseNote.case_id == DBCase.id)
+        .correlate(DBCase)
+        .scalar_subquery()
+    )
+
+    query = (
+        select(DBCase, DBClient.name.label("client_name"), documents_count.label("documents_count"), notes_count.label("notes_count"))
+        .outerjoin(DBClient, DBClient.id == DBCase.client_id)
+        .options(selectinload(DBCase.assigned_lawyer))
+    )
+
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where(
+            DBCase.title.ilike(pattern)
+            | DBCase.description.ilike(pattern)
+            | DBCase.id.cast(String).ilike(pattern)
+        )
+
+    if status_filter and status_filter.lower() != "all":
+        query = query.where(DBCase.status == status_filter.upper())
+
     query = apply_user_org_filter(query, DBCase, user_id, org_id, user_role)
+    query = query.order_by(DBCase.created_at.desc(), DBCase.id.desc()).offset(skip).limit(safe_limit)
     result = await db.execute(query)
-    cases = result.scalars().all()
-    
+
     return [{
         "id": c.id,
         "title": c.title,
         "description": c.description,
         "status": c.status.value if hasattr(c.status, 'value') else c.status,
         "client_id": c.client_id,
+        "client_name": client_name,
         "created_by_user_id": c.created_by_user_id,
         "assigned_lawyer_id": c.assigned_lawyer_id,
         "assigned_lawyer_name": c.assigned_lawyer.full_name if c.assigned_lawyer else None,
+        "priority": getattr(c, "priority", "normal"),
+        "priority_score": getattr(c, "priority_score", 0.0),
+        "documents_count": documents_count_value or 0,
+        "notes_count": notes_count_value or 0,
         "created_at": c.created_at,
         "updated_at": c.updated_at,
-        "notes": [{"id": n.id, "case_id": n.case_id, "user_id": n.user_id, "content": n.content, "created_at": n.created_at, "updated_at": n.updated_at} for n in (c.notes or [])],
-        "documents": [{"id": d.id, "filename": d.filename, "s3_url": d.s3_url, "case_id": d.case_id, "uploaded_by_user_id": d.uploaded_by_user_id, "classification": d.classification, "language": d.language, "page_count": d.page_count, "processing_status": d.processing_status.value if hasattr(d.processing_status, 'value') else d.processing_status, "created_at": d.created_at, "updated_at": d.updated_at} for d in (c.documents or [])],
-        "deadlines": [{"id": dl.id, "case_id": dl.case_id, "document_id": dl.document_id, "deadline_date": dl.deadline_date, "deadline_type": dl.deadline_type.value if hasattr(dl.deadline_type, 'value') else dl.deadline_type, "title": dl.title, "description": dl.description, "confidence_score": dl.confidence_score, "is_completed": dl.is_completed, "assignee_id": dl.assignee_id, "created_at": dl.created_at, "updated_at": dl.updated_at} for dl in (c.deadlines or [])]
-    } for c in cases]
+    } for c, client_name, documents_count_value, notes_count_value in result.all()]
 
 @router.get("/{case_id}", response_model=CaseSchema)
 async def read_case_by_id(

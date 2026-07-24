@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float, Table, JSON, Enum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Float, Table, JSON, Enum, Index
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import relationship
 # Using pgvector extension for Postgres (already installed in DB image)
@@ -22,6 +22,12 @@ class DocumentProcessingStatus(str, enum.Enum):
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        Index("ix_documents_org_created_id", "organization_id", "created_at", "id"),
+        Index("ix_documents_user_created_id", "uploaded_by_user_id", "created_at", "id"),
+        Index("ix_documents_case_created_id", "case_id", "created_at", "id"),
+    )
+
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=False)
@@ -75,6 +81,10 @@ class Document(Base):
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
+    __table_args__ = (
+        Index("ix_document_chunks_doc_chunk", "document_id", "chunk_index"),
+    )
+
 
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)

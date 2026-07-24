@@ -32,7 +32,7 @@ export function RecentDocs() {
   };
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return "Unknown";
+    if (!dateStr) return "?";
     const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
     const date = new Date(utcDateStr);
     const now = new Date();
@@ -40,10 +40,10 @@ export function RecentDocs() {
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffHours / 24);
 
-    if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours} hrs ago`;
-    if (diffDays === 1) return "1 day ago";
-    return `${diffDays} days ago`;
+    if (diffHours < 1) return t("dashboardPage.justNow");
+    if (diffHours < 24) return t("dashboardPage.hoursAgo", { count: diffHours });
+    if (diffDays === 1) return t("dashboardPage.daysAgo", { count: 1 });
+    return t("dashboardPage.daysAgo", { count: diffDays });
   };
   return (
     <div className="bg-white rounded-2xl overflow-hidden">
@@ -59,20 +59,20 @@ export function RecentDocs() {
         </a>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
+        <table className="w-full text-sm text-start">
           <thead>
             <tr className="border-t border-b border-slate-50">
               <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
-                Document
+                {t("dashboardPage.document")}
               </th>
               <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
-                Case
+                {t("dashboardPage.case")}
               </th>
               <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
-                Uploaded
+                {t("dashboardPage.uploaded")}
               </th>
               <th className="px-5 py-2.5 text-xs font-semibold text-slate-400 uppercase text-start tracking-wider">
-                Status
+                {t("dashboardPage.status")}
               </th>
             </tr>
           </thead>
@@ -115,14 +115,14 @@ export function RecentDocs() {
                     </div>
                   </td>
                   <td className="px-5 py-3.5 text-slate-500 text-xs">
-                    Case #{doc.case_id}
+                    {t("dashboardPage.caseNumber", { id: doc.case_id })}
                   </td>
                   <td className="px-5 py-3.5 text-slate-400 text-xs">
                     {formatDate(doc.created_at)}
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-600">
-                      {doc.classification || "Processed"}
+                      {doc.classification || t("documents.processed")}
                     </span>
                   </td>
                 </tr>
