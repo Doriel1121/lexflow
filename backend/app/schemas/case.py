@@ -49,6 +49,27 @@ class CaseUpdate(CaseBase):
     assigned_lawyer_id: Optional[int] = None
     priority: Optional[str] = None
 
+
+class CaseListItem(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    status: str = "OPEN"
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    created_by_user_id: int
+    assigned_lawyer_id: Optional[int] = None
+    assigned_lawyer_name: Optional[str] = None
+    priority: Optional[str] = "normal"
+    priority_score: Optional[float] = 0.0
+    documents_count: int = 0
+    notes_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class Case(CaseBase):
     id: int
     client_id: Optional[int] = None

@@ -18,10 +18,12 @@ import { useTranslation } from "react-i18next";
 
 type DocumentViewerPayload = {
   document: any;
-  intelligence: any;
 };
 
 const detailInFlightRequests = new Map<string, Promise<DocumentViewerPayload>>();
+const summaryInFlightRequests = new Map<string, Promise<any>>();
+const metadataInFlightRequests = new Map<string, Promise<any>>();
+const textInFlightRequests = new Map<string, Promise<any>>();
 const DETAIL_REFRESH_STAGES = new Set([
   "ocr_completed",
   "fast_metadata_ready",
@@ -43,16 +45,10 @@ const loadDocumentViewerPayload = async (
     return inFlight;
   }
 
-  const request = Promise.all([
-    api.get(`/v1/documents/${documentId}`),
-    api
-      .get(`/v1/documents/${documentId}/intelligence`)
-      .catch(() => ({ data: null })),
-  ])
-    .then(([docResponse, intelligenceResponse]) => {
+  const request = api.get(`/v1/documents/${documentId}`)
+    .then((docResponse) => {
       const payload = {
         document: docResponse.data,
-        intelligence: intelligenceResponse.data,
       };
       return payload;
     })
@@ -64,6 +60,69 @@ const loadDocumentViewerPayload = async (
   return request;
 };
 
+const loadDocumentSummary = async (
+  documentId: string,
+  forceRefresh = false,
+): Promise<any> => {
+  const inFlight = summaryInFlightRequests.get(documentId);
+  if (!forceRefresh && inFlight) {
+    return inFlight;
+  }
+
+  const request = api
+    .get(`/v1/documents/${documentId}/summary`)
+    .then((response) => response.data)
+    .catch(() => null)
+    .finally(() => {
+      summaryInFlightRequests.delete(documentId);
+    });
+
+  summaryInFlightRequests.set(documentId, request);
+  return request;
+};
+
+const loadDocumentMetadata = async (
+  documentId: string,
+  forceRefresh = false,
+): Promise<any> => {
+  const inFlight = metadataInFlightRequests.get(documentId);
+  if (!forceRefresh && inFlight) {
+    return inFlight;
+  }
+
+  const request = api
+    .get(`/v1/documents/${documentId}/metadata`)
+    .then((response) => response.data)
+    .catch(() => null)
+    .finally(() => {
+      metadataInFlightRequests.delete(documentId);
+    });
+
+  metadataInFlightRequests.set(documentId, request);
+  return request;
+};
+
+const loadDocumentText = async (
+  documentId: string,
+  forceRefresh = false,
+): Promise<any> => {
+  const inFlight = textInFlightRequests.get(documentId);
+  if (!forceRefresh && inFlight) {
+    return inFlight;
+  }
+
+  const request = api
+    .get(`/v1/documents/${documentId}/text`)
+    .then((response) => response.data)
+    .catch(() => null)
+    .finally(() => {
+      textInFlightRequests.delete(documentId);
+    });
+
+  textInFlightRequests.set(documentId, request);
+  return request;
+};
+
 export function DocumentViewer() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -72,9 +131,21 @@ export function DocumentViewer() {
   const [activeTab, setActiveTab] = useState("summary");
   const [loading, setLoading] = useState(true);
   const [document, setDocument] = useState<any>(null);
-  const [intelligence, setIntelligence] = useState<any>(null);
+  const [summary, setSummary] = useState<any>(null);
+  const [metadata, setMetadata] = useState<any>(null);
+  const [ocrText, setOcrText] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [metadataLoading, setMetadataLoading] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [summaryLoaded, setSummaryLoaded] = useState(false);
+  const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [ocrLoaded, setOcrLoaded] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTabRef = useRef(activeTab);
+  const summaryLoadedRef = useRef(false);
+  const metadataLoadedRef = useRef(false);
+  const ocrLoadedRef = useRef(false);
 
   // Normalize OCR content: collapse single newlines into spaces, preserving paragraph breaks.
   const normalizeContent = (text: string | null | undefined): string => {
@@ -88,6 +159,33 @@ export function DocumentViewer() {
   };
 
   useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    summaryLoadedRef.current = summaryLoaded;
+  }, [summaryLoaded]);
+
+  useEffect(() => {
+    metadataLoadedRef.current = metadataLoaded;
+  }, [metadataLoaded]);
+
+  useEffect(() => {
+    ocrLoadedRef.current = ocrLoaded;
+  }, [ocrLoaded]);
+
+  useEffect(() => {
+    setDocument(null);
+    setSummary(null);
+    setMetadata(null);
+    setOcrText(null);
+    setSummaryLoaded(false);
+    setMetadataLoaded(false);
+    setOcrLoaded(false);
+    summaryLoadedRef.current = false;
+    metadataLoadedRef.current = false;
+    ocrLoadedRef.current = false;
+
     if (id) {
       fetchDocumentData();
     }
@@ -98,6 +196,16 @@ export function DocumentViewer() {
       }
       refreshTimerRef.current = setTimeout(() => {
         fetchDocumentDataSilent(true);
+        const currentTab = activeTabRef.current;
+        if (currentTab === "summary" || summaryLoadedRef.current) {
+          fetchSummaryData(true);
+        }
+        if (currentTab === "entities" || metadataLoadedRef.current) {
+          fetchMetadataData(true);
+        }
+        if (currentTab === "ocr" || ocrLoadedRef.current) {
+          fetchOcrText(true);
+        }
         refreshTimerRef.current = null;
       }, 500);
     };
@@ -146,6 +254,20 @@ export function DocumentViewer() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (!id || loading) return;
+
+    if (activeTab === "summary") {
+      fetchSummaryData();
+    }
+    if (activeTab === "entities") {
+      fetchMetadataData();
+    }
+    if (activeTab === "ocr") {
+      fetchOcrText();
+    }
+  }, [id, loading, activeTab]);
+
   const fetchDocumentData = async () => {
     setLoading(true);
     await fetchDocumentDataSilent();
@@ -158,11 +280,73 @@ export function DocumentViewer() {
     try {
       const payload = await loadDocumentViewerPayload(id, forceRefresh);
       setDocument(payload.document);
-      setIntelligence(payload.intelligence);
     } catch (error) {
       console.error("Failed to load document:", error);
     }
   };
+  const fetchSummaryData = async (forceRefresh = false) => {
+    if (!id || (summaryLoaded && !forceRefresh)) return;
+
+    setSummaryLoading(true);
+    try {
+      const payload = await loadDocumentSummary(id, forceRefresh);
+      setSummary(payload);
+      setSummaryLoaded(true);
+      summaryLoadedRef.current = true;
+    } catch (error) {
+      console.error("Failed to load document summary:", error);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const fetchMetadataData = async (forceRefresh = false) => {
+    if (!id || (metadataLoaded && !forceRefresh)) return;
+
+    setMetadataLoading(true);
+    try {
+      const payload = await loadDocumentMetadata(id, forceRefresh);
+      setMetadata(payload);
+      setMetadataLoaded(true);
+      metadataLoadedRef.current = true;
+    } catch (error) {
+      console.error("Failed to load document metadata:", error);
+    } finally {
+      setMetadataLoading(false);
+    }
+  };
+
+  const fetchOcrText = async (forceRefresh = false) => {
+    if (!id || (ocrLoaded && !forceRefresh)) return;
+
+    setOcrLoading(true);
+    try {
+      const payload = await loadDocumentText(id, forceRefresh);
+      setOcrText(payload?.content ?? null);
+      setOcrLoaded(true);
+      ocrLoadedRef.current = true;
+      if (payload) {
+        setDocument((prev: any) =>
+          prev
+            ? {
+                ...prev,
+                language: payload.language ?? prev.language,
+                page_count: payload.page_count ?? prev.page_count,
+              }
+            : prev,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load OCR text:", error);
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+  };
+
   const handleDelete = async () => {
     try {
       await api.delete(`/v1/documents/${id}`);
@@ -194,14 +378,17 @@ export function DocumentViewer() {
   const normalizedStatus = document.processing_status
     ? document.processing_status.toLowerCase()
     : "completed";
-  const isOCRReady = document.content && document.content.length > 0;
-  const isAIReady =
-    !!intelligence && (intelligence.summary || intelligence.metadata);
+  const hasOcrMetadata = Boolean(document.page_count || document.language);
+  const hasOcrText = Boolean(ocrText && ocrText.length > 0);
+  const isSummaryReady = summaryLoaded;
+  const isMetadataReady = metadataLoaded;
+  const isAIReady = Boolean(summary) || Boolean(metadata);
+  const documentTags = Array.isArray(document.tags) ? document.tags : [];
   const isRTL = i18n.language?.toLowerCase().startsWith("he");
 
   // --- INITIAL OCR LOADING STATE ---
   if (
-    !isOCRReady &&
+    !hasOcrMetadata &&
     (normalizedStatus === "pending" || normalizedStatus === "processing")
   ) {
     return (
@@ -235,7 +422,7 @@ export function DocumentViewer() {
   }
 
   // --- FAILED STATE (ONLY IF NO CONTENT) ---
-  if (normalizedStatus === "failed" && !isOCRReady) {
+  if (normalizedStatus === "failed" && !hasOcrMetadata) {
     return (
       <div className="h-[calc(100vh-8rem)] flex items-center justify-center bg-slate-50">
         <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-red-100 flex flex-col items-center text-center">
@@ -274,6 +461,8 @@ export function DocumentViewer() {
     try {
       await api.post(`/v1/documents/retry-ai-analysis/${id}`);
       fetchDocumentData();
+      fetchSummaryData(true);
+      fetchMetadataData(true);
       showSnackbar("Analysis retry queued.", { type: "success" });
     } catch (e) {
       showSnackbar("Failed to retry analysis.", { type: "error" });
@@ -327,7 +516,7 @@ export function DocumentViewer() {
                 {document.language?.toUpperCase() || "UNKNOWN"} •{" "}
                 {document.page_count || 0} pages
               </span>
-              {intelligence?.analysis_mode === "chunked" && (
+              {document.ai_health?.analysis_mode === "chunked" && (
                 <>
                   <span>•</span>
                   <span
@@ -336,8 +525,7 @@ export function DocumentViewer() {
                   >
                     {t("documentViewer.analysisModeChunked", {
                       count:
-                        intelligence.chunks_analyzed ??
-                        intelligence.ai_health?.chunks_analyzed ??
+                        document.ai_health?.chunks_analyzed ??
                         "?",
                     })}
                   </span>
@@ -372,7 +560,7 @@ export function DocumentViewer() {
           ) : (
             <div className="p-8 overflow-y-auto">
               <div className="bg-white shadow-sm max-w-2xl mx-auto p-8 text-slate-800 text-sm leading-relaxed border border-slate-200 rounded-lg relative">
-                {!isAIReady && normalizedStatus !== "failed" && (
+                {!isAIReady && !summaryLoading && normalizedStatus !== "failed" && (
                   <div className="absolute top-4 end-4 flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold border border-blue-100 animate-pulse">
                     <Sparkles className="h-3 w-3" />
                     AI ANALYSIS IN PROGRESS
@@ -388,7 +576,9 @@ export function DocumentViewer() {
                       : "var(--font-english)",
                   }}
                 >
-                  {normalizeContent(document.content)}
+                  {hasOcrText
+                    ? normalizeContent(ocrText)
+                    : "Open the OCR tab to load extracted text."}
                 </p>
               </div>
             </div>
@@ -401,7 +591,7 @@ export function DocumentViewer() {
             {["summary", "entities", "ask", "ocr"].map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => handleTabChange(tab)}
                 className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors uppercase tracking-wider ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-slate-800"}`}
               >
                 {tab === "ask" ? "Ask AI" : tab}
@@ -421,7 +611,7 @@ export function DocumentViewer() {
 
             {activeTab === "summary" && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {!isAIReady ? (
+                {summaryLoading || !isSummaryReady ? (
                   <div className="bg-blue-50/30 border border-blue-100/50 rounded-xl p-8 flex flex-col items-center text-center">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-4" />
                     <h3 className="font-bold text-blue-900 text-sm mb-2">
@@ -435,12 +625,12 @@ export function DocumentViewer() {
                   </div>
                 ) : (
                   <>
-                    {intelligence?.analysis_mode === "chunked" && (
+                    {document.ai_health?.analysis_mode === "chunked" && (
                       <p className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
                         {t("documentViewer.analysisModeChunkedBanner")}
                       </p>
                     )}
-                    {intelligence?.summary?.content && (
+                    {summary?.content && (
                       <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
                         <div className="flex items-start space-x-3">
                           <Bot className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
@@ -458,19 +648,19 @@ export function DocumentViewer() {
                                   : "var(--font-english)",
                               }}
                             >
-                              {intelligence.summary.content}
+                              {summary.content}
                             </pre>
                           </div>
                         </div>
                       </div>
                     )}
-                    {intelligence?.summary?.key_dates?.length > 0 && (
+                    {summary?.key_dates?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
                           Important Dates
                         </h3>
                         <div className="space-y-2">
-                          {intelligence.summary.key_dates.map(
+                          {summary.key_dates.map(
                             (d: any, i: number) => (
                               <div
                                 key={i}
@@ -490,31 +680,31 @@ export function DocumentViewer() {
                         </div>
                       </div>
                     )}
-                    {intelligence?.tags?.length > 0 && (
+                    {documentTags.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
                           Tags
                         </h3>
                         <div className="flex flex-wrap gap-2">
-                          {intelligence.tags.map((t: string, i: number) => (
+                          {documentTags.map((tag: any, i: number) => (
                             <span
                               key={i}
                               className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-secondary-50 text-secondary-700 border border-secondary-200"
                             >
                               <TagIcon className="h-3 w-3 mr-1 opacity-60" />
-                              {t}
+                              {typeof tag === "string" ? tag : tag.name}
                             </span>
                           ))}
                         </div>
                       </div>
                     )}
-                    {intelligence?.summary?.parties?.length > 0 && (
+                    {summary?.parties?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
                           Parties Involved
                         </h3>
                         <div className="space-y-2">
-                          {intelligence.summary.parties.map(
+                          {summary.parties.map(
                             (p: any, i: number) => (
                               <div
                                 key={i}
@@ -534,7 +724,7 @@ export function DocumentViewer() {
 
             {activeTab === "entities" && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {!isAIReady ? (
+                {metadataLoading || !isMetadataReady ? (
                   <div className="space-y-4">
                     {[1, 2, 3].map((i) => (
                       <div
@@ -551,13 +741,13 @@ export function DocumentViewer() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {intelligence?.metadata?.entities?.length > 0 && (
+                    {metadata?.entities?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
                           Entities
                         </h3>
                         <div className="space-y-3">
-                          {intelligence.metadata.entities.map(
+                          {metadata.entities.map(
                             (ent: any, i: number) => (
                               <div
                                 key={i}
@@ -593,13 +783,13 @@ export function DocumentViewer() {
                         </div>
                       </div>
                     )}
-                    {intelligence?.metadata?.dates?.length > 0 && (
+                    {metadata?.dates?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
                           Dates
                         </h3>
                         <div className="space-y-2">
-                          {intelligence.metadata.dates.map(
+                          {metadata.dates.map(
                             (d: any, i: number) => (
                               <div
                                 key={i}
@@ -619,13 +809,13 @@ export function DocumentViewer() {
                         </div>
                       </div>
                     )}
-                    {intelligence?.metadata?.amounts?.length > 0 && (
+                    {metadata?.amounts?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
                           Amounts
                         </h3>
                         <div className="space-y-2">
-                          {intelligence.metadata.amounts.map(
+                          {metadata.amounts.map(
                             (a: any, i: number) => (
                               <div
                                 key={i}
@@ -657,7 +847,16 @@ export function DocumentViewer() {
                 lang={i18n.language}
                 className="prose prose-sm max-w-none text-slate-600 bg-slate-50 p-4 rounded-lg border border-slate-100 text-xs whitespace-pre-wrap font-sans"
               >
-                {document.content}
+                {ocrLoading ? (
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading OCR text...
+                  </div>
+                ) : hasOcrText ? (
+                  ocrText
+                ) : (
+                  "OCR text is not available yet."
+                )}
               </div>
             )}
           </div>

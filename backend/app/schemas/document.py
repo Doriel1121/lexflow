@@ -54,6 +54,9 @@ class DocumentListItem(BaseModel):
     class Config:
         from_attributes = True
 
+class DocumentDetail(DocumentListItem):
+    pass
+
 class Document(DocumentBase):
     id: int
     uploaded_by_user_id: int

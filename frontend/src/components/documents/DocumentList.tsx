@@ -45,10 +45,10 @@ interface Document {
 }
 
 const formatDate = (dateStr: string) => {
-  if (!dateStr) return "Unknown";
+  if (!dateStr) return "?";
   const utcDateStr = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
   const date = new Date(utcDateStr);
-  return date.toISOString().split("T")[0];
+  return date.toLocaleDateString();
 };
 
 const getNormalizedStatus = (status: string | undefined | null) => {
@@ -391,12 +391,10 @@ export function DocumentList() {
     return () => observer.disconnect();
   }, [hasMore, loading, fetchingMore, page, searchTerm]);
 
-  // Debounced Semantic Search Hook
+  // Debounced backend search hook for both regular and concept search.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (semanticSearchActive) {
-        fetchDocuments(searchTerm, 0);
-      }
+      fetchDocuments(searchTerm, 0);
     }, 700);
     return () => clearTimeout(timer);
   }, [searchTerm, semanticSearchActive]);
@@ -424,15 +422,15 @@ export function DocumentList() {
       event.target.value = "";
 
       // Show success message
-      showSnackbar("Document uploaded successfully", { type: "success" });
+      showSnackbar(t("documentList.uploadSuccess"), { type: "success" });
       console.log("Document uploaded successfully:", newDoc.filename);
     } catch (error: any) {
       console.error("Upload failed:", error);
       const errorMsg =
         error.response?.data?.detail ||
         error.message ||
-        "Failed to upload document";
-      showSnackbar(`Upload failed: ${errorMsg}`, { type: "error" });
+        t("documentList.uploadFailed");
+      showSnackbar(`${t("documentList.uploadFailed")}: ${errorMsg}`, { type: "error" });
     } finally {
       setUploading(false);
     }
@@ -454,12 +452,12 @@ export function DocumentList() {
 
     try {
       await api.delete(`/v1/documents/${docId}`);
-      showSnackbar("Document deleted successfully", { type: "success" });
+      showSnackbar(t("documentList.deleteSuccess"), { type: "success" });
     } catch (error) {
       // ❌ ROLLBACK: Restore previous state on error
       setDocuments(previousDocs);
       console.error("Failed to delete document:", error);
-      showSnackbar("Failed to delete document", { type: "error" });
+      showSnackbar(t("documentList.deleteFailed"), { type: "error" });
     } finally {
       setDeletingId(null);
     }
@@ -531,12 +529,12 @@ export function DocumentList() {
 
     try {
       await api.post(`/v1/documents/retry-ai-analysis/${docId}`);
-      showSnackbar("AI analysis queued successfully", { type: "success" });
+      showSnackbar(t("documentList.retryAISuccess"), { type: "success" });
       // Document will update via polling status endpoint
     } catch (error: any) {
       // ❌ ROLLBACK: Fetch correct status on error
       console.error("Failed to retry AI analysis:", error);
-      showSnackbar(`Failed: ${error.response?.data?.detail || error.message}`, {
+      showSnackbar(`${t("documentList.retryAIFailed")}: ${error.response?.data?.detail || error.message}`, {
         type: "error",
       });
 
@@ -558,7 +556,7 @@ export function DocumentList() {
       {newDocsToast && (
         <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl animate-fade-in">
           <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          New documents received via email intake
+          {t("documentList.newDocsReceived")}
           <button
             onClick={() => setNewDocsToast(false)}
             className="ms-2 text-slate-400 hover:text-white"
@@ -626,7 +624,7 @@ export function DocumentList() {
               }`}
             >
               <Filter className="h-4 w-4" />
-              <span>Filter</span>
+              <span>{t("common.filter")}</span>
               {(filterStatus ||
                 filterClassification ||
                 filterDateFrom ||
@@ -1073,18 +1071,18 @@ export function DocumentList() {
                   onChange={(e) => setFilterStatus(e.target.value)}
                   className="w-full ps-3 pe-10 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 >
-                  <option value="">All Status</option>
-                  <option value="pending">Pending</option>
-                  <option value="processing">Processing</option>
-                  <option value="completed">Completed</option>
-                  <option value="failed">Failed</option>
+                  <option value="">{t("documentList.allStatus")}</option>
+                  <option value="pending">{t("status.pending")}</option>
+                  <option value="processing">{t("documentList.processing")}</option>
+                  <option value="completed">{t("documentList.completed")}</option>
+                  <option value="failed">{t("documentList.failed")}</option>
                 </select>
               </div>
 
               {/* Classification Filter */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Classification
+                  {t("documentList.classification")}
                 </label>
                 <input
                   type="text"
@@ -1098,11 +1096,11 @@ export function DocumentList() {
               {/* Date Range Filter */}
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-slate-700">
-                  Date Range
+                  {t("documentList.dateRange")}
                 </label>
                 <div>
                   <label className="block text-xs text-slate-600 mb-1">
-                    From
+                    {t("documentList.from")}
                   </label>
                   <input
                     type="date"
@@ -1113,7 +1111,7 @@ export function DocumentList() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-600 mb-1">
-                    To
+                    {t("documentList.to")}
                   </label>
                   <input
                     type="date"

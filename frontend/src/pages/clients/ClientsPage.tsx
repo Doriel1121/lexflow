@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ShieldAlert, ShieldCheck, Building2, Phone, Mail } from 'lucide-react';
+import { formatDate } from '../../lib/formatters';
 import { useTranslation } from 'react-i18next';
 import { clientsService, Client } from '../../services/clients';
 
@@ -8,19 +9,53 @@ export const ClientsPage: React.FC = () => {
   const { t } = useTranslation();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [fetchingMore, setFetchingMore] = useState(false);
+  const listLimit = 50;
+  const observerTarget = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchClients();
+    fetchClients(0);
   }, []);
 
-  const fetchClients = async () => {
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !fetchingMore) {
+          fetchClients(page + 1);
+        }
+      },
+      { threshold: 1 },
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, loading, fetchingMore, page]);
+
+  const fetchClients = async (targetPage = 0) => {
+    if (targetPage === 0) {
+      setLoading(true);
+    } else {
+      setFetchingMore(true);
+    }
+
     try {
-      const data = await clientsService.getClients();
-      setClients(data);
+      const data = await clientsService.getClients({
+        skip: targetPage * listLimit,
+        limit: listLimit,
+      });
+      setClients((prev) => targetPage === 0 ? data : [...prev, ...data]);
+      setHasMore(data.length === listLimit);
+      setPage(targetPage);
     } catch (error) {
       console.error('Failed to fetch clients:', error);
     } finally {
       setLoading(false);
+      setFetchingMore(false);
     }
   };
 
@@ -33,7 +68,7 @@ export const ClientsPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto py-6">
+    <div className="max-w-6xl mx-auto py-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">{t('clients.title')}</h1>
@@ -48,7 +83,7 @@ export const ClientsPage: React.FC = () => {
         </Link>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 min-h-0 flex flex-col">
         {clients.length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Building2 className="h-12 w-12 mx-auto mb-4 text-slate-300 opacity-50" />
@@ -56,7 +91,7 @@ export const ClientsPage: React.FC = () => {
             <p className="text-sm">{t('clients.noClientsDesc')}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1 min-h-0">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-medium">
                 <tr>
@@ -104,12 +139,15 @@ export const ClientsPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-slate-500">
-                      {new Date(client.created_at).toLocaleDateString()}
+                      {formatDate(client.created_at)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <div ref={observerTarget} className="py-4 text-center text-xs text-slate-400">
+              {fetchingMore ? t('clients.loadingMore') : hasMore ? '' : t('clients.endOfRecords')}
+            </div>
           </div>
         )}
       </div>

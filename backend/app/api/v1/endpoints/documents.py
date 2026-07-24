@@ -2,7 +2,7 @@ from typing import List, Annotated, Optional
 import logging
 from pathlib import Path
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy import or_, select, desc, func
@@ -12,7 +12,7 @@ from app.db.session import AsyncSessionLocal
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user, apply_user_org_filter, RoleChecker, verify_resource_access
 from app.db.models.user import User as DBUser, UserRole
-from app.schemas.document import DocumentCreate, DocumentUpdate, Document as DocumentSchema, DocumentListItem
+from app.schemas.document import DocumentCreate, DocumentUpdate, Document as DocumentSchema, DocumentDetail, DocumentListItem
 from app.schemas.tag import Tag as TagSchema, TagCreate
 from app.schemas.summary import SummaryCreate, Summary as SummarySchema # Import Summary Schemas
 from app.schemas.document_metadata import DocumentMetadata as DocumentMetadataSchema, DocumentMetadataCreate
@@ -47,7 +47,10 @@ async def get_recent_documents(
     user_id = current_user.id
     user_role = current_user.role.value if current_user.role else None
     
-    query = select(DBDocument).order_by(desc(DBDocument.created_at)).limit(limit)
+    query = select(DBDocument).order_by(
+        desc(DBDocument.created_at),
+        desc(DBDocument.id),
+    ).limit(limit)
     query = apply_user_org_filter(query, DBDocument, user_id, user_org_id, user_role)
     
     result = await db.execute(query)
@@ -65,6 +68,7 @@ async def get_recent_documents(
 async def upload_document(
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    request: Request,
     case_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: DBUser = Depends(RoleChecker([UserRole.ADMIN, UserRole.ORG_ADMIN, UserRole.LAWYER, UserRole.ASSISTANT])),
@@ -154,12 +158,24 @@ async def upload_document(
             db, document_in, current_user.id, target_org_id
         )
         document_id = document.id
+        skip_processing = (
+            settings.ENABLE_TEST_UPLOAD_BYPASS
+            and request.headers.get("X-LexFlow-Test-Skip-Processing", "").lower()
+            in {"1", "true", "yes"}
+        )
+        if skip_processing:
+            document.processing_status = DocumentProcessingStatus.COMPLETED
+            document.processing_stage = "test_upload_bypass"
+            document.processing_progress = 100.0
+            document.ai_health = {"test_upload_bypass": True}
         await db.commit()  # ✅ Explicit commit after creation
         logger.info(f"[Doc {document_id}] Created placeholder document.")
 
         # ── Queue processing ───────────────────────────────────────────────
         celery_queued = False
-        if processing_flow == "celery":
+        if skip_processing:
+            logger.info(f"[Doc {document_id}] Processing skipped by explicit test bypass header.")
+        elif processing_flow == "celery":
             try:
                 from app.workers.document_tasks import process_document_pipeline
                 from app.core.celery import safe_task_delay
@@ -177,7 +193,7 @@ async def upload_document(
                     f"[Doc {document_id}] Celery unavailable ({celery_err}) — falling back to BackgroundTask.",
                 )
 
-        if not celery_queued:
+        if not celery_queued and not skip_processing:
             # Always-available fallback: Use asyncio.create_task() for async function
             # Db session is created within the background task itself
             background_tasks.add_task(
@@ -319,11 +335,61 @@ async def read_documents(
         )
         
     query = apply_user_org_filter(query, DBDocument, user_id, user_org_id, user_role)
-    query = query.order_by(desc(DBDocument.created_at)).offset(skip).limit(safe_limit)
+    query = query.order_by(
+        desc(DBDocument.created_at),
+        desc(DBDocument.id),
+    ).offset(skip).limit(safe_limit)
     
     result = await db.execute(query)
     documents = result.scalars().all()
     return documents
+
+def _normalise_entities(raw: list) -> list:
+    normalised = []
+    for item in (raw or []):
+        if isinstance(item, dict):
+            normalised.append({
+                "name": item.get("name", ""),
+                "role": item.get("role", ""),
+                "id_number": item.get("id_number"),
+                "contact": item.get("contact"),
+                "firm": item.get("firm"),
+                "bar_number": item.get("bar_number"),
+            })
+        elif isinstance(item, str) and item.strip():
+            normalised.append({
+                "name": item,
+                "role": "",
+                "id_number": None,
+                "contact": None,
+                "firm": None,
+                "bar_number": None,
+            })
+    return normalised
+
+def _normalise_dates(raw: list) -> list:
+    out = []
+    for item in (raw or []):
+        if isinstance(item, dict):
+            out.append(item)
+        elif isinstance(item, str) and item.strip():
+            out.append({"date": item, "description": None, "type": None})
+    return out
+
+def _normalise_amounts(raw: list) -> list:
+    out = []
+    for item in (raw or []):
+        if isinstance(item, dict):
+            out.append(item)
+        elif isinstance(item, str) and item.strip():
+            out.append({
+                "amount": item,
+                "currency": None,
+                "description": None,
+                "payer": None,
+                "payee": None,
+            })
+    return out
 
 def _dedupe_ranked_documents(rows, limit: int):
     ranked_documents = []
@@ -373,8 +439,8 @@ async def search_documents_semantic(
             detail="Semantic search is unavailable (embedding service inactive or failed).",
         )
         
-    # 2. Search Postgres using L2 Distance and keep each document's best chunk.
-    distance = DocumentChunk.embedding.l2_distance(query_vector)
+    # 2. Search Postgres using cosine distance and keep each document's best chunk.
+    distance = DocumentChunk.embedding.cosine_distance(query_vector)
     safe_limit = max(1, min(limit, 100))
     candidate_limit = max(safe_limit * 8, 50)
     threshold = max(0.0, threshold)
@@ -422,7 +488,7 @@ async def search_documents_semantic(
     return _dedupe_ranked_documents(result.all(), safe_limit)
 
 
-@router.get("/{document_id}", response_model=DocumentSchema)
+@router.get("/{document_id}", response_model=DocumentDetail)
 async def read_document_by_id(
     document_id: int,
     db: AsyncSession = Depends(get_db),
@@ -431,12 +497,39 @@ async def read_document_by_id(
     """
     Get a specific document by ID with authorization check.
     """
-    document = await document_crud.get(db, document_id)
+    result = await db.execute(
+        select(DBDocument)
+        .options(
+            load_only(
+                DBDocument.id,
+                DBDocument.filename,
+                DBDocument.s3_url,
+                DBDocument.case_id,
+                DBDocument.classification,
+                DBDocument.language,
+                DBDocument.page_count,
+                DBDocument.processing_status,
+                DBDocument.processing_stage,
+                DBDocument.processing_progress,
+                DBDocument.processed_chunks,
+                DBDocument.total_chunks,
+                DBDocument.embedding_failed_count,
+                DBDocument.ai_health,
+                DBDocument.uploaded_by_user_id,
+                DBDocument.created_at,
+                DBDocument.updated_at,
+                DBDocument.organization_id,
+            ),
+            selectinload(DBDocument.tags),
+        )
+        .where(DBDocument.id == document_id)
+    )
+    document = result.scalar_one_or_none()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    
+
     verify_resource_access(document, current_user)
-    
+
     return document
 
 @router.put("/{document_id}", response_model=DocumentSchema)
@@ -728,7 +821,16 @@ async def get_document_summary(
     summary = await crud_summary.get_by_document_id(db, document_id)
     if not summary:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not found for this document")
-    return summary
+    return {
+        "id": summary.id,
+        "document_id": summary.document_id,
+        "content": summary.content,
+        "key_dates": _normalise_dates(summary.key_dates),
+        "parties": summary.parties or [],
+        "missing_documents_suggestion": summary.missing_documents_suggestion,
+        "created_at": summary.created_at,
+        "updated_at": summary.updated_at,
+    }
 
 
 
@@ -776,7 +878,16 @@ async def get_document_metadata(
     if not metadata:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metadata not found for this document")
     
-    return metadata
+    return {
+        "id": metadata.id,
+        "document_id": metadata.document_id,
+        "dates": _normalise_dates(metadata.dates),
+        "entities": _normalise_entities(metadata.entities),
+        "amounts": _normalise_amounts(metadata.amounts),
+        "case_numbers": metadata.case_numbers or [],
+        "created_at": metadata.created_at,
+        "updated_at": metadata.updated_at,
+    }
 
 @router.get("/{document_id}/intelligence")
 async def get_document_intelligence(

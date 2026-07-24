@@ -83,8 +83,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
-# ── Entrypoint — runs migrations then starts app ──────────────
+# ── Entrypoint — selects api/worker/all/migrate process mode ───
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Entrypoint handles migrations + supervisord (uvicorn + celery)
 CMD []

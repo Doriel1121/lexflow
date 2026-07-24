@@ -13,7 +13,13 @@ class CRUDClient:
     async def get_multi_by_organization(
         self, db: AsyncSession, *, organization_id: int, skip: int = 0, limit: int = 100
     ) -> List[DBClient]:
-        stmt = select(DBClient).where(DBClient.organization_id == organization_id).offset(skip).limit(limit)
+        stmt = (
+            select(DBClient)
+            .where(DBClient.organization_id == organization_id)
+            .order_by(DBClient.created_at.desc(), DBClient.id.desc())
+            .offset(skip)
+            .limit(limit)
+        )
         result = await db.execute(stmt)
         return list(result.scalars().all())
 

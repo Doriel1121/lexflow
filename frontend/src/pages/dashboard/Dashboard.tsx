@@ -10,11 +10,12 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Briefcase, FileText, Mail, Search, ArrowRight, Zap } from 'lucide-react';
+import { formatDate } from '../../lib/formatters';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const hour = new Date().getHours();
   const greetingKey = hour < 12 ? 'dashboard.greeting.morning'
@@ -40,8 +41,8 @@ export default function Dashboard() {
           <h1 className="text-3xl font-serif font-bold text-slate-800 tracking-tight">
             {t(greetingKey)}, {firstName} 👋
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          <p className="text-sm text-slate-400 mt-0.5" dir={i18n.dir()}>
+            {formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
       </div>
@@ -93,7 +94,7 @@ export default function Dashboard() {
                     <p className="text-sm font-semibold text-slate-700">{t(action.labelKey)}</p>
                     <p className="text-xs text-slate-400">{t(action.descKey)}</p>
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" />
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-slate-500 transition-colors shrink-0 rtl:rotate-180" />
                 </button>
               ))}
             </div>

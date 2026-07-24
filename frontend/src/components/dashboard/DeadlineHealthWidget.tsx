@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Clock, CheckCircle2, Shield } from 'lucide-react';
 import api from '../../services/api';
 import type { DeadlineHealth } from '../../types';
 
 export function DeadlineHealthWidget() {
+  const { t } = useTranslation();
   const [health, setHealth] = useState<DeadlineHealth | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,7 +31,7 @@ export function DeadlineHealthWidget() {
 
   const cards = [
     {
-      label: 'Overdue',
+      label: t('dashboardPage.deadlineOverdue'),
       value: health.overdue,
       icon: AlertTriangle,
       bg: 'bg-red-50',
@@ -37,7 +39,7 @@ export function DeadlineHealthWidget() {
       ring: health.overdue > 0 ? 'ring-2 ring-red-200' : '',
     },
     {
-      label: 'Due in 7d',
+      label: t('dashboardPage.deadlineDueIn7d'),
       value: health.approaching,
       icon: Clock,
       bg: 'bg-amber-50',
@@ -45,7 +47,7 @@ export function DeadlineHealthWidget() {
       ring: '',
     },
     {
-      label: 'On Track',
+      label: t('dashboardPage.deadlineOnTrack'),
       value: health.on_track,
       icon: CheckCircle2,
       bg: 'bg-emerald-50',
@@ -58,7 +60,7 @@ export function DeadlineHealthWidget() {
     <div className="bg-white rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-4">
         <Shield className="h-4 w-4 text-slate-500" />
-        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Deadline Health</h3>
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{t('dashboardPage.deadlineHealth')}</h3>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
@@ -74,7 +76,7 @@ export function DeadlineHealthWidget() {
       {/* Compliance trend sparkline */}
       {health.compliance_trend.length > 0 && (
         <div>
-          <p className="text-xs text-slate-400 mb-2">Weekly compliance trend</p>
+          <p className="text-xs text-slate-400 mb-2">{t('dashboardPage.weeklyComplianceTrend')}</p>
           <div className="flex items-end gap-1 h-10">
             {health.compliance_trend.map((week, i) => (
               <div
@@ -84,13 +86,13 @@ export function DeadlineHealthWidget() {
                   height: `${Math.max(week.rate, 5)}%`,
                   backgroundColor: week.rate >= 80 ? '#10b981' : week.rate >= 50 ? '#f59e0b' : '#ef4444',
                 }}
-                title={`${week.week_start}: ${week.rate}% compliance`}
+                title={t('dashboardPage.weekComplianceTooltip', { date: week.week_start, rate: week.rate })}
               />
             ))}
           </div>
           <div className="flex justify-between mt-1">
-            <span className="text-[10px] text-slate-300">4 weeks ago</span>
-            <span className="text-[10px] text-slate-300">This week</span>
+            <span className="text-[10px] text-slate-300">{t('dashboardPage.fourWeeksAgo')}</span>
+            <span className="text-[10px] text-slate-300">{t('dashboardPage.thisWeek')}</span>
           </div>
         </div>
       )}

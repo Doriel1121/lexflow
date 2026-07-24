@@ -3,6 +3,7 @@ AWS S3 Storage Service
 Drop-in replacement for B2/R2 — switch by setting STORAGE_BACKEND=s3 in env.
 Uses the same boto3 interface already used by B2/R2.
 """
+import asyncio
 from typing import Tuple
 from fastapi import UploadFile, HTTPException
 from pathlib import Path
@@ -50,7 +51,8 @@ class S3StorageService:
 
         s3_key = f"{destination_path}/{file.filename}"
         try:
-            self.s3_client.put_object(
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=self.bucket_name,
                 Key=s3_key,
                 Body=content,
@@ -65,7 +67,8 @@ class S3StorageService:
     async def save_file_bytes(self, content: bytes, destination: str, filename: str) -> Tuple[str, str]:
         s3_key = f"{destination}/{filename}"
         try:
-            self.s3_client.put_object(
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=self.bucket_name, Key=s3_key,
                 Body=content, ContentType='application/octet-stream',
             )
@@ -83,18 +86,19 @@ class S3StorageService:
         filename = current_key.split('/')[-1]
         new_key = f"{new_destination}/{filename}"
         try:
-            self.s3_client.copy_object(
+            await asyncio.to_thread(
+                self.s3_client.copy_object,
                 CopySource={'Bucket': self.bucket_name, 'Key': current_key},
                 Bucket=self.bucket_name, Key=new_key,
             )
-            self.s3_client.delete_object(Bucket=self.bucket_name, Key=current_key)
+            await asyncio.to_thread(self.s3_client.delete_object, Bucket=self.bucket_name, Key=current_key)
         except ClientError as e:
             raise HTTPException(status_code=500, detail=f"S3 move failed: {e}")
         return self._key_to_url(new_key)
 
     async def delete_file(self, s3_key: str) -> bool:
         try:
-            self.s3_client.delete_object(Bucket=self.bucket_name, Key=s3_key)
+            await asyncio.to_thread(self.s3_client.delete_object, Bucket=self.bucket_name, Key=s3_key)
             return True
         except ClientError as e:
             logger.error(f"S3 delete failed: {e}")

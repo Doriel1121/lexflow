@@ -43,7 +43,8 @@ export default function (data) {
     tags: { kind: "non_ai" },
   };
 
-  check(http.get(`${BASE_URL}/v1/documents/?skip=0&limit=50`, params), {
+  const listResponse = http.get(`${BASE_URL}/v1/documents/?skip=0&limit=50`, params);
+  check(listResponse, {
     "documents list ok": (res) => res.status === 200,
   });
 
@@ -54,6 +55,45 @@ export default function (data) {
     ),
     { "document search ok": (res) => res.status === 200 },
   );
+
+  const documents = listResponse.status === 200 ? listResponse.json() : [];
+  if (Array.isArray(documents) && documents.length > 0 && Math.random() < DETAIL_RATE) {
+    const documentId = documents[Math.floor(Math.random() * documents.length)].id;
+
+    check(
+      http.get(`${BASE_URL}/v1/documents/${documentId}`, {
+        headers: params.headers,
+        tags: { kind: "detail" },
+      }),
+      { "document detail ok": (res) => res.status === 200 },
+    );
+
+    check(
+      http.get(`${BASE_URL}/v1/documents/${documentId}/summary`, {
+        headers: params.headers,
+        tags: { kind: "tab_summary" },
+      }),
+      { "document summary handled": (res) => [200, 404].includes(res.status) },
+    );
+
+    check(
+      http.get(`${BASE_URL}/v1/documents/${documentId}/metadata`, {
+        headers: params.headers,
+        tags: { kind: "tab_metadata" },
+      }),
+      { "document metadata handled": (res) => [200, 404].includes(res.status) },
+    );
+
+    if (Math.random() < OCR_RATE) {
+      check(
+        http.get(`${BASE_URL}/v1/documents/${documentId}/text`, {
+          headers: params.headers,
+          tags: { kind: "tab_ocr" },
+        }),
+        { "document ocr handled": (res) => [200, 404].includes(res.status) },
+      );
+    }
+  }
 
   check(http.get(`${BASE_URL}/v1/notifications?skip=0&limit=100`, params), {
     "notifications ok": (res) => res.status === 200,

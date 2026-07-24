@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,9 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from datetime import timedelta
 import asyncio
+import logging
+import time
+import uuid
 from pathlib import Path
 
 from app.db.session import engine, Base, AsyncSessionLocal
+from sqlalchemy import text
 from app.api import api_router
 from app.api.ws.notifications import router as ws_notifications_router
 from app.core.security import create_access_token, verify_password
@@ -24,6 +29,14 @@ from app.services.system_analytics import run_daily_aggregation
 from app.core.rate_limit import enforce_login_rate_limit
 from app.db.models.user import UserRole
 
+request_logger = logging.getLogger("legalos.api")
+request_logger.setLevel(logging.INFO)
+if not request_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    request_logger.addHandler(handler)
+request_logger.propagate = False
+
 app = FastAPI(
     title="LegalOS Backend MVP",
     version="0.1.0",
@@ -32,6 +45,65 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    status_code = 500
+
+    try:
+        timeout_seconds = settings.API_REQUEST_TIMEOUT_SECONDS
+        if timeout_seconds and timeout_seconds > 0:
+            response = await asyncio.wait_for(call_next(request), timeout=timeout_seconds)
+        else:
+            response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except asyncio.TimeoutError:
+        status_code = 504
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        request_logger.warning(
+            "api_request_timeout request_id=%s method=%s path=%s status=%s duration_ms=%s timeout_seconds=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+            settings.API_REQUEST_TIMEOUT_SECONDS,
+        )
+        response = JSONResponse(status_code=504, content={"detail": "Request timed out"})
+        return response
+    except Exception:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        request_logger.exception(
+            "api_request_error request_id=%s method=%s path=%s status=%s duration_ms=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+        )
+        raise
+    finally:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        response_obj = locals().get("response")
+        if response_obj is not None:
+            response_obj.headers["X-Request-ID"] = request_id
+            response_obj.headers["X-Response-Time-ms"] = str(duration_ms)
+
+        log_level = logging.WARNING if status_code >= 500 else logging.INFO
+        request_logger.log(
+            log_level,
+            "api_request request_id=%s method=%s path=%s status=%s duration_ms=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+        )
 
 # ── Middleware stack (order matters: outer runs first on request) ──────────
 #
@@ -181,3 +253,111 @@ async def login_for_access_token(
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to LegalOS Backend MVP!", "version": "0.1.0", "docs": "/docs"}
+
+
+@app.get("/metrics-lite")
+async def metrics_lite():
+    async def check_db():
+        started = time.perf_counter()
+        try:
+            async with AsyncSessionLocal() as db:
+                await db.execute(text("SELECT 1"))
+            return {"ok": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "error": type(exc).__name__,
+            }
+
+    async def check_redis():
+        started = time.perf_counter()
+        try:
+            import redis.asyncio as redis
+
+            client = redis.from_url(settings.REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
+            try:
+                await client.ping()
+            finally:
+                await client.aclose()
+            return {"ok": True, "latency_ms": int((time.perf_counter() - started) * 1000)}
+        except Exception as exc:
+            return {
+                "ok": False,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "error": type(exc).__name__,
+            }
+
+    async def check_queue_depths():
+        started = time.perf_counter()
+        try:
+            import redis.asyncio as redis
+
+            client = redis.from_url(settings.REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
+            try:
+                queues = [
+                    queue.strip()
+                    for queue in settings.METRICS_CELERY_QUEUES.split(",")
+                    if queue.strip()
+                ]
+                depths = {queue: await client.llen(queue) for queue in queues}
+            finally:
+                await client.aclose()
+            return {
+                "ok": True,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "queues": depths,
+                "total_depth": sum(depths.values()),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "error": type(exc).__name__,
+                "queues": {},
+                "total_depth": None,
+            }
+
+    async def check_celery():
+        started = time.perf_counter()
+        try:
+            from app.core.celery import celery_app
+
+            ping = await asyncio.wait_for(
+                asyncio.to_thread(lambda: celery_app.control.inspect(timeout=1).ping()),
+                timeout=2,
+            )
+            workers = sorted((ping or {}).keys())
+            return {
+                "ok": bool(workers),
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "workers": workers,
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "error": type(exc).__name__,
+                "workers": [],
+            }
+
+    db_status, redis_status, celery_status, queue_status = await asyncio.gather(
+        check_db(),
+        check_redis(),
+        check_celery(),
+        check_queue_depths(),
+    )
+    overall_ok = db_status["ok"] and redis_status["ok"]
+    status_code = 200 if overall_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "ok": overall_ok,
+            "services": {
+                "db": db_status,
+                "redis": redis_status,
+                "celery": celery_status,
+                "queues": queue_status,
+            },
+        },
+    )

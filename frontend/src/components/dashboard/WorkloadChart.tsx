@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BarChart3 } from 'lucide-react';
 import api from '../../services/api';
 import type { WorkloadEntry } from '../../types';
 
 export function WorkloadChart() {
+  const { t } = useTranslation();
   const [data, setData] = useState<WorkloadEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,11 +35,11 @@ export function WorkloadChart() {
     <div className="bg-white rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-4">
         <BarChart3 className="h-4 w-4 text-slate-500" />
-        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Workload Distribution</h3>
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{t('dashboardPage.workloadDistribution')}</h3>
       </div>
 
       {data.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-4">No data available</p>
+        <p className="text-sm text-slate-400 text-center py-4">{t('dashboardPage.noWorkloadData')}</p>
       ) : (
         <div className="space-y-3">
           {data.map(entry => (
@@ -47,7 +49,7 @@ export function WorkloadChart() {
                   {entry.full_name}
                 </span>
                 <span className="text-xs font-bold text-slate-500">
-                  {entry.case_count} {entry.case_count === 1 ? 'case' : 'cases'}
+                  {t('dashboardPage.caseCount', { count: entry.case_count })}
                 </span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">

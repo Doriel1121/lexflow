@@ -25,8 +25,8 @@ export interface ClientCreate {
 }
 
 export const clientsService = {
-  getClients: async (): Promise<Client[]> => {
-    const response = await api.get('/v1/clients/');
+  getClients: async (params?: { skip?: number; limit?: number }): Promise<Client[]> => {
+    const response = await api.get('/v1/clients/', { params });
     return response.data;
   },
   
