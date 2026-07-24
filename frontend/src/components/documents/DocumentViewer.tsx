@@ -16,6 +16,30 @@ import AskAI from "../ai/AskAI";
 import { useSnackbar } from "../../context/SnackbarContext";
 import { useTranslation } from "react-i18next";
 
+const getDocumentViewerStatus = (document: any) => {
+  const status = document?.processing_status ? String(document.processing_status).toLowerCase() : "completed";
+  const stage = document?.processing_stage ? String(document.processing_stage).toLowerCase() : "";
+  if (status !== "failed" && (document?.processing_progress ?? 0) >= 100) return "completed";
+  if (status !== "failed" && stage.startsWith("completed")) return "completed";
+  return status;
+};
+
+const getDocumentViewerStatusLabel = (
+  status: string,
+  stage: string | undefined,
+  t: (key: string, defaultValue: string) => string,
+) => {
+  if (status === "completed") return t("documentViewer.status.ready", "Ready");
+  if (status === "failed") return t("documentViewer.status.failed", "Failed");
+
+  const normalizedStage = (stage || "").toLowerCase();
+  if (normalizedStage.includes("limit") || normalizedStage.includes("quota")) {
+    return t("documentViewer.status.aiSearchLimited", "AI search limited");
+  }
+  return t("documentViewer.status.analyzing", "AI analyzing...");
+};
+
+const getTabLabelKey = (tab: string) => `documentViewer.tabs.${tab}`;
 type DocumentViewerPayload = {
   document: any;
 };
@@ -370,14 +394,12 @@ export function DocumentViewer() {
   if (!document) {
     return (
       <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
-        <p className="text-slate-500">Document not found</p>
+        <p className="text-slate-500">{t("documentViewer.notFound")}</p>
       </div>
     );
   }
 
-  const normalizedStatus = document.processing_status
-    ? document.processing_status.toLowerCase()
-    : "completed";
+  const normalizedStatus = getDocumentViewerStatus(document);
   const hasOcrMetadata = Boolean(document.page_count || document.language);
   const hasOcrText = Boolean(ocrText && ocrText.length > 0);
   const isSummaryReady = summaryLoaded;
@@ -401,11 +423,10 @@ export function DocumentViewer() {
             </div>
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">
-            Reading Document
+            {t("documentViewer.readingTitle")}
           </h2>
           <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            LegalOS AI is extracting text from your document. You will be able
-            to view the text in a few moments.
+            {t("documentViewer.readingDescription")}
           </p>
           <div className="w-full space-y-4">
             <div className="h-2 bg-slate-100 rounded overflow-hidden">
@@ -413,7 +434,7 @@ export function DocumentViewer() {
             </div>
             <div className="flex items-center justify-center space-x-3 text-sm text-slate-400">
               <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-              <span>Running OCR...</span>
+              <span>{t("documentViewer.runningOcr")}</span>
             </div>
           </div>
         </div>
@@ -432,24 +453,23 @@ export function DocumentViewer() {
             </div>
           </div>
           <h2 className="text-xl font-bold text-slate-900 mb-2">
-            Processing Failed
+            {t("documentViewer.processingFailed")}
           </h2>
           <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-            LegalOS AI encountered an error while trying to read and analyze
-            this document.
+            {t("documentViewer.processingFailedDescription")}
           </p>
           <div className="flex space-x-3 w-full">
             <button
               onClick={() => navigate("/documents")}
               className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
             >
-              Back to Documents
+              {t("documentViewer.backToDocuments")}
             </button>
             <button
               onClick={() => setShowDeleteConfirm(true)}
               className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
             >
-              Delete File
+              {t("documentViewer.deleteFile")}
             </button>
           </div>
         </div>
@@ -489,13 +509,13 @@ export function DocumentViewer() {
                 <div className="flex items-center space-x-2 text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">
                   <AlertTriangle className="h-3 w-3" />
                   <span className="text-[10px] font-bold uppercase tracking-tight">
-                    Processing Error
+                    {t("documentViewer.status.processingError")}
                   </span>
                   <button
                     onClick={handleRetryAI}
                     className="text-[10px] underline hover:text-red-800 transition-colors"
                   >
-                    Retry
+                    {t("documentViewer.retry")}
                   </button>
                 </div>
               )}
@@ -504,17 +524,13 @@ export function DocumentViewer() {
               <span
                 className={`px-1.5 py-0.5 rounded font-medium uppercase tracking-wider text-[10px] ${normalizedStatus === "completed" ? "bg-emerald-100 text-emerald-700" : normalizedStatus === "failed" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700 animate-pulse"}`}
               >
-                {normalizedStatus === "completed"
-                  ? "Ready"
-                  : normalizedStatus === "failed"
-                    ? "Failed"
-                    : "AI Analyzing..."}
+                {getDocumentViewerStatusLabel(normalizedStatus, document.processing_stage, t)}
               </span>
               <span>•</span>
               <span>
                 {document.classification} •{" "}
-                {document.language?.toUpperCase() || "UNKNOWN"} •{" "}
-                {document.page_count || 0} pages
+                {document.language?.toUpperCase() || t("documentViewer.unknown")} •{" "}
+                {t("documentViewer.pageCount", { count: document.page_count || 0 })}
               </span>
               {document.ai_health?.analysis_mode === "chunked" && (
                 <>
@@ -563,7 +579,7 @@ export function DocumentViewer() {
                 {!isAIReady && !summaryLoading && normalizedStatus !== "failed" && (
                   <div className="absolute top-4 end-4 flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-[10px] font-bold border border-blue-100 animate-pulse">
                     <Sparkles className="h-3 w-3" />
-                    AI ANALYSIS IN PROGRESS
+                    {t("documentViewer.aiAnalysisInProgress")}
                   </div>
                 )}
                 <p
@@ -578,7 +594,7 @@ export function DocumentViewer() {
                 >
                   {hasOcrText
                     ? normalizeContent(ocrText)
-                    : "Open the OCR tab to load extracted text."}
+                    : t("documentViewer.openOcrTab")}
                 </p>
               </div>
             </div>
@@ -594,7 +610,7 @@ export function DocumentViewer() {
                 onClick={() => handleTabChange(tab)}
                 className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors uppercase tracking-wider ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-slate-800"}`}
               >
-                {tab === "ask" ? "Ask AI" : tab}
+                {t(getTabLabelKey(tab))}
               </button>
             ))}
           </div>
@@ -604,7 +620,7 @@ export function DocumentViewer() {
               <div className="h-full animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <AskAI
                   documentIds={[Number(id)]}
-                  title={`Ask about ${document.filename}`}
+                  title={t("documentViewer.askTitle", { filename: document.filename })}
                 />
               </div>
             )}
@@ -615,12 +631,10 @@ export function DocumentViewer() {
                   <div className="bg-blue-50/30 border border-blue-100/50 rounded-xl p-8 flex flex-col items-center text-center">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-4" />
                     <h3 className="font-bold text-blue-900 text-sm mb-2">
-                      Generating AI Insights...
+                      {t("documentViewer.generatingInsights")}
                     </h3>
                     <p className="text-xs text-blue-700/70 max-w-[250px] leading-relaxed">
-                      We're currently analyzing the text to extract parties,
-                      dates, and a professional summary. This will update
-                      automatically.
+                      {t("documentViewer.generatingInsightsDescription")}
                     </p>
                   </div>
                 ) : (
@@ -636,7 +650,7 @@ export function DocumentViewer() {
                           <Bot className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
                           <div className="flex-1">
                             <h3 className="font-bold text-blue-900 text-sm mb-2">
-                              AI Summary
+                              {t("documentViewer.aiSummary")}
                             </h3>
                             <pre
                               className={`text-sm text-blue-800 leading-relaxed whitespace-pre-wrap font-sans ${isRTL ? "font-[var(--font-hebrew)]" : ""}`}
@@ -657,7 +671,7 @@ export function DocumentViewer() {
                     {summary?.key_dates?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
-                          Important Dates
+                          {t("documentViewer.importantDates")}
                         </h3>
                         <div className="space-y-2">
                           {summary.key_dates.map(
@@ -667,7 +681,7 @@ export function DocumentViewer() {
                                 className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm"
                               >
                                 <div className="font-semibold text-slate-800">
-                                  {d.date || "Unknown date"}
+                                  {d.date || t("documentViewer.unknownDate")}
                                 </div>
                                 {d.description && (
                                   <div className="text-xs text-slate-500 mt-1">
@@ -683,7 +697,7 @@ export function DocumentViewer() {
                     {documentTags.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
-                          Tags
+                          {t("documentViewer.tags")}
                         </h3>
                         <div className="flex flex-wrap gap-2">
                           {documentTags.map((tag: any, i: number) => (
@@ -701,7 +715,7 @@ export function DocumentViewer() {
                     {summary?.parties?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
-                          Parties Involved
+                          {t("documentViewer.partiesInvolved")}
                         </h3>
                         <div className="space-y-2">
                           {summary.parties.map(
@@ -744,7 +758,7 @@ export function DocumentViewer() {
                     {metadata?.entities?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
-                          Entities
+                          {t("documentViewer.entities")}
                         </h3>
                         <div className="space-y-3">
                           {metadata.entities.map(
@@ -763,17 +777,17 @@ export function DocumentViewer() {
                                   </p>
                                   {ent.id_number && (
                                     <p className="text-[11px] text-slate-500">
-                                      ID: {ent.id_number}
+                                      {t("documentViewer.entityId")}: {ent.id_number}
                                     </p>
                                   )}
                                   {ent.firm && (
                                     <p className="text-[11px] text-slate-500">
-                                      Firm: {ent.firm}
+                                      {t("documentViewer.entityFirm")}: {ent.firm}
                                     </p>
                                   )}
                                   {ent.bar_number && (
                                     <p className="text-[11px] text-slate-500">
-                                      Bar: {ent.bar_number}
+                                      {t("documentViewer.entityBar")}: {ent.bar_number}
                                     </p>
                                   )}
                                 </div>
@@ -786,7 +800,7 @@ export function DocumentViewer() {
                     {metadata?.dates?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
-                          Dates
+                          {t("documentViewer.dates")}
                         </h3>
                         <div className="space-y-2">
                           {metadata.dates.map(
@@ -796,7 +810,7 @@ export function DocumentViewer() {
                                 className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm"
                               >
                                 <div className="font-semibold text-slate-800">
-                                  {d.date || "Unknown date"}
+                                  {d.date || t("documentViewer.unknownDate")}
                                 </div>
                                 {d.description && (
                                   <div className="text-xs text-slate-500 mt-1">
@@ -812,7 +826,7 @@ export function DocumentViewer() {
                     {metadata?.amounts?.length > 0 && (
                       <div>
                         <h3 className="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">
-                          Amounts
+                          {t("documentViewer.amounts")}
                         </h3>
                         <div className="space-y-2">
                           {metadata.amounts.map(
@@ -822,7 +836,7 @@ export function DocumentViewer() {
                                 className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm"
                               >
                                 <div className="font-semibold text-slate-800">
-                                  {a.amount || "Amount"}
+                                  {a.amount || t("documentViewer.amount")}
                                   {a.currency ? ` ${a.currency}` : ""}
                                 </div>
                                 {a.description && (
@@ -850,12 +864,12 @@ export function DocumentViewer() {
                 {ocrLoading ? (
                   <div className="flex items-center gap-2 text-slate-500">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading OCR text...
+                    {t("documentViewer.loadingOcrText")}
                   </div>
                 ) : hasOcrText ? (
                   ocrText
                 ) : (
-                  "OCR text is not available yet."
+                  t("documentViewer.ocrNotAvailable")
                 )}
               </div>
             )}
@@ -873,7 +887,7 @@ export function DocumentViewer() {
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-slate-900 mb-2">
-                  Delete Document
+                  {t("documentViewer.deleteDocument")}
                 </h3>
                 <p className="text-sm text-slate-600 mb-4">
                   {t("documentViewer.deleteConfirmation")}{" "}

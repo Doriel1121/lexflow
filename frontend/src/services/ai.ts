@@ -11,7 +11,7 @@ export const aiService = {
    * Can be scoped to a case or specific documents.
    */
   askAI: async (request: AskAIRequest): Promise<AskAIResponse> => {
-    const response = await api.post<AskAIResponse>('/v1/ai/ask', request);
+    const response = await api.post<AskAIResponse>('/v1/ai/ask', request, { timeout: 60_000 });
     return response.data;
   },
 };

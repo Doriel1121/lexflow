@@ -1,7 +1,10 @@
 import json
 import logging
+import asyncio
 import hashlib
 import re
+import time
+import uuid
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -33,8 +36,18 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Basic Redis setup for caching
-redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True) if hasattr(settings, "REDIS_URL") else None
+redis_client = (
+    Redis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
+    if hasattr(settings, "REDIS_URL")
+    else None
+)
 CACHE_TTL = 3600  # 1 hour
+CACHE_TIMEOUT_SECONDS = 2.0
 
 
 def _routing_for_ask_ai_intent(intent: AskAIIntent) -> tuple[AIIntent, AIRiskLevel, bool]:
@@ -48,8 +61,8 @@ def _routing_for_ask_ai_intent(intent: AskAIIntent) -> tuple[AIIntent, AIRiskLev
     if intent == AskAIIntent.DEADLINES_OBLIGATIONS:
         return AIIntent.DOCUMENT_ANALYSIS, AIRiskLevel.HIGH, True
     if intent == AskAIIntent.SUMMARY:
-        return AIIntent.SUMMARIZATION, AIRiskLevel.LOW, True
-    return AIIntent.DOCUMENT_QA, AIRiskLevel.MEDIUM, True
+        return AIIntent.SUMMARIZATION, AIRiskLevel.LOW, False
+    return AIIntent.DOCUMENT_QA, AIRiskLevel.MEDIUM, False
 
 HEBREW_STOPWORDS = {
     "איזה", "איזו", "אילו", "מה", "מי", "האם", "איך", "כיצד", "למה", "מדוע", "מתי",
@@ -68,13 +81,32 @@ def _extract_query_keywords(question: str) -> List[str]:
             expanded.update(['מספר', 'מס'])
     return list(expanded)
 
+
+def _is_broad_document_question(intent: AskAIIntent, question: str) -> bool:
+    normalized = (question or '').lower()
+    broad_markers = (
+        'analyze', 'analysis', 'summarize', 'summary', 'overview', 'what is this document',
+        'main points', 'key points', 'risk', 'risks', 'obligations', 'deadlines',
+        '\u05e0\u05ea\u05d7', '\u05e0\u05d9\u05ea\u05d5\u05d7', '\u05e1\u05db\u05dd', '\u05ea\u05e1\u05db\u05dd', '\u05e1\u05d9\u05db\u05d5\u05dd', '\u05ea\u05e7\u05e6\u05d9\u05e8', '\u05e2\u05d9\u05e7\u05e8\u05d9', '\u05de\u05d4 \u05d4\u05de\u05e1\u05de\u05da',
+        '\u05e1\u05d9\u05db\u05d5\u05e0\u05d9\u05dd', '\u05d7\u05d5\u05d1\u05d5\u05ea', '\u05d4\u05ea\u05d7\u05d9\u05d9\u05d1\u05d5\u05d9\u05d5\u05ea', '\u05de\u05d5\u05e2\u05d3\u05d9\u05dd', '\u05d3\u05d3\u05dc\u05d9\u05d9\u05e0\u05d9\u05dd',
+    )
+    return intent in {
+        AskAIIntent.SUMMARY,
+        AskAIIntent.LEGAL_ANALYSIS,
+        AskAIIntent.RISK_ANALYSIS,
+        AskAIIntent.DEADLINES_OBLIGATIONS,
+    } or any(marker in normalized for marker in broad_markers)
+
+
 async def get_cache(key: str) -> Optional[Dict[str, Any]]:
     if not redis_client:
         return None
     try:
-        cached = await redis_client.get(key)
+        cached = await asyncio.wait_for(redis_client.get(key), timeout=CACHE_TIMEOUT_SECONDS)
         if cached:
             return json.loads(cached)
+    except asyncio.TimeoutError:
+        logger.warning("Ask AI cache get timed out; continuing without cache.")
     except Exception as e:
         logger.warning(f"Cache get error: {e}")
     return None
@@ -83,13 +115,18 @@ async def set_cache(key: str, value: Dict[str, Any]):
     if not redis_client:
         return
     try:
-        await redis_client.setex(key, CACHE_TTL, json.dumps(value))
+        await asyncio.wait_for(
+            redis_client.setex(key, CACHE_TTL, json.dumps(value)),
+            timeout=CACHE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Ask AI cache set timed out; response returned without cache write.")
     except Exception as e:
         logger.warning(f"Cache set error: {e}")
 
 def generate_cache_key(request: AskAIRequest, org_id: Optional[int]) -> str:
-    # Stable hash of request parameters (versioned v4 for JSON-rendered legal prompting)
-    req_data = f"v4:{request.question}:{request.case_id}:{request.document_ids}:{request.top_k}:{org_id}"
+    # Stable hash of request parameters (versioned v6 for grounded selected-document prompting)
+    req_data = f"v6:{request.question}:{request.case_id}:{request.document_ids}:{request.top_k}:{org_id}"
     return f"rag:query:{hashlib.md5(req_data.encode()).hexdigest()}"
 
 
@@ -181,10 +218,24 @@ async def ask_ai(
     Retrieval-Augmented Generation (RAG) endpoint.
     Ask questions about documents or a specific case.
     """
+    request_id = uuid.uuid4().hex[:8]
+    started_at = time.perf_counter()
+    logger.info(
+        "AskAI[%s] start user=%s org=%s case=%s docs=%s top_k=%s question_chars=%s",
+        request_id,
+        current_user.id,
+        org_id,
+        request.case_id,
+        len(request.document_ids or []),
+        request.top_k,
+        len(request.question or ""),
+    )
+
     # 1. Security & Validation
     cache_key = generate_cache_key(request, org_id)
     cached_res = await get_cache(cache_key)
     if cached_res:
+        logger.info("AskAI[%s] cache hit elapsed_ms=%.1f", request_id, (time.perf_counter() - started_at) * 1000)
         return AskAIResponse(**cached_res)
 
     # Validate Case Access if provided
@@ -199,12 +250,22 @@ async def ask_ai(
     # Generate embedding for the question
     from app.services.ai_utils import valid_embedding
 
+    timeout_seconds = max(10.0, float(settings.ASK_AI_TIMEOUT_SECONDS or 45))
     try:
-        question_vector = await llm_service.generate_embedding(
-            request.question,
-            db=db,
-            organization_id=org_id,
-            task_type="embedding.rag_query",
+        question_vector = await asyncio.wait_for(
+            llm_service.generate_embedding(
+                request.question,
+                db=db,
+                organization_id=org_id,
+                task_type="embedding.rag_query",
+            ),
+            timeout=min(timeout_seconds, 15.0),
+        )
+    except asyncio.TimeoutError:
+        logger.warning("AskAI[%s] timed out elapsed_ms=%.1f", request_id, (time.perf_counter() - started_at) * 1000)
+        raise HTTPException(
+            status_code=504,
+            detail="AI Q&A timed out while preparing the question. Please try again.",
         )
     except AIQuotaExceeded as exc:
         raise _quota_http_exception(exc)
@@ -213,6 +274,9 @@ async def ask_ai(
             status_code=503,
             detail="AI Q&A is temporarily unavailable (embedding service failed).",
         )
+
+    intent = detect_ask_ai_intent(request.question)
+    is_broad_document_question = _is_broad_document_question(intent, request.question)
 
     # Construct candidate query with pgvector cosine distance
     # We join with Document to ensure org/user isolation
@@ -244,8 +308,40 @@ async def ask_ai(
     # Fetch a candidate pool for hybrid ranking
     stmt = stmt.order_by("distance").limit(max(request.top_k * 18, 150))
     
+    retrieval_started_at = time.perf_counter()
     result = await db.execute(stmt)
     candidate_rows = result.all()
+    logger.info(
+        "AskAI[%s] vector retrieval rows=%s elapsed_ms=%.1f",
+        request_id,
+        len(candidate_rows),
+        (time.perf_counter() - retrieval_started_at) * 1000,
+    )
+
+    anchor_rows = []
+    if is_broad_document_question and (request.document_ids or request.case_id):
+        anchor_stmt = (
+            select(
+                DocumentChunk.text_content,
+                DocumentChunk.document_id,
+                DocumentChunk.page_number,
+                DocumentChunk.chunk_index,
+            )
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .order_by(DocumentChunk.document_id, DocumentChunk.page_number, DocumentChunk.chunk_index)
+        )
+        if org_id is not None:
+            anchor_stmt = anchor_stmt.where(Document.organization_id == org_id)
+        else:
+            anchor_stmt = anchor_stmt.where(Document.uploaded_by_user_id == current_user.id)
+        if request.case_id:
+            anchor_stmt = anchor_stmt.where(Document.case_id == request.case_id)
+        if request.document_ids:
+            anchor_stmt = anchor_stmt.where(Document.id.in_(request.document_ids))
+
+        anchor_res = await db.execute(anchor_stmt.limit(24))
+        anchor_rows = [(row[0], row[1], row[2], row[3], 0.35) for row in anchor_res.all()]
+        logger.info("AskAI[%s] anchor rows=%s broad=%s", request_id, len(anchor_rows), is_broad_document_question)
 
     # Fallback for unchunked documents that only have Document.content populated
     fallback_rows = []
@@ -268,7 +364,10 @@ async def ask_ai(
                     snippet = full_content[offset:offset + step]
                     fallback_rows.append((snippet, doc_id, idx + 1, idx, 0.5))
 
-    rows_to_rank = candidate_rows if candidate_rows else fallback_rows
+    rows_to_rank = list(candidate_rows if candidate_rows else fallback_rows)
+    if anchor_rows:
+        seen_rows = {(row[1], row[2], row[3]) for row in rows_to_rank}
+        rows_to_rank.extend(row for row in anchor_rows if (row[1], row[2], row[3]) not in seen_rows)
     if not rows_to_rank:
         return AskAIResponse(
             answer="Not found in documents. I don't have enough context to answer this question.",
@@ -296,7 +395,8 @@ async def ask_ai(
         scored.append((hybrid_score, text_content, doc_id, page, chunk_idx))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top_candidates = scored[:request.top_k]
+    context_limit = min(max(request.top_k, 10), 12) if is_broad_document_question else min(request.top_k, 6)
+    top_candidates = scored[:context_limit]
     # Sort selected snippets in logical document reading order
     top_candidates.sort(key=lambda x: (x[2], x[3] or 0, x[4] or 0))
 
@@ -318,9 +418,8 @@ async def ask_ai(
     # 4. LLM Answer Generation
     is_hebrew_question = _is_hebrew(request.question)
     lang_hint = "You MUST answer in Hebrew." if is_hebrew_question else "You MUST answer in the same language as the user's question."
-    intent = detect_ask_ai_intent(request.question)
     route_intent, route_risk, requires_citations = _routing_for_ask_ai_intent(intent)
-    document_ids = sorted({item[2] for item in top_candidates})
+    document_ids = list(dict.fromkeys(request.document_ids or sorted({item[2] for item in top_candidates})))
     document_brief = await _load_document_brief(db, document_ids, case_obj)
     json_prompt = build_ask_ai_json_prompt(
         question=request.question,
@@ -331,20 +430,39 @@ async def ask_ai(
     )
 
     try:
-        structured_response = await llm_service.generate_json(
-            json_prompt,
-            db=db,
-            organization_id=org_id,
-            task_type=f"reader.ask_ai.{intent.value}.json",
-            intent=route_intent,
-            feature="ask_ai",
-            language="he" if is_hebrew_question else "",
-            risk_level=route_risk,
-            requires_citations=requires_citations,
+        logger.info(
+            "AskAI[%s] generation start intent=%s route_intent=%s risk=%s timeout_s=%.1f context_chars=%s brief_chars=%s",
+            request_id,
+            intent.value,
+            route_intent.value if hasattr(route_intent, "value") else route_intent,
+            route_risk.value if hasattr(route_risk, "value") else route_risk,
+            timeout_seconds,
+            len(context_str),
+            len(document_brief),
+        )
+        generation_started_at = time.perf_counter()
+        structured_response = await asyncio.wait_for(
+            llm_service.generate_json(
+                json_prompt,
+                db=db,
+                organization_id=org_id,
+                task_type=f"reader.ask_ai.{intent.value}.json",
+                intent=route_intent,
+                feature="ask_ai",
+                language="he" if is_hebrew_question else "",
+                risk_level=route_risk,
+                requires_citations=requires_citations,
+            ),
+            timeout=timeout_seconds,
         )
 
         if structured_response:
             ai_response = render_ask_ai_answer(structured_response, hebrew=is_hebrew_question)
+            logger.info(
+                "AskAI[%s] json generation done elapsed_ms=%.1f",
+                request_id,
+                (time.perf_counter() - generation_started_at) * 1000,
+            )
         else:
             fallback_prompt = build_ask_ai_prompt(
                 question=request.question,
@@ -353,19 +471,31 @@ async def ask_ai(
                 intent=intent,
                 lang_hint=lang_hint,
             )
-            ai_response = await llm_service.generate_text(
-                fallback_prompt,
-                db=db,
-                organization_id=org_id,
-                task_type=f"reader.ask_ai.{intent.value}.text",
-                intent=route_intent,
-                feature="ask_ai",
-                language="he" if is_hebrew_question else "",
-                risk_level=route_risk,
-                requires_citations=requires_citations,
+            logger.info("AskAI[%s] json generation empty; trying text fallback", request_id)
+            fallback_started_at = time.perf_counter()
+            ai_response = await asyncio.wait_for(
+                llm_service.generate_text(
+                    fallback_prompt,
+                    db=db,
+                    organization_id=org_id,
+                    task_type=f"reader.ask_ai.{intent.value}.text",
+                    intent=route_intent,
+                    feature="ask_ai",
+                    language="he" if is_hebrew_question else "",
+                    risk_level=route_risk,
+                    requires_citations=requires_citations,
+                ),
+                timeout=min(timeout_seconds, 20.0),
             )
         
+            logger.info(
+                "AskAI[%s] text fallback done elapsed_ms=%.1f",
+                request_id,
+                (time.perf_counter() - fallback_started_at) * 1000,
+            )
+
         if not ai_response:
+            logger.warning("AskAI[%s] no AI response elapsed_ms=%.1f", request_id, (time.perf_counter() - started_at) * 1000)
             return AskAIResponse(answer="AI service is currently unavailable.", citations=[])
 
         # Parse citations from the hit list for the response object
@@ -388,10 +518,22 @@ async def ask_ai(
         # 5. Caching
         await set_cache(cache_key, response_obj.model_dump())
 
+        logger.info(
+            "AskAI[%s] success citations=%s elapsed_ms=%.1f",
+            request_id,
+            len(final_citations),
+            (time.perf_counter() - started_at) * 1000,
+        )
         return response_obj
 
     except AIQuotaExceeded as exc:
         raise _quota_http_exception(exc)
+    except asyncio.TimeoutError:
+        logger.warning("AskAI[%s] timed out elapsed_ms=%.1f", request_id, (time.perf_counter() - started_at) * 1000)
+        raise HTTPException(
+            status_code=504,
+            detail="AI Q&A timed out while generating the answer. Please try again in a moment.",
+        )
     except Exception as e:
-        logger.error(f"RAG error: {e}")
+        logger.exception("AskAI[%s] error elapsed_ms=%.1f: %s", request_id, (time.perf_counter() - started_at) * 1000, e)
         raise HTTPException(status_code=500, detail="Error generating AI answer")

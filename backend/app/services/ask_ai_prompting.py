@@ -95,7 +95,8 @@ def build_ask_ai_prompt(
     response_shape = _response_shape_for_intent(intent)
     return f"""You are LexFlow's legal AI assistant for lawyers.
 
-Your task is to answer the user's question using the retrieved document evidence and document-level facts below.
+Your task is to answer the user's question using ONLY the retrieved document evidence and document-level facts below.
+If the user is asking about a selected document, do not use facts from any other document or prior conversation.
 
 QUESTION INTENT:
 {intent.value}
@@ -113,8 +114,8 @@ ANSWER RULES:
 1. {lang_hint}
 2. Be concise and practical. Do not describe your process.
 3. Separate facts found in documents from legal interpretation.
-4. Ground document-specific claims in the retrieved evidence.
-5. Do not invent statutes, case law, deadlines, or facts not present in the evidence.
+4. Ground document-specific claims in the retrieved evidence; if the answer is not in the evidence, say that clearly.
+5. Do not invent statutes, case law, deadlines, document types, party names, addresses, or facts not present in the evidence.
 6. If external legal research is needed, say so clearly and explain what must be verified by a lawyer.
 7. For legal reasoning, provide issue-focused analysis, risks, and recommended next steps.
 8. For drafting requests, do not generate a full filing from incomplete context; give a short drafting plan and list missing facts/evidence.
@@ -144,6 +145,7 @@ def build_ask_ai_json_prompt(
 
 Return ONLY valid JSON. Do not return markdown. Do not repeat key names as answer text.
 Each list may contain 0-4 items. Each item must be concise.
+Use ONLY the retrieved evidence and document brief below. If the selected document evidence does not answer the question, say that explicitly in short_answer and put the missing evidence in risks_or_missing_information.
 
 QUESTION INTENT: {intent.value}
 LANGUAGE RULE: {lang_hint}
@@ -159,8 +161,9 @@ USER QUESTION:
 
 SAFETY RULES:
 - Separate document facts from legal interpretation.
-- Ground document-specific claims in the retrieved evidence.
-- Do not invent statutes, case law, deadlines, or facts not present in the evidence.
+- Ground document-specific claims in the retrieved evidence; if the answer is not in the evidence, say that clearly.
+- Do not invent statutes, case law, deadlines, document types, party names, addresses, or facts not present in the evidence.
+- Do not use facts from other documents or prior conversation.
 - If external legal research is needed, state that in risks_or_missing_information.
 - For drafting requests, do not generate a full filing from incomplete context; provide drafting preparation steps only.
 

@@ -103,6 +103,13 @@ class LLMService:
                 AITask.EMBEDDING,
                 self._embedding_context(text=text, task_type=task_type),
             )
+            logger.info(
+                "LLM embedding task=%s provider=%s active=%s input_chars=%s",
+                task_type,
+                embedding_provider.__class__.__name__,
+                getattr(embedding_provider, "active", False),
+                len(text or ""),
+            )
             if not embedding_provider.active:
                 return None
             await enforce_ai_quota(
@@ -226,6 +233,13 @@ class LLMService:
                 requires_citations=requires_citations,
             ),
         )
+        logger.info(
+            "LLM text task=%s provider=%s active=%s input_chars=%s",
+            task_type,
+            provider.__class__.__name__,
+            getattr(provider, "active", False),
+            len(prompt or ""),
+        )
         if not provider.active:
             return None
         await enforce_ai_quota(
@@ -269,6 +283,13 @@ class LLMService:
                 risk_level=risk_level,
                 requires_citations=requires_citations,
             ),
+        )
+        logger.info(
+            "LLM json task=%s provider=%s active=%s input_chars=%s",
+            task_type,
+            provider.__class__.__name__,
+            getattr(provider, "active", False),
+            len(prompt or ""),
         )
         if not provider.active:
             return None

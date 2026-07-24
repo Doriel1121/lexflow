@@ -89,8 +89,10 @@ const AskAI: React.FC<AskAIProps> = ({
           id: (Date.now() + 1).toString(),
           role: "assistant",
           content:
-            err.response?.data?.detail ||
-            "An unexpected error occurred. Please try again.",
+            err.code === "ECONNABORTED"
+              ? "AI answer timed out. Please try a shorter question or try again in a moment."
+              : err.response?.data?.detail ||
+                "An unexpected error occurred. Please try again.",
           error: true,
         },
       ]);
