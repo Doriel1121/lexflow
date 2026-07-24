@@ -46,8 +46,6 @@ class GeminiProvider(BaseAIProvider):
     """Concrete implementation for Google Gemini API."""
 
     EMBEDDING_DIMENSION = 768  # pgvector-compatible embedding dimension
-    MAX_RETRIES = 10
-    INITIAL_BACKOFF = 15  # seconds - much more patient for Free Tier
 
     def __init__(self):
         # Load .env from project root (3 levels up from this file)
@@ -62,6 +60,8 @@ class GeminiProvider(BaseAIProvider):
             or "models/gemini-embedding-001"
         )
         self.embedding_dimension = int(os.getenv("GEMINI_EMBEDDING_DIM", str(self.EMBEDDING_DIMENSION)))
+        self.max_retries = max(0, min(int(os.getenv("GEMINI_MAX_RETRIES", "2") or "2"), 10))
+        self.initial_backoff = max(1.0, float(os.getenv("GEMINI_INITIAL_BACKOFF_SECONDS", "5") or "5"))
 
         if not api_key:
             logger.warning("GEMINI_API_KEY not set — AI Provider is inactive.")
@@ -82,20 +82,20 @@ class GeminiProvider(BaseAIProvider):
     async def _call_with_retry(self, fn, *args, **kwargs):
         """Helper to call Gemini with exponential backoff on 429 errors."""
         retries = 0
-        backoff = self.INITIAL_BACKOFF
+        backoff = self.initial_backoff
         
-        while retries < self.MAX_RETRIES:
+        while retries <= self.max_retries:
             try:
                 return await _run_sync(fn, *args, **kwargs)
             except Exception as e:
                 err_msg = str(e).lower()
                 if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg:
                     retries += 1
-                    if retries >= self.MAX_RETRIES:
-                        logger.error(f"Gemini quota exceeded after {retries} retries: {e}")
+                    if retries > self.max_retries:
+                        logger.error(f"Gemini quota exceeded after {self.max_retries} retries: {e}")
                         raise
                     
-                    logger.warning(f"Gemini quota hit. Retrying in {backoff}s... (Attempt {retries}/{self.MAX_RETRIES})")
+                    logger.warning(f"Gemini quota hit. Retrying in {backoff}s... (Attempt {retries}/{self.max_retries})")
                     await asyncio.sleep(backoff)
                     backoff *= 2 # Exponential backoff
                 else:
@@ -305,7 +305,7 @@ class CohereProvider(BaseAIProvider):
         self.model = os.getenv("COHERE_MODEL", "command-r").strip()
         self.embedding_model = os.getenv("COHERE_EMBEDDING_MODEL", "embed-english-v3.0").strip()
         self.embedding_dimension = int(os.getenv("COHERE_EMBEDDING_DIM", "768"))
-        self.timeout_s = float(os.getenv("COHERE_TIMEOUT_SECONDS", "120"))
+        self.timeout_s = float(os.getenv("COHERE_TIMEOUT_SECONDS", "45"))
         self.active = bool(self.api_key and self.model)
 
         logger.info(f"CohereProvider init: api_key_present={bool(self.api_key)}, model={self.model}, active={self.active}")
@@ -328,7 +328,7 @@ class CohereProvider(BaseAIProvider):
 
     async def _post(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         # Cohere can rate limit (429). Retry with exponential backoff and honor Retry-After.
-        max_retries = int(os.getenv("COHERE_HTTP_MAX_RETRIES", "6") or "6")
+        max_retries = int(os.getenv("COHERE_HTTP_MAX_RETRIES", "1") or "1")
         max_retries = max(0, min(max_retries, 12))
 
         async with httpx.AsyncClient(timeout=self.timeout_s) as client:

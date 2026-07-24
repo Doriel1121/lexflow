@@ -8,6 +8,38 @@ logger = logging.getLogger(__name__)
 class OCRService:
     def __init__(self):
         pass
+
+    def _looks_like_corrupted_pdf_text(self, text: str, page_count: int) -> bool:
+        """Detect PDFs that expose long but unusable embedded text.
+
+        Some RTL/Hebrew PDFs contain extractable text streams, but the glyph mapping is
+        broken/mirrored and full of repeated fragments. Length alone is therefore not
+        a safe signal that OCR can be skipped.
+        """
+        clean = text or ""
+        stripped = clean.strip()
+        if not stripped:
+            return True
+
+        # If the PDF extracted enough text and it contains Hebrew plus obvious
+        # non-Hebrew glyph-map artifacts, prefer OCR. This catches the LegalOS
+        # lease sample without forcing OCR for normal English PDFs.
+        sample = stripped[: min(len(stripped), 8000)]
+        total_chars = max(1, len(sample))
+        hebrew_chars = sum(1 for ch in sample if "\u0590" <= ch <= "\u05FF")
+        armenian_artifacts = sum(1 for ch in sample if "\u0530" <= ch <= "\u058F")
+        control_artifacts = sum(1 for ch in sample if ord(ch) < 32 and ch not in "\n\r\t\f")
+
+        repeated_phrases = 0
+        words = [word for word in sample.split() if len(word) >= 5]
+        if words:
+            from collections import Counter
+            counts = Counter(words)
+            repeated_phrases = sum(1 for _, count in counts.most_common(12) if count >= max(4, page_count + 1))
+
+        artifact_ratio = (armenian_artifacts + control_artifacts) / total_chars
+        has_hebrew = hebrew_chars >= 20
+        return has_hebrew and (artifact_ratio >= 0.01 or repeated_phrases >= 3)
     
     async def extract_text_from_file(self, file_path: str) -> dict:
         """Extract text from file with metadata.
@@ -79,7 +111,13 @@ class OCRService:
                     text_length = len(joined_text.strip())
                     threshold = max(200, page_count * 100)
                     
-                    if text_length < threshold:
+                    if text_length < threshold or self._looks_like_corrupted_pdf_text(joined_text, page_count):
+                        logger.info(
+                            "PDF text extraction looked weak/corrupted (chars=%s, threshold=%s, pages=%s). Falling back to OCR.",
+                            text_length,
+                            threshold,
+                            page_count,
+                        )
                         from app.services.ocr_engine import tesseract_ocr_service
                         return await tesseract_ocr_service.extract_text_from_scanned_pdf(actual_file_path)
                     

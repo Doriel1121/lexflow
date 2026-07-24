@@ -56,10 +56,42 @@ const getNormalizedStatus = (status: string | undefined | null) => {
   return status.toLowerCase();
 };
 
+const getEffectiveStatus = (doc: Document) => {
+  const status = getNormalizedStatus(doc.processing_status);
+  const stage = (doc.processing_stage || "").toLowerCase();
+  if (status !== "failed" && (doc.processing_progress ?? 0) >= 100) return "completed";
+  if (status !== "failed" && stage.startsWith("completed")) return "completed";
+  return status;
+};
+
+const getProcessingStageLabel = (
+  stage: string | undefined,
+  t: (key: string, defaultValue: string) => string,
+) => {
+  const normalizedStage = (stage || "").toLowerCase();
+  const labels: Record<string, string> = {
+    uploaded: t("documentList.stages.uploaded", "Uploaded"),
+    processing_ocr: t("documentList.stages.processingOcr", "Extracting text"),
+    ocr_completed: t("documentList.stages.ocrCompleted", "Text extracted"),
+    fast_metadata_ready: t("documentList.stages.fastMetadataReady", "Reading document"),
+    chunking_completed: t("documentList.stages.chunkingCompleted", "Preparing AI search"),
+    ai_analysis: t("documentList.stages.aiAnalysis", "Analyzing document"),
+    embedding: t("documentList.stages.embedding", "Preparing AI search"),
+    ai_search_limit: t("documentList.stages.aiSearchLimit", "AI search limited"),
+    completed_without_ai: t("documentList.stages.completedWithoutAi", "Text extracted"),
+    completed_embedding_partial: t("documentList.stages.embeddingPartial", "AI search partial"),
+    completed: t("status.processed", "Processed"),
+  };
+  if (labels[normalizedStage]) return labels[normalizedStage];
+  if (normalizedStage.includes("limit") || normalizedStage.includes("quota")) {
+    return t("documentList.stages.aiSearchLimit", "AI search limited");
+  }
+  return t("documentList.stages.analyzing", "Analyzing...");
+};
 const needsAIAnalysis = (doc: Document) => {
   // Check if document is completed but classification indicates AI is pending
   return (
-    getNormalizedStatus(doc.processing_status) === "completed" &&
+    getEffectiveStatus(doc) === "completed" &&
     (doc.classification === "Text Extracted (AI Pending)" ||
       doc.classification === "Pending Analysis" ||
       doc.processing_stage === "completed_without_ai")
@@ -70,17 +102,35 @@ const embeddingUnavailable = (doc: Document) =>
   doc.processing_stage === "completed_embedding_partial" ||
   (doc.embedding_failed_count ?? 0) > 0 ||
   doc.ai_health?.embedding === "partial";
+const DOCUMENT_LIST_CACHE_TTL_MS = 15_000;
+
+type DocumentListCacheEntry = {
+  documents: Document[];
+  page: number;
+  hasMore: boolean;
+  expiresAt: number;
+};
+
+const documentListResponseCache = new Map<string, DocumentListCacheEntry>();
+const documentListRequestCache = new Map<string, Promise<Document[]>>();
+
+const getFreshDocumentListCache = (key: string) => {
+  const cached = documentListResponseCache.get(key);
+  if (!cached || cached.expiresAt <= Date.now()) return null;
+  return cached;
+};
 
 export function DocumentList() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { showSnackbar } = useSnackbar();
   const { confirm } = useConfirm();
+  const initialDocumentListCache = getFreshDocumentListCache("list:0:");
   const [searchTerm, setSearchTerm] = useState("");
   const [semanticSearchActive, setSemanticSearchActive] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [documents, setDocuments] = useState<Document[]>(() => initialDocumentListCache?.documents ?? []);
+  const [loading, setLoading] = useState(() => !initialDocumentListCache);
   const [uploading, setUploading] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
   const [dropdownButtonElement, setDropdownButtonElement] =
@@ -117,8 +167,8 @@ export function DocumentList() {
   const [filterDateTo, setFilterDateTo] = useState<string>("");
 
   // Infinite Scroll State
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(() => initialDocumentListCache?.page ?? 0);
+  const [hasMore, setHasMore] = useState(() => initialDocumentListCache?.hasMore ?? true);
   const [fetchingMore, setFetchingMore] = useState(false);
   const limit = 50;
   const observerTarget = React.useRef<HTMLDivElement>(null);
@@ -126,6 +176,7 @@ export function DocumentList() {
   const inFlightListRequestKeyRef = React.useRef<string | null>(null);
   const latestSearchTermRef = React.useRef(searchTerm);
   const latestSemanticSearchRef = React.useRef(semanticSearchActive);
+  const hasInitializedSearchEffectRef = React.useRef(false);
 
   // Keep documentsRef in sync
   useEffect(() => {
@@ -243,8 +294,8 @@ export function DocumentList() {
         const currentDocs = documentsRef.current;
         const pendingDocs = currentDocs.filter(
           (d) =>
-            getNormalizedStatus(d.processing_status) === "pending" ||
-            getNormalizedStatus(d.processing_status) === "processing",
+            getEffectiveStatus(d) === "pending" ||
+            getEffectiveStatus(d) === "processing",
         );
 
         if (pendingDocs.length === 0) {
@@ -313,7 +364,20 @@ export function DocumentList() {
 
   const fetchDocuments = async (query?: string, targetPage: number = 0) => {
     const trimmedQuery = query?.trim() ?? "";
-    const requestKey = `${semanticSearchActive ? "concept" : "list"}:${targetPage}:${trimmedQuery}`;
+    const searchMode = trimmedQuery.length > 2 && semanticSearchActive ? "concept" : "list";
+    const requestKey = `${searchMode}:${targetPage}:${trimmedQuery}`;
+
+    const cached = getFreshDocumentListCache(requestKey);
+    if (targetPage === 0 && cached) {
+      setDocuments(cached.documents);
+      docCountRef.current = cached.documents.length > 0 ? cached.documents[0].id : 0;
+      setHasMore(cached.hasMore);
+      setPage(cached.page);
+      setLoading(false);
+      setIsSearching(false);
+      return;
+    }
+
     if (inFlightListRequestKeyRef.current === requestKey) {
       return;
     }
@@ -322,37 +386,55 @@ export function DocumentList() {
     try {
       const skip = targetPage * limit;
       if (targetPage === 0) {
-        setLoading(true);
+        if (documentsRef.current.length === 0) {
+          setLoading(true);
+        }
+        if (searchMode === "concept") {
+          setIsSearching(true);
+        }
       } else {
         setFetchingMore(true);
       }
 
-      let response;
-      if (trimmedQuery.length > 2 && semanticSearchActive) {
-        setIsSearching(true);
-        response = await api.get("/v1/documents/semantic-search", {
-          params: { query: trimmedQuery, limit },
-        });
-      } else {
-        response = await api.get("/v1/documents/", {
-          params: {
-            skip,
-            limit,
-            ...(trimmedQuery.length > 0 ? { search: trimmedQuery } : {}),
-          },
-        });
+      let requestPromise = documentListRequestCache.get(requestKey);
+      if (!requestPromise) {
+        requestPromise = (async () => {
+          if (searchMode === "concept") {
+            const response = await api.get("/v1/documents/semantic-search", {
+              params: { query: trimmedQuery, limit },
+            });
+            return response.data as Document[];
+          }
+
+          const response = await api.get("/v1/documents/", {
+            params: {
+              skip,
+              limit,
+              ...(trimmedQuery.length > 0 ? { search: trimmedQuery } : {}),
+            },
+          });
+          return response.data as Document[];
+        })();
+        documentListRequestCache.set(requestKey, requestPromise);
       }
 
-      const incomingDocs: Document[] = response.data;
+      const incomingDocs = await requestPromise;
+      const nextHasMore = incomingDocs.length === limit;
 
       if (targetPage === 0) {
         setDocuments(incomingDocs);
         docCountRef.current = incomingDocs.length > 0 ? incomingDocs[0].id : 0;
+        documentListResponseCache.set(requestKey, {
+          documents: incomingDocs,
+          page: targetPage,
+          hasMore: nextHasMore,
+          expiresAt: Date.now() + DOCUMENT_LIST_CACHE_TTL_MS,
+        });
       } else {
         setDocuments((prev) => [...prev, ...incomingDocs]);
       }
 
-      setHasMore(incomingDocs.length === limit);
+      setHasMore(nextHasMore);
       setPage(targetPage);
     } catch (error: any) {
       console.error("Failed to fetch documents:", error);
@@ -364,6 +446,7 @@ export function DocumentList() {
         );
       }
     } finally {
+      documentListRequestCache.delete(requestKey);
       setLoading(false);
       setIsSearching(false);
       setFetchingMore(false);
@@ -393,6 +476,11 @@ export function DocumentList() {
 
   // Debounced backend search hook for both regular and concept search.
   useEffect(() => {
+    if (!hasInitializedSearchEffectRef.current) {
+      hasInitializedSearchEffectRef.current = true;
+      return;
+    }
+
     const timer = setTimeout(() => {
       fetchDocuments(searchTerm, 0);
     }, 700);
@@ -469,7 +557,7 @@ export function DocumentList() {
 
       // Status filter
       if (filterStatus) {
-        const normalizedStatus = getNormalizedStatus(doc.processing_status);
+        const normalizedStatus = getEffectiveStatus(doc);
         if (normalizedStatus !== filterStatus) return false;
       }
 
@@ -782,7 +870,7 @@ export function DocumentList() {
                   </tr>
                 ) : (
                   filteredDocs.map((doc) => {
-                    const status = getNormalizedStatus(doc.processing_status);
+                    const status = getEffectiveStatus(doc);
                     const isViewable =
                       status === "completed" ||
                       doc.processing_stage === "ocr_completed" ||
@@ -839,9 +927,9 @@ export function DocumentList() {
                           </div>
                         </td>
                         <td className="px-6 py-4 align-top">
-                          {getNormalizedStatus(doc.processing_status) ===
+                          {getEffectiveStatus(doc) ===
                             "processing" ||
-                          getNormalizedStatus(doc.processing_status) ===
+                          getEffectiveStatus(doc) ===
                             "pending" ? (
                             <div className="flex flex-col space-y-2 max-w-[160px]">
                               <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-warning-light text-warning-dark shadow-sm border border-warning/20">
@@ -865,11 +953,7 @@ export function DocumentList() {
                                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                   ></path>
                                 </svg>
-                                {doc.processing_stage
-                                  ? doc.processing_stage
-                                      .replace(/_/g, " ")
-                                      .replace(/\b\w/g, (l) => l.toUpperCase())
-                                  : "Analyzing..."}
+                                {getProcessingStageLabel(doc.processing_stage, t)}
                               </span>
                               {doc.processing_progress !== undefined &&
                                 doc.processing_progress > 0 && (
@@ -883,7 +967,7 @@ export function DocumentList() {
                                   </div>
                                 )}
                             </div>
-                          ) : getNormalizedStatus(doc.processing_status) ===
+                          ) : getEffectiveStatus(doc) ===
                             "failed" ? (
                             <div className="flex flex-col space-y-1.5">
                               <span className="inline-flex w-fit items-center px-2.5 py-1.5 rounded-md text-xs font-semibold bg-error-light text-error-dark shadow-sm border border-error/20">

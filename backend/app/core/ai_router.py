@@ -143,6 +143,15 @@ class AIRouter:
                 default="gemini",
             )
 
+        if intent == AIIntent.DOCUMENT_ANALYSIS.value and context.feature in {"document_intelligence", "document_processing"}:
+            return self._first_configured(
+                getattr(settings, "AI_DOCUMENT_ANALYSIS_PROVIDER", ""),
+                getattr(settings, "AI_LONG_CONTEXT_PROVIDER", ""),
+                settings.AI_READER_PROVIDER,
+                settings.AI_PROVIDER,
+                default="gemini",
+            )
+
         if is_long_context or intent in {AIIntent.DOCUMENT_ANALYSIS.value, AIIntent.DOCUMENT_QA.value}:
             return self._first_configured(
                 getattr(settings, "AI_LONG_CONTEXT_PROVIDER", ""),

@@ -162,6 +162,8 @@ Language requirement: {lang_hint}
 Return ONLY valid JSON matching this structure (use empty arrays when nothing found):
 {CHUNK_PARTIAL_SCHEMA}
 
+Party rule: include only primary legal/contract parties if this section identifies them. Do not list witnesses, guarantors, attorneys, family members, banks, municipalities, addresses, or generic role labels as parties.
+
 Return ONLY JSON."""
 
         timeout = float(settings.AI_CHUNK_ANALYSIS_TIMEOUT_SECONDS or 90)
@@ -378,7 +380,7 @@ Extract and return ONLY valid JSON with this exact structure:
 }}
 
 IMPORTANT:
-- For parties: Extract full names, roles, and ANY identification numbers (ID, passport, tax ID, company registration)
+- For parties: Extract ONLY the primary legal/contract parties to this document, exactly as written, with their roles and ANY identification numbers. For agreements, these are usually the named sides in the opening/caption/signature block, such as landlord/tenant, seller/buyer, employer/employee. Do NOT include guarantors, witnesses, family members, attorneys, municipalities, banks, contacts, addresses, account holders, or other mentioned entities unless the document explicitly defines them as a main party. If labels like Landlord/Tenant appear, put the label in role and the adjacent actual person/company name in name; do not use the generic label as the name.
 - For financial_terms: ALWAYS include description of what the amount represents (e.g., "Purchase price", "Monthly rent", "Penalty fee")
 - For financial_terms: Include who pays (payer) and who receives (payee) if mentioned
 - For tags: Generate EXACTLY 5-7 tags maximum. Each tag must be specific and meaningful (not generic). Examples of GOOD tags: 'Non-Compete', 'IP Rights', 'Severance', 'Arbitration Clause'. Examples of BAD tags: 'agreement', 'legal', 'document', 'section'.

@@ -30,8 +30,8 @@ class TesseractOCRService:
         """
         from app.services.file_processor import FileProcessor
         
-        # If using R2, download file to temp location first
-        actual_file_path = FileProcessor.get_processing_file_path(file_path)
+        # If using cloud storage, download file to temp location first
+        actual_file_path = await FileProcessor.get_processing_file_path_async(file_path)
         is_temp_r2_file = (actual_file_path != file_path)
         
         try:

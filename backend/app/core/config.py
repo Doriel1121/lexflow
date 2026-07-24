@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     AI_LEGAL_REASONING_PROVIDER: str = ""
     AI_LEGAL_DRAFTING_PROVIDER: str = ""
     AI_LONG_CONTEXT_PROVIDER: str = ""
+    AI_DOCUMENT_ANALYSIS_PROVIDER: str = ""
     AI_CLASSIFICATION_PROVIDER: str = ""
     AI_LOW_RISK_PROVIDER: str = ""
     # Optional JSON pricing map used for telemetry cost estimates.
@@ -75,6 +76,8 @@ class Settings(BaseSettings):
     AI_COST_PRICING_JSON: str = "{}"
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
+    # Ask AI endpoint timeout budget (seconds). Keeps requests from hanging behind provider retries.
+    ASK_AI_TIMEOUT_SECONDS: int = 45
     # Above this character count, use per-chunk analysis + merge (sequential, no Celery chord)
     AI_LONG_DOCUMENT_THRESHOLD_CHARS: int = 25000
     # Max chunk-level LLM calls per document (cost guardrail)
