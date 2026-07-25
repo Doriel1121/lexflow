@@ -1,6 +1,7 @@
 from typing import Optional
 import os
 import logging
+from app.core.config import settings
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -111,12 +112,13 @@ class OCRService:
                     text_length = len(joined_text.strip())
                     threshold = max(200, page_count * 100)
                     
-                    if text_length < threshold or self._looks_like_corrupted_pdf_text(joined_text, page_count):
+                    if text_length < threshold or (settings.PDF_CORRUPT_TEXT_OCR_FALLBACK and self._looks_like_corrupted_pdf_text(joined_text, page_count)):
                         logger.info(
-                            "PDF text extraction looked weak/corrupted (chars=%s, threshold=%s, pages=%s). Falling back to OCR.",
+                            "PDF text extraction selected OCR fallback (chars=%s, threshold=%s, pages=%s, corrupt_fallback=%s).",
                             text_length,
                             threshold,
                             page_count,
+                            settings.PDF_CORRUPT_TEXT_OCR_FALLBACK,
                         )
                         from app.services.ocr_engine import tesseract_ocr_service
                         return await tesseract_ocr_service.extract_text_from_scanned_pdf(actual_file_path)

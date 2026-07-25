@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # OCR tuning. Lower DPI reduces memory on small Render instances.
     OCR_DPI: int = 200
     TESSERACT_LANGUAGES: str = "heb+eng"
+    PDF_CORRUPT_TEXT_OCR_FALLBACK: bool = False
 
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
