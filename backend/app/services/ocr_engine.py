@@ -4,7 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 import pytesseract
-from pdf2image import convert_from_path
+from app.core.config import settings
+from pdf2image import convert_from_path, pdfinfo_from_path
 
 logger = logging.getLogger(__name__)
 
@@ -12,13 +13,27 @@ class TesseractOCRService:
     def __init__(self):
         pass
 
-    def _extract_pages_from_pdf(self, pdf_path: str) -> list:
-        # Convert PDF into a list of PIL Images (one per page)
+    def _get_pdf_page_count(self, pdf_path: str) -> int:
         try:
-            return convert_from_path(pdf_path, dpi=300)
+            info = pdfinfo_from_path(pdf_path)
+            return int(info.get("Pages") or 0)
         except Exception as e:
-            logger.error(f"Failed to convert PDF to images: {e}")
-            return []
+            logger.error("Failed to inspect PDF page count: %s", e)
+            return 0
+
+    def _render_pdf_page(self, pdf_path: str, page_number: int):
+        try:
+            pages = convert_from_path(
+                pdf_path,
+                dpi=int(settings.OCR_DPI or 200),
+                first_page=page_number,
+                last_page=page_number,
+                thread_count=1,
+            )
+            return pages[0] if pages else None
+        except Exception as e:
+            logger.error("Failed to render PDF page %s for OCR: %s", page_number, e)
+            return None
 
     async def extract_text_from_scanned_pdf(self, file_path: str) -> Dict[str, Any]:
         """
@@ -39,25 +54,37 @@ class TesseractOCRService:
             if not path.exists():
                 return {"text": "", "language": "en", "page_count": 0}
 
-            logger.info(f"Starting Tesseract OCR engine for scanned file: {path.name}")
-            
-            pages = self._extract_pages_from_pdf(str(path))
-            page_count = len(pages)
-            
+            dpi = int(settings.OCR_DPI or 200)
+            languages = settings.TESSERACT_LANGUAGES or "heb+eng"
+            logger.info(
+                "Starting Tesseract OCR engine for scanned file: %s (dpi=%s, lang=%s)",
+                path.name,
+                dpi,
+                languages,
+            )
+
+            page_count = self._get_pdf_page_count(str(path))
             if page_count == 0:
                 return {"text": "Could not read pages from scanned document.", "language": "en", "page_count": 0}
 
             aggregated_text = []
 
-            # Iterate page by page
-            for i, page_image in enumerate(pages):
-                logger.info(f"Running OCR on page {i+1}/{page_count}...")
-                # Run pytesseract with Hebrew + English support
-                page_text = pytesseract.image_to_string(page_image, lang='heb+eng')
+            # Render and OCR one page at a time to avoid Render/free-tier memory spikes.
+            for page_number in range(1, page_count + 1):
+                logger.info("Running OCR on page %s/%s...", page_number, page_count)
+                page_image = self._render_pdf_page(str(path), page_number)
+                if page_image is None:
+                    aggregated_text.append("")
+                    continue
+                page_text = pytesseract.image_to_string(page_image, lang=languages)
                 aggregated_text.append(page_text)
-                
-                # Explicitly delete the image to free up RAM
-                del page_image 
+
+                # Explicitly release the rendered page before moving to the next one.
+                try:
+                    page_image.close()
+                except Exception:
+                    pass
+                del page_image
 
             full_text = "\n\n--- Page Break ---\n\n".join(aggregated_text)
             
