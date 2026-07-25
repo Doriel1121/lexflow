@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # {"gemini":{"gemini-2.0-flash":{"input_per_1m":0.1,"output_per_1m":0.4}}}
     # Supports provider/model wildcards via "*". Missing prices are treated as unknown/0.
     AI_COST_PRICING_JSON: str = "{}"
+    # OCR tuning. Lower DPI reduces memory on small Render instances.
+    OCR_DPI: int = 200
+    TESSERACT_LANGUAGES: str = "heb+eng"
+
     # AI analysis timeout (seconds)
     AI_ANALYSIS_TIMEOUT_SECONDS: int = 120
     # Ask AI endpoint timeout budget (seconds). Keeps requests from hanging behind provider retries.
