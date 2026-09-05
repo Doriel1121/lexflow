@@ -4,20 +4,30 @@ import api from "../services/api";
 import { useSnackbar } from "../context/SnackbarContext";
 import { useTranslation } from "react-i18next";
 
+import { LOGIN_HERO_EXPERIMENT, trackConversion } from "../optiflow/client";
+import { useAnonymousUserId } from "../optiflow/use-anonymous-user-id";
+
 const LoginPage: React.FC = () => {
   const { login } = useAuth();
   const { showSnackbar } = useSnackbar();
   const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const anonymousUserId = useAnonymousUserId();
 
   const handleOAuth = (provider: string) => {
+    if (anonymousUserId) {
+      void trackConversion(anonymousUserId, "login_started");
+    }
     login(provider);
   };
 
   const handleDevLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    if (anonymousUserId) {
+      void trackConversion(anonymousUserId, "login_started");
+    }
     try {
       const response = await api.post("/v1/auth/dev-login", { email });
       localStorage.setItem("access_token", response.data.access_token);
@@ -37,12 +47,23 @@ const LoginPage: React.FC = () => {
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            {t("login.title")}
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            {t("login.subtitle")}
-          </p>
+          {anonymousUserId ? (
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+                  Sign in to your firm
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400">
+                  One workspace for cases, documents, and AI assistance.
+                </p>
+          ) : (
+            <>
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+                {t("login.title")}
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400">
+                {t("login.subtitle")}
+              </p>
+            </>
+          )}
         </div>
 
         {/* Development Login */}
